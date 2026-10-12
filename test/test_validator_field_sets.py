@@ -1,7 +1,7 @@
 """Validator: field sets, and the refusals a deploy cannot see."""
 import ast
 from pathlib import Path
-from typing import Any, Unpack
+from typing import Unpack
 
 from _findings import by_severity, none_of, only
 from _model import MappingSections
@@ -18,7 +18,7 @@ from dbml_sharepoint.analysis.limits import MAX_FILTER_EDITOR_CONDITIONS
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
-from dbml_sharepoint.model.conditions import parse_condition
+from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
     EntityKind,
@@ -106,9 +106,14 @@ def _loaded_calculated_project(
     )
 
 
-def _view(title: str, *fields: str, **extra: Any) -> dict[str, list[ViewDef]]:
+def _view(
+    title: str, *fields: str, where: Condition | None = None,
+    group_by: ViewGroupBy | None = None, formatting: dict[str, object] | None = None,
+) -> dict[str, list[ViewDef]]:
     """A one-view `views:` section on `Project`."""
-    return {"Project": [ViewDef(title=title, fields=list(fields), **extra)]}
+    return {"Project": [ViewDef(
+        title=title, fields=list(fields), where=where, group_by=group_by, formatting=formatting,
+    )]}
 
 
 def _calculated_project(
@@ -145,7 +150,7 @@ def _hidden(*columns: str) -> dict[str, EntitySection[FormVisibility]]:
     })}
 
 
-def _body(*sections: dict[str, Any]) -> dict[str, FormFormatting]:
+def _body(*sections: dict[str, object]) -> dict[str, FormFormatting]:
     """A `form_formatting:` section declaring only a body."""
     return {"Project": FormFormatting(body={"sections": list(sections)})}
 
@@ -299,7 +304,7 @@ def test_view_formatting_may_only_read_columns_the_view_displays() -> None:
     silently never fires, the build exits 0, and the only symptom is a row
     wash nobody sees. Catching it needs the VIEW's field list, which is why
     checking against the table's columns was not enough."""
-    row_class = {"additionalRowClass": "=if([$Status] == 'Open', 'x', '')"}
+    row_class: dict[str, object] = {"additionalRowClass": "=if([$Status] == 'Open', 'x', '')"}
     errors = _project_errors(views=_view("V", "Title", formatting=row_class))
     f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
     assert f.location == Location(Section.VIEWS, entity="Project", view="V")
@@ -324,7 +329,7 @@ def test_a_view_formatter_holding_a_bare_ampersand_is_refused() -> None:
     the first symptom was an aborted deployment against somebody's site --
     which is exactly the failure this project exists to close.
     """
-    wash = {
+    wash: dict[str, object] = {
         "additionalRowClass":
             "=if([$Status] == 'Open' && [$Title] != '', 'x', '')",
     }
@@ -346,7 +351,7 @@ def test_a_view_formatter_holding_a_less_than_is_refused() -> None:
     have aborted a deploy the same way. `>` is accepted, so the remedy is to
     flip the comparison rather than to give it up.
     """
-    wash = {"additionalRowClass": "=if(Number([$SortOrder]) < 0, 'x', '')"}
+    wash: dict[str, object] = {"additionalRowClass": "=if(Number([$SortOrder]) < 0, 'x', '')"}
     errors = _project_errors(views=_view("V", "Title", "SortOrder", formatting=wash))
 
     f = only(errors, FindingCode.VIEW_FORMATTER_XML_METACHARACTER)
@@ -362,7 +367,7 @@ def test_a_view_formatter_metacharacter_in_an_object_key_is_refused() -> None:
     character in the same view schema XML by another route. `jsgen` dumps
     the whole object, keys included.
     """
-    wash = {"additionalRowClass": "=if(1 == 1, 'x', '')", "label&detail": "x"}
+    wash: dict[str, object] = {"additionalRowClass": "=if(1 == 1, 'x', '')", "label&detail": "x"}
     errors = _project_errors(views=_view("V", "Title", formatting=wash))
 
     f = only(errors, FindingCode.VIEW_FORMATTER_XML_METACHARACTER)
@@ -376,7 +381,7 @@ def test_a_view_formatter_using_greater_than_is_left_alone() -> None:
     A rule that refused them would leave `<` with no remedy at all, which is
     the shape AGENTS.md warns about -- stronger than the platform.
     """
-    wash = {"additionalRowClass": "=if(0 > Number([$SortOrder]), 'x', '')"}
+    wash: dict[str, object] = {"additionalRowClass": "=if(0 > Number([$SortOrder]), 'x', '')"}
 
     assert _project_errors(views=_view("V", "Title", "SortOrder", formatting=wash)) == []
 
@@ -388,7 +393,7 @@ def test_a_view_formatter_using_or_is_left_alone() -> None:
     "operators": refusing `||` would cost several working templates for a
     fault they do not have.
     """
-    wash = {
+    wash: dict[str, object] = {
         "additionalRowClass":
             "=if([$Status] == 'Open' || [$Status] == 'Held', 'x', '')",
     }
@@ -396,7 +401,7 @@ def test_a_view_formatter_using_or_is_left_alone() -> None:
     assert _project_errors(views=_view("V", "Title", "Status", formatting=wash)) == []
 
 def test_view_formatting_may_only_read_system_columns_the_view_displays() -> None:
-    row_class = {"additionalRowClass": "=if([$Created] != '', 'x', '')"}
+    row_class: dict[str, object] = {"additionalRowClass": "=if([$Created] != '', 'x', '')"}
     errors = _project_errors(views=_view("V", "Title", formatting=row_class))
     f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
     assert "Created" in f.message

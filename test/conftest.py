@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 from _paths import GOLDEN_DEPLOYER_VERSION
@@ -119,7 +119,7 @@ def _instrument() -> None:
     """Watch findings that production diagnosis actually constructs."""
     original_finding: Callable[..., None] = _findings.Finding.__init__
 
-    def finding_init(self: Any, *args: Any, **kwargs: Any) -> None:
+    def finding_init(self: _findings.Finding, *args: object, **kwargs: object) -> None:
         original_finding(self, *args, **kwargs)
         _record(self.code.name)
 

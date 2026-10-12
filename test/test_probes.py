@@ -182,7 +182,7 @@ def _tracked_manual_files() -> list[Path]:
 def test_no_tracked_file_under_manual_names_a_tenant() -> None:
     """No committed file in test/manual may carry a real tenant host or a
     real address, which is what a probe transcript is made of."""
-    offenders = []
+    offenders: list[str] = []
     for path in _tracked_manual_files():
         text = path.read_text(encoding="utf-8", errors="replace")
         offenders += [
@@ -375,7 +375,7 @@ def _resolve_once(expression: str, source: str) -> list[str]:
 
 
 def test_no_probe_invents_a_check_id_at_run_time() -> None:
-    offenders = []
+    offenders: list[str] = []
     scanned = 0
     for path in _probe_scripts():
         text = path.read_text(encoding="utf-8")
@@ -580,7 +580,7 @@ def test_no_fixture_row_is_recorded_as_a_literal_pass() -> None:
     `establishFixture` in the shared harness reads the declared properties back
     and voids the dependents when one does not hold.
     """
-    offenders = []
+    offenders: list[str] = []
     allowed = set()
     templates = sorted(TEMPLATES.glob("*.js.j2"))
     assert len(templates) >= _MIN_TEMPLATES, f"only {len(templates)} templates scanned"

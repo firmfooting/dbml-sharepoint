@@ -118,7 +118,10 @@ def test_an_entry_point_outside_any_distribution_is_refused(
     point = EntryPoint(
         name="packs", value="_catalogue_fixtures:first_root", group=BLUEPRINT_ROOTS_GROUP,
     )
-    monkeypatch.setattr(catalogue, "entry_points", lambda *, group: [point])
+    def only_point(*, group: str) -> list[EntryPoint]:
+        return [point]
+
+    monkeypatch.setattr(catalogue, "entry_points", only_point)
     with pytest.raises(BlueprintRootError, match="belongs to no distribution"):
         read_catalogue()
 

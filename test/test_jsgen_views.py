@@ -7,7 +7,6 @@ the editable shape is one an operator can silently widen.
 """
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -26,7 +25,7 @@ from dbml_sharepoint.generators.jsgen import (
     build_schema_json,
 )
 from dbml_sharepoint.generators.schema_types import ViewRow
-from dbml_sharepoint.model.conditions import parse_condition
+from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import ViewDef, ViewGroupBy, ViewSort
 from dbml_sharepoint.model.parser import parse_dbml
@@ -34,16 +33,23 @@ from dbml_sharepoint.model.parser import parse_dbml
 # --- Declared views ---------------------------------------------------------
 
 
-def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = None) -> str:
-    return _view_caml_query(
-        ViewDef(title="V", fields=["Title"], **view_kwargs),
-        column_types or {},
+def _view(
+    where: Condition | None = None,
+    sort: list[ViewSort] | None = None,
+    group_by: ViewGroupBy | None = None,
+) -> ViewDef:
+    return ViewDef(
+        title="V", fields=["Title"], where=where, sort=sort or [], group_by=group_by,
     )
+
+
+def _caml(view: ViewDef, column_types: dict[str, str] | None = None) -> str:
+    return _view_caml_query(view, column_types or {})
 
 
 def test_view_caml_condition_sort_and_group() -> None:
     caml = _caml(
-        dict(
+        _view(
             where=parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "w"),
             sort=[ViewSort(field="RiskScore", direction="desc")],
             group_by=ViewGroupBy(fields=["Impact"], collapsed=True),
@@ -64,7 +70,7 @@ def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
     """SharePoint takes both FieldRefs inside ONE GroupBy. Two GroupBy
     elements would be malformed CAML, not a deeper grouping."""
     caml = _caml(
-        dict(group_by=ViewGroupBy(fields=["SourceType", "SourceInstrument"], collapsed=False)),
+        _view(group_by=ViewGroupBy(fields=["SourceType", "SourceInstrument"], collapsed=False)),
         {"SourceType": "source_enum", "SourceInstrument": "nvarchar"},
     )
     assert caml == (
@@ -76,7 +82,7 @@ def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
 
 def test_view_caml_ands_multiple_conditions() -> None:
     caml = _caml(
-        dict(where=parse_condition(
+        _view(where=parse_condition(
             [
                 {"field": "Status", "op": "eq", "value": "Open"},
                 {"field": "SortOrder", "op": "geq", "value": 5},
@@ -99,7 +105,7 @@ def test_view_caml_ands_multiple_conditions() -> None:
 
 def test_view_caml_today_offsets_and_ascending_sort() -> None:
     caml = _caml(
-        dict(
+        _view(
             where=parse_condition([{"field": "DueDate", "op": "leq", "value": "today+30"}], "w"),
             sort=[ViewSort(field="DueDate", direction="asc")],
         ),
@@ -112,12 +118,12 @@ def test_view_caml_today_offsets_and_ascending_sort() -> None:
         '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
     )
     bare = _caml(
-        dict(where=parse_condition([{"field": "DueDate", "op": "eq", "value": "today"}], "w")),
+        _view(where=parse_condition([{"field": "DueDate", "op": "eq", "value": "today"}], "w")),
         {"DueDate": "datetime"},
     )
     assert '<Value Type="DateTime"><Today/></Value>' in bare
     minus = _caml(
-        dict(where=parse_condition([{"field": "DueDate", "op": "gt", "value": "today-7"}], "w")),
+        _view(where=parse_condition([{"field": "DueDate", "op": "gt", "value": "today-7"}], "w")),
         {"DueDate": "date"},
     )
     assert '<Today OffsetDays="-7"/>' in minus
@@ -125,12 +131,12 @@ def test_view_caml_today_offsets_and_ascending_sort() -> None:
 
 def test_view_caml_escapes_values_and_maps_boolean() -> None:
     caml = _caml(
-        dict(where=parse_condition([{"field": "Name", "op": "eq", "value": 'A & B < "C"'}], "w")),
+        _view(where=parse_condition([{"field": "Name", "op": "eq", "value": 'A & B < "C"'}], "w")),
         {"Name": "nvarchar"},
     )
     assert '<Value Type="Text">A &amp; B &lt; &quot;C&quot;</Value>' in caml
     flag = _caml(
-        dict(where=parse_condition([{"field": "Active", "op": "eq", "value": True}], "w")),
+        _view(where=parse_condition([{"field": "Active", "op": "eq", "value": True}], "w")),
         {"Active": "boolean"},
     )
     assert '<Value Type="Integer">1</Value>' in flag
@@ -503,7 +509,7 @@ def test_a_grouped_column_need_not_be_displayed() -> None:
     by a column you do not also list is a normal way to avoid repeating the
     same value in every row. Nothing may refuse it."""
     caml = _caml(
-        dict(group_by=ViewGroupBy(fields=["Area"], collapsed=True)),
+        _view(group_by=ViewGroupBy(fields=["Area"], collapsed=True)),
         {"Area": "area_enum"},
     )
     assert caml == '<GroupBy Collapse="TRUE"><FieldRef Name="Area"/></GroupBy>'

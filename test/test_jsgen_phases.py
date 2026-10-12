@@ -10,7 +10,7 @@ the seal and unseal pair, the lifted save rule, and the cleanup in the
 import json
 import re
 from pathlib import Path
-from typing import Any, ClassVar, override
+from typing import ClassVar, override
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, pack
@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -499,8 +500,8 @@ class _SeedExtension(BaseExtension):
 
     @override
     def seed_lists(
-        self, bundle: Any, schema: Any, site_context: SiteContext,
-    ) -> dict[str, dict[str, Any]]:
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
+    ) -> dict[str, dict[str, JsonValue]]:
         return {
             "APP_AppSettings": {
                 "Title": "App Settings",

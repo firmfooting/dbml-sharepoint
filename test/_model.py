@@ -194,6 +194,25 @@ def schema(
 # --- Mapping ----------------------------------------------------------------
 
 
+class DeployArgs(TypedDict, closed=True):
+    """The five generator arguments the tests fix, unpackable with `**`."""
+
+    site_url: str
+    site_role: str
+    source_dbml: str
+    source_mtime: str
+    generated_at: str
+
+
+class RollbackArgs(TypedDict, closed=True):
+    """`DeployArgs` without the source mtime, which the rollback and demo scripts do not take."""
+
+    site_url: str
+    site_role: str
+    source_dbml: str
+    generated_at: str
+
+
 class MappingSections(TypedDict, total=False):
     """Every `Mapping` field except `prefix` and `entities`, which `mapping()`
     takes by name.

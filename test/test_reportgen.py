@@ -1550,14 +1550,13 @@ def test_a_member_containing_the_separator_is_refused(
     schema, bundle = _ambiguous()
     # Only generate_data_dictionary takes `resolved`; the others reject an
     # unexpected keyword, so it is passed conditionally rather than always.
-    kwargs = (
-        {"resolved": resolve(schema, bundle.mapping)}
-        if generate is generate_data_dictionary
-        else {}
-    )
+    def run() -> object:
+        if generate is generate_data_dictionary:
+            return generate(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+        return generate(schema, bundle, "default")
 
     with pytest.raises(ValueError, match="AuditEvents") as err:
-        generate(schema, bundle, "default", **kwargs)
+        run()
 
     assert "Permission change; revoked" in str(err.value)
     assert '"; "' in str(err.value)

@@ -20,7 +20,6 @@ rewriting -- and it exists because mutation testing proved the structural
 properties alone could not catch a dropped null arm.
 """
 
-from typing import Any
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -61,7 +60,7 @@ _SCALARS = st.one_of(
 def leaves(draw: st.DrawFn) -> Leaf:
     """A single comparison, with a value shaped to suit its operator."""
     op = draw(st.sampled_from(NEGATABLE_OPS))
-    value: Any
+    value: object
     if op in ("is_null", "is_not_null"):
         value = None
     elif op in ("in", "not_in"):
@@ -362,7 +361,7 @@ def renderable_leaves(draw: st.DrawFn) -> Leaf:
     )
     op = draw(st.sampled_from(op_pool))
     if op in ("is_null", "is_not_null"):
-        value: Any = None
+        value: object = None
     elif field == "Score":
         value = draw(st.integers(min_value=-500, max_value=500))
     else:

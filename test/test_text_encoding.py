@@ -29,7 +29,6 @@ import tomllib
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _paths import REPO_ROOT
@@ -85,7 +84,7 @@ def _relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
 
-def _roots_in(config: dict[str, Any]) -> tuple[str, ...]:
+def _roots_in(config: dict[str, object]) -> tuple[str, ...]:
     """Every path the wheel is built from, named by a parsed pyproject.
 
     Split from the file read so the proof below can feed it an invented
@@ -103,9 +102,8 @@ def _roots_in(config: dict[str, Any]) -> tuple[str, ...]:
             )
         node = node[key]
     raw_project = config.get("project")
-    project: dict[str, Any] = raw_project if isinstance(raw_project, dict) else {}
-    readme = project.get("readme")
-    licenses = project.get("license-files")
+    readme = raw_project.get("readme") if isinstance(raw_project, dict) else None
+    licenses = raw_project.get("license-files") if isinstance(raw_project, dict) else None
     if not isinstance(node, list) or not all(isinstance(p, str) for p in node):
         pytest.fail(f"{WHEEL_PACKAGES} is {node!r}, expected a list of paths")
     if not isinstance(readme, str):

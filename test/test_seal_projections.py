@@ -13,8 +13,8 @@ lists read `Sealed: true` and `CanBeDeleted: false`.
 Deleting one takes the view that shows it with no warning anywhere.
 """
 
-from typing import Any
 
+from _model import DeployArgs
 from _paths import FIXTURES, TEST_BLUEPRINTS
 
 from dbml_sharepoint.analysis.resolve import resolve
@@ -25,13 +25,13 @@ from dbml_sharepoint.model.release import load_release
 
 FAMILY = TEST_BLUEPRINTS / "reporting-sample"
 
-_FIXED_ARGS: dict[str, Any] = {
-    "site_url": "https://example.sharepoint.com/sites/test",
-    "site_role": "default",
-    "source_dbml": "schema.dbml",
-    "source_mtime": "2026-09-06T00:00:00Z",
-    "generated_at": "2026-09-06T00:00:00Z",
-}
+_FIXED_ARGS = DeployArgs(
+    site_url="https://example.sharepoint.com/sites/test",
+    site_role="default",
+    source_dbml="schema.dbml",
+    source_mtime="2026-09-06T00:00:00Z",
+    generated_at="2026-09-06T00:00:00Z",
+)
 
 
 def _family_deploy_js() -> str:

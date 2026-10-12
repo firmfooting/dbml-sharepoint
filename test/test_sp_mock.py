@@ -8,19 +8,21 @@ as a script with no defect.
 """
 
 import json
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _sp_mock import UnselectedReadError
 
+from dbml_sharepoint.jsonvalue import JsonValue
+
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
-_ROW = {"Id": 1, "Title": "t", "Hidden": False, "Fields": {"results": []},
+_ROW: dict[str, JsonValue] = {"Id": 1, "Title": "t", "Hidden": False, "Fields": {"results": []},
         "__metadata": {"type": "SP.List"}}
 
 
-def _mock(payload: Any, *, status: int = 200) -> str:
+def _mock(payload: object, *, status: int = 200) -> str:
     """A harness answering every request with `payload`, the way the runtime
     harnesses do: a plain object with `ok`, `status`, `json()` and `text()`."""
     return (
@@ -32,7 +34,7 @@ def _mock(payload: Any, *, status: int = 200) -> str:
     )
 
 
-def _keys(payload: Any, url: str, pick: str, *, method: str = "GET",
+def _keys(payload: object, url: str, pick: str, *, method: str = "GET",
           status: int = 200, accept: str = "application/json;odata=verbose") -> list[str]:
     """The keys the script sees on the row `pick` selects from the answer."""
     out = run_node(
@@ -242,8 +244,8 @@ def test_a_nested_read_has_its_text_projected() -> None:
     assert 'PART {"d":{"results":[{"Title":"t","__metadata":{"type":"SP.List"}}]}}' in out
 
 
-def _answer(payload: Any, url: str, *, method: str = "GET",
-            accept: str = "application/json;odata=verbose") -> dict[str, Any]:
+def _answer(payload: object, url: str, *, method: str = "GET",
+            accept: str = "application/json;odata=verbose") -> Json:
     """The status and body the script sees for `url` when the harness answers `payload`."""
     out = run_node(
         _mock(payload)
@@ -256,11 +258,10 @@ def _answer(payload: Any, url: str, *, method: str = "GET",
         "})();\n"
     )
     line = next(ln for ln in out.splitlines() if ln.startswith("ANSWER"))
-    answer: dict[str, Any] = json.loads(line.removeprefix("ANSWER"))
-    return answer
+    return Json.loads(line.removeprefix("ANSWER"))
 
 
-_EMPTY: dict[str, Any] = {"d": {"results": []}}
+_EMPTY: JsonValue = {"d": {"results": []}}
 
 
 def test_an_absolute_subsite_url_keeps_only_its_server_relative_path() -> None:
@@ -274,7 +275,7 @@ def test_an_absent_list_answers_the_measured_404() -> None:
     answer = _answer({"value": []}, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id",
                      accept="application/json;odata=nometadata")
     assert answer["status"] == 404
-    assert answer["ok"] is False
+    assert answer["ok"].value is False
     assert answer["body"] == {"odata.error": {
         "code": "-1, System.ArgumentException",
         "message": {"lang": "en-US",
@@ -298,7 +299,7 @@ def test_an_unrecorded_list_representation_gets_the_status_and_no_body(
 ) -> None:
     answer = _answer(_EMPTY, url, accept=accept)
     assert answer["status"] == 404
-    assert answer["body"] is None
+    assert answer["body"].is_none
 
 
 @pytest.mark.parametrize("url", [
@@ -316,7 +317,7 @@ def test_an_absent_group_answers_404() -> None:
     """group-description-probe.js's control requires this 404; its body was never recorded."""
     answer = _answer(_EMPTY, "/_api/web/sitegroups/getbyname('Owners')?$select=Id")
     assert answer["status"] == 404
-    assert answer["body"] is None
+    assert answer["body"].is_none
 
 
 @pytest.mark.parametrize("url", [

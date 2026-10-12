@@ -1,8 +1,8 @@
 # test/test_rollbackgen.py
 import json
 import re
-from typing import Any
 
+from _model import RollbackArgs
 from _paths import FIXTURES, GOLDEN_DEPLOYER_VERSION
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
@@ -14,7 +14,7 @@ from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
 
-_COMMON_ARGS: dict[str, Any] = dict(
+_COMMON_ARGS = RollbackArgs(
     site_url="https://example.sharepoint.com/sites/test",
     site_role="default",
     source_dbml="simple.dbml",
