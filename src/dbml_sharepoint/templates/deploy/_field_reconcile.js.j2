@@ -310,6 +310,15 @@
   // ChangeSet part and the single write cannot drift into different routes.
   function declaredFieldCreateOp(listName, field, targetGuid) {
     const listPath = `web/lists/getbytitle('${odataName(listName)}')`;
+    if (field.user_creation_xml) {
+      const spec = field.user_creation_xml;
+      const xml = `<Field Type="${spec.type}" Mult="TRUE" UserSelectionMode="PeopleOnly" `
+        + `DisplayName="${spec.name}" Name="${spec.name}"/>`;
+      return {
+        path: `${listPath}/fields/createfieldasxml`,
+        body: { parameters: { SchemaXml: xml, Options: 8 } },
+      };
+    }
     if (!field.target_list) {
       return { path: `${listPath}/fields`, body: field.body };
     }

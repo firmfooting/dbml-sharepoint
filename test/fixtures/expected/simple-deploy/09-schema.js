@@ -449,5 +449,5 @@
 };
 
   const TYPE_AS_STRING_BY_KIND = new Map([[2, "Text"], [3, "Note"], [4, "DateTime"], [6, "Choice"], [7, "Lookup"], [8, "Boolean"], [9, "Number"], [11, "URL"], [15, "MultiChoice"], [17, "Calculated"], [20, "User"]]);
-  const MULTI_TYPE_AS_STRING_BY_KIND = new Map([[7, "LookupMulti"]]);
+  const MULTI_TYPE_AS_STRING_BY_KIND = new Map([[7, "LookupMulti"], [20, "UserMulti"]]);
   const BASE_TYPE_AS_STRING = new Map([["LookupMulti", "Lookup"]]);

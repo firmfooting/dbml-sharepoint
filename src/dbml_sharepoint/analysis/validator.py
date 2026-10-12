@@ -209,12 +209,13 @@ def _check_column(
             declared_type not in typemap.KNOWN_SCALARS
             and declared_type not in typemap.CALCULATED_TYPES
             # Both arities in one question, and the same one `map_column` asks.
-            # Only an enum or a `ref` qualifies, so `person[]` stays an unknown
-            # type here exactly as it does there. The two must agree: `build`
-            # reports this as a Finding while `report` reaches the raising site
-            # in typemap, and a type one accepts and the other refuses reads as
-            # the two commands disagreeing about the file.
+            # Only an enum, a `ref` or `person[]` qualifies, here and there.
+            # The two must agree: `build` reports this as a Finding while
+            # `report` reaches the raising site in typemap, and a type one
+            # accepts and the other refuses reads as the two commands
+            # disagreeing about the file.
             and typemap.choice_enum_for(col.type, enums) is None
+            and not typemap.is_multi_person(col.type)
             and not is_pk_id
         ):
             findings.append(_report(
@@ -326,6 +327,7 @@ def _check_column(
         # https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
         sp_type = typemap.multi_value_sp_type_name(
             lookup=typemap.is_multi_value_lookup(col, enums),
+            person=typemap.is_multi_person(col.type),
         )
         findings.append(_report(
             FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED,
