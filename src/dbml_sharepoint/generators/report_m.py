@@ -44,6 +44,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     ListPlan,
     build_plans,
     grouped_record_expands,
+    key_identity,
     read_by_another,
     reads_zone,
     tables_for_role,
@@ -71,9 +72,9 @@ def _row_key_m(identity: str, id_expression: str) -> str:
     empty visuals rather than as an error.
 
     The identity is the list's declared URL, lower-cased, when the mapping
-    declares one (``analysis.list_url``), and the list title otherwise. Two
-    lists on one site number their items from 1, so the key must name the
-    list or appended queries collide.
+    declares one (``analysis.list_url``), and ``title:`` plus the title
+    otherwise. Two lists on one site number their items from 1, so the key
+    must name the list or appended queries collide.
 
     ``SiteRoot`` rather than the raw ``SiteUrl``: two operators pasting the
     same site in different shapes must produce the SAME key, or appending
@@ -1021,7 +1022,7 @@ def _fetch_m(
         # are wrong. Format and rationale: `_row_key_m`.
         "    WithRowKey = Table.AddColumn(",
         f'        WithListTitle, "{plan.entity}{REPORT_KEY_SUFFIX}",',
-        f"        each {_row_key_m(plan.list_url or plan.list_title, '[Id]')},",
+        f"        each {_row_key_m(key_identity(plan.list_url, plan.list_title), '[Id]')},",
         "        type text",
         "    )",
     ]
@@ -1046,7 +1047,7 @@ def _fetch_m(
         plan.joins, start=1,
     ):
         step = f"WithFkKey{i}"
-        target_identity = plan.target_identities.get(target_title, target_title)
+        target_identity = plan.target_identities.get(target_title, key_identity('', target_title))
         lines[-1] += ","
         lines += [
             f"    {step} = Table.AddColumn(",

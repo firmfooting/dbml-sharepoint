@@ -133,6 +133,16 @@ when it goes again. The knowledge is not duplicated -- both this and the
 validator ask `analysis/exports.ambiguous_members`, which is the one
 place the rule is written.
 
+### `key_identity`
+
+```python
+def key_identity(list_url: str, list_title: str) -> str
+```
+
+The list half of a row key: the declared URL, else the title behind a prefix.
+
+The prefix keeps a title from ever spelling a declared URL.
+
 ### `is_expand_queryable`
 
 ```python

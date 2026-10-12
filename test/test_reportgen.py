@@ -2175,7 +2175,7 @@ def test_the_row_key_names_the_list_it_came_from() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert _added_column_expression(task, "Task Key") == (
-        'each SiteRoot & "|" & "APP_Task" & "|" & Number.ToText([Id])'
+        'each SiteRoot & "|" & "title:APP_Task" & "|" & Number.ToText([Id])'
     )
     # The defect, spelled out, so a revert cannot pass this file.
     assert 'each SiteRoot & "|" & Number.ToText([Id])' not in task
@@ -2204,6 +2204,26 @@ def test_a_lookup_key_spells_the_target_the_way_the_target_does() -> None:
     own = _added_column_expression(queries["APP_Project.pq"], "Project Key")
     assert '"lists/projects"' in own
     assert '"|" & "lists/projects" & "|"' in queries["APP_Task.pq"]
+
+
+def test_a_title_fallback_never_equals_a_declared_url() -> None:
+    """List A declares `Foo`; list B declares nothing and is titled `foo`."""
+    schema, bundle = _simple()
+    _declare_url(bundle, "Project", "Foo")
+    bundle.mapping.entities["Task"] = replace(bundle.mapping.entities["Task"], title="foo")
+    queries = generate_powerquery(schema, bundle, "default")
+    a = _added_column_expression(queries["APP_Project.pq"], "Project Key")
+    b = _added_column_expression(queries["foo.pq"], "Task Key")
+    assert a != b
+    assert '"foo"' in a
+    assert '"title:foo"' in b
+
+
+def test_item_links_percent_encode_the_declared_path_segments() -> None:
+    schema, bundle = _simple()
+    _declare_url(bundle, "Task", "Lists/Foo#Bar/Q A")
+    plan = next(p for p in build_plans(schema, bundle, "default") if p.entity == "Task")
+    assert plan.item_url_path == "/Lists/Foo%23Bar/Q%20A/DispForm.aspx?ID="
 
 
 def test_a_declared_list_url_sets_the_item_form_path() -> None:
@@ -2251,7 +2271,7 @@ def test_a_lookup_key_is_spelled_the_way_its_target_spells_its_own() -> None:
         "each if [ProjectId] = null then null else "
         + target_key.removeprefix("each ").replace("[Id]", "[ProjectId]")
     )
-    assert '"APP_Project"' in fk
+    assert '"title:APP_Project"' in fk
     assert '"APP_Task"' not in fk
 
 

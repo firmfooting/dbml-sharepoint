@@ -17,6 +17,7 @@ fact both sides need, and a generator must never import from
 """
 
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.derived import (
@@ -257,8 +258,17 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     if entity is not None and entity.is_library:
         return f"/{entity.internal_name or list_title}/Forms/DispForm.aspx?ID="
     if entity is not None and entity.internal_name:
-        return f"/{list_url_path(entity.internal_name)}/DispForm.aspx?ID="
+        segments = list_url_path(entity.internal_name).split("/")
+        return "/" + "/".join(quote(seg, safe="") for seg in segments) + "/DispForm.aspx?ID="
     return f"/Lists/{list_title}/DispForm.aspx?ID="
+
+
+def key_identity(list_url: str, list_title: str) -> str:
+    """The list half of a row key: the declared URL, else the title behind a prefix.
+
+    The prefix keeps a title from ever spelling a declared URL.
+    """
+    return list_url or f"title:{list_title}"
 
 
 def _declared_url(bundle: MappingBundle, entity_name: str) -> str:
@@ -776,8 +786,8 @@ def build_plans(
                     if target in emitted:
                         target_title = bundle.mapping.list_title(target)
                         plan.joins.append((f"{sp.name}Id", target_title, display, projected))
-                        plan.target_identities[target_title] = (
-                            _declared_url(bundle, target) or target_title
+                        plan.target_identities[target_title] = key_identity(
+                            _declared_url(bundle, target), target_title,
                         )
                 case "MultiChoice":
                     # MEASURED 2026-08-10 on a live tenant: the item value
