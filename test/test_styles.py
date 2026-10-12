@@ -5,7 +5,6 @@ import datetime as dt
 import json
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -18,6 +17,7 @@ from dbml_sharepoint.analysis.styles import (
     expand_style,
     parse_theme,
 )
+from dbml_sharepoint.jsonvalue import JsonValue, is_json_value, is_text_keyed
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
     MappingValueError,
@@ -213,7 +213,7 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
      "'not' must be a list"),
     ({"style": "overdue-date", "guard": ["Status"]}, "guard must be a mapping"),
 ])
-def test_invalid_specs_fail_closed_with_context(spec: dict[str, Any], fragment: str) -> None:
+def test_invalid_specs_fail_closed_with_context(spec: dict[str, object], fragment: str) -> None:
     with pytest.raises(ValueError, match=re.escape(fragment)) as err:
         expand_style(spec, "column_formatting.T.C")
     assert "column_formatting.T.C" in str(err.value)
@@ -260,7 +260,7 @@ def test_an_unknown_color_by_token_names_color_by() -> None:
     assert str(err.value).startswith("column_formatting.T.C.color_by: unknown token 'nope'")
 
 
-def _with_map(style: str, value_map: dict[object, object]) -> dict[str, Any]:
+def _with_map(style: str, value_map: dict[object, object]) -> dict[str, object]:
     """A spec of `style` whose value-to-token map is `value_map`."""
     if style == "color_by":
         return {"style": "data-bar", "max": 25,
@@ -375,7 +375,7 @@ def test_theme_token_names_must_be_strings() -> None:
     ({"style": "overdue-date", "gaurd": {"field": "Status", "not": ["Closed"]}}, "gaurd"),
     ({"style": "overdue-date", "guard": {"field": "Status", "nott": ["Closed"]}}, "nott"),
 ])
-def test_style_spec_unknown_keys_are_rejected(spec: dict[str, Any], typo: str) -> None:
+def test_style_spec_unknown_keys_are_rejected(spec: dict[str, object], typo: str) -> None:
     """A style spec silently ignored everything it did not recognise. A
     typo'd `guard:` renders closed rows as overdue (a red flag on work
     that is finished) and `calculated: true` is documented as required for
@@ -400,7 +400,7 @@ def test_theme_override_unknown_keys_are_rejected() -> None:
     ({"style": "data-bar", "max": 25, "calculated": "false"}, "calculated"),
     ({"style": "overdue-date", "calculated": "false"}, "calculated"),
 ])
-def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, Any], key: str) -> None:
+def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, object], key: str) -> None:
     """`bool("false")` is True, so the cautious spelling meant its
     opposite: `calculated: "false"` switched ON the calculated-value
     handling, and `icons: "false"` kept the icons it was written to
@@ -438,7 +438,7 @@ def _accepted_keys() -> dict[str, dict[tuple[str, ...], set[str]]]:
 
 #: One legitimate spec per style, the base every hostile substitution mutates.
 #: Each carries its style's nested mapping so the nested keys get mutated too.
-_LEGITIMATE_SPECS: dict[str, dict[str, Any]] = {
+_LEGITIMATE_SPECS: dict[str, dict[str, object]] = {
     "severity": {"style": "severity", "map": {"Open": "low", "Closed": "good"}},
     "pill": {"style": "pill", "map": {"Open": "low"}},
     "data-bar": {"style": "data-bar", "max": 25,
@@ -452,27 +452,29 @@ _LEGITIMATE_SPECS: dict[str, dict[str, Any]] = {
 }
 
 #: What a hand-written mapping.yaml plausibly holds where a column name belongs.
-_HOSTILE_VALUES: tuple[Any, ...] = (
+_HOSTILE_VALUES: tuple[object, ...] = (
     42, 0, True, None, "", " ", "Two Words", "Bad]Name", "@currentField",
     ["Closed"], {"field": "Status"},
 )
 
 
-def _hostile_corpus() -> list[tuple[str, dict[str, Any]]]:
+def _hostile_corpus() -> list[tuple[str, dict[str, object]]]:
     """Each legitimate spec, plus one copy per accepted key per hostile value."""
     accepted = _accepted_keys()
-    corpus: list[tuple[str, dict[str, Any]]] = []
+    corpus: list[tuple[str, dict[str, object]]] = []
     for style_name, base in _LEGITIMATE_SPECS.items():
         corpus.append((style_name, copy.deepcopy(base)))
         for path, keys in accepted[style_name].items():
             for key in sorted(keys):
                 for hostile in _HOSTILE_VALUES:
                     spec = copy.deepcopy(base)
-                    target: Any = spec
+                    target: object = spec
                     for step in path:
+                        assert is_text_keyed(target), target
                         # KeyError here means the base spec stopped carrying
                         # the nested mapping, so its keys were never mutated.
                         target = target[step]
+                    assert is_text_keyed(target), target
                     target[key] = hostile
                     corpus.append((style_name, spec))
     return corpus
@@ -622,7 +624,7 @@ def test_calculated_date_expression_preserves_the_year(prefix: str) -> None:
     assert _evaluate_scalar(expression, prefix + "2026-09-16T00:00:00Z") == 1789516800000
 
 
-def _evaluate_scalar(expression: str, value: int | str) -> Any:
+def _evaluate_scalar(expression: str, value: int | str) -> JsonValue:
     """Exercise documented scalar operations; this is not a SharePoint renderer."""
     from _node import NODE, run_node
 
@@ -636,10 +638,12 @@ const indexOf = (value, search) => value.indexOf(search);
 const substring = (value, start, end) => value.substring(start, end);
 const choose = (condition, yes, no) => condition ? yes : no;
 """
-    return json.loads(run_node(
+    result = json.loads(run_node(
         script + f"const value = {json.dumps(value)};\n"
         + f"console.log(JSON.stringify({expression}));\n",
     ))
+    assert is_json_value(result), result
+    return result
 
 
 def test_levels_above_target_uses_numeric_severity() -> None:
