@@ -14,7 +14,6 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 
-import dbml_sharepoint.analysis.checks._default_formulas as _default_formulas
 from dbml_sharepoint.analysis.checks._default_formulas import (
     DEFAULT_FORMULA_FUNCTIONS,
     DEFAULT_FORMULA_TYPES,
@@ -299,7 +298,8 @@ def test_widening_the_type_constant_is_the_whole_change(
     measure a Note column, and accepted the moment the constant says so.
     """
     monkeypatch.setattr(
-        _default_formulas, "DEFAULT_FORMULA_TYPES", DEFAULT_FORMULA_TYPES | {"longtext"},
+        "dbml_sharepoint.analysis.checks._default_formulas.DEFAULT_FORMULA_TYPES",
+        DEFAULT_FORMULA_TYPES | {"longtext"},
     )
     assert _own(_formula_findings({"Notes": '="x"'})) == []
 
@@ -309,6 +309,7 @@ def test_widening_the_function_constant_is_the_whole_change(
 ) -> None:
     """The same for a function, with the one the allowlist refuses by name."""
     monkeypatch.setattr(
-        _default_formulas, "DEFAULT_FORMULA_FUNCTIONS", DEFAULT_FORMULA_FUNCTIONS | {"NOW"},
+        "dbml_sharepoint.analysis.checks._default_formulas.DEFAULT_FORMULA_FUNCTIONS",
+        DEFAULT_FORMULA_FUNCTIONS | {"NOW"},
     )
     assert _own(_formula_findings({"Score": "=NOW()"})) == []

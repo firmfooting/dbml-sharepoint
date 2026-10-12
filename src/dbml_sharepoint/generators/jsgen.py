@@ -944,8 +944,10 @@ def build_schema_json(
         display = display_columns.get(table_name)
         if display is not None and display not in indexed:
             indexed.append(display)
-        for col_name in indexed:
-            indexed_columns_out.append({"list": list_title, "field": col_name})
+        indexed_columns_out.extend(
+            {"list": list_title, "field": col_name}
+            for col_name in indexed
+        )
 
         declared_form = bundle.mapping.form_formatting.get(table_name)
         if declared_form is not None:
@@ -1056,8 +1058,8 @@ def build_schema_json(
             views_to_render.insert(0, all_items)
         else:
             views_to_render.append(all_items)
-        for view in views_to_render:
-            views_out.append({
+        views_out.extend(
+            {
                 "list": list_title,
                 "title": view.title,
                 "view_fields": effective_view_fields(view.fields, entity.kind),
@@ -1096,7 +1098,9 @@ def build_schema_json(
                 # Only a library ships a built-in view on AllItems.aspx under
                 # another title (`library.view.builtin-occupies-allitems`).
                 "adopts_builtin_view": view is all_items and entity.is_library,
-            })
+            }
+            for view in views_to_render
+        )
 
     # === Permissions (R5) ===
     permission_levels_out: list[dict[str, Any]] = []
@@ -1133,8 +1137,8 @@ def build_schema_json(
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 
-        for grp in resolved.groups:
-            groups_out.append({
+        groups_out.extend(
+            {
                 "name": grp.name,
                 # The marker is composed HERE, not in the template, so the
                 # emitted JavaScript never has to know which marker shape a
@@ -1162,7 +1166,9 @@ def build_schema_json(
                 "enroll": list(grp.enroll),
                 "enroll_during_run": list(grp.enroll_during_run),
                 "membership": grp.membership,
-            })
+            }
+            for grp in resolved.groups
+        )
 
         acl_scopes_out += _acl_scopes(
             bundle, plan.list_creation_order, site_role, resolved,

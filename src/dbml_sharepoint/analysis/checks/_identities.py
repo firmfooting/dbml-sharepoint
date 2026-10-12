@@ -118,10 +118,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-    for name in sorted(set(declared) - enrolled - set(BUILTIN_IDENTITIES)):
-        findings.append(Finding(
+    findings.extend(
+        Finding(
             FindingCode.IDENTITY_DECLARED_NOT_ENROLLED,
             f"identities: {name!r} is declared but no group enrols it.",
             location=_IDENTITIES,
-        ))
+        )
+        for name in sorted(set(declared) - enrolled - set(BUILTIN_IDENTITIES))
+    )
     return findings

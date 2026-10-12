@@ -1493,7 +1493,7 @@ def test_folder_assessment_avoids_unindexed_queries(object_type: int | None) -> 
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-@pytest.mark.parametrize("endpoint,object_type", [
+@pytest.mark.parametrize(("endpoint", "object_type"), [
     ("GetFolderByServerRelativeUrl", 1), ("GetFileByServerRelativeUrl", None),
     ("/ListItemAllFields", 1),
 ])
@@ -3022,7 +3022,7 @@ def test_a_null_item_count_is_not_read_as_an_empty_list() -> None:
     ], summary["findings"]
 
 
-@pytest.mark.parametrize("root,expected", [
+@pytest.mark.parametrize(("root", "expected"), [
     ("/sites/test/APP_Task", "PASS"), ("/sites/test/Wrong", "BLOCKED"),
     (None, "NOT-ASSESSABLE"),
 ])
@@ -3051,7 +3051,7 @@ def test_assessment_checks_immutable_library_root(root: str | None, expected: st
         assert summary["verdict"] == "BLOCKED"
 
 
-@pytest.mark.parametrize("root,expected", [
+@pytest.mark.parametrize(("root", "expected"), [
     ("/sites/test/Lists/APP_Task", "PASS"), ("/sites/test/Lists/Other", "BLOCKED"),
 ])
 def test_assessment_checks_a_declared_list_root_against_its_own_template(
@@ -3079,7 +3079,7 @@ def test_assessment_checks_a_declared_list_root_against_its_own_template(
     assert "template 100" in finding["detail"] or expected == "PASS"
 
 
-@pytest.mark.parametrize("folder,file,expected", [
+@pytest.mark.parametrize(("folder", "file", "expected"), [
     (False, False, "PASS"), (True, False, "BLOCKED"),
     (False, True, "BLOCKED"), (None, False, "NOT-ASSESSABLE"),
 ])

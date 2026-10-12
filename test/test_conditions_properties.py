@@ -21,7 +21,7 @@ properties alone could not catch a dropped null arm.
 """
 
 from typing import Any
-from xml.etree import ElementTree
+from xml.etree import ElementTree as ET
 
 import pytest
 from _conditions import kinds
@@ -400,10 +400,14 @@ def test_rendering_either_returns_a_formula_or_fails_closed(
     what `_push`'s unknown-operator branch exists to prevent, and nothing was
     holding the renderers to the same standard.
     """
+    rendered: str | None = None
+    refusal: ValueError | None = None
     try:
         rendered = _RENDER[target](condition, COLUMN_TYPES)
     except ValueError as err:
-        assert target in str(err), f"refusal must name the target: {err}"
+        refusal = err
+    if refusal is not None:
+        assert target in str(refusal), f"refusal must name the target: {refusal}"
         return
     assert isinstance(rendered, str)
     assert rendered.strip() != ""
@@ -444,7 +448,7 @@ def test_caml_renders_well_formed_xml(condition: Condition) -> None:
     # S314: the input is CAML this repository just generated from a closed
     # strategy, not untrusted data. defusedxml would be a dependency added to
     # parse our own output.
-    ElementTree.fromstring(  # noqa: S314
+    ET.fromstring(  # noqa: S314
         f"<Where>{to_caml(condition, COLUMN_TYPES)}</Where>",
     )
 

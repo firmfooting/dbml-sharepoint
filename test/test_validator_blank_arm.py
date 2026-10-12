@@ -21,7 +21,6 @@ from _findings import none_of, only
 from _packs import blocks, entities, pack
 from _ratchet import Ratchet
 
-import dbml_sharepoint.analysis.checks._retirement as _retirement
 from dbml_sharepoint.analysis.checks._retirement import GRANDFATHERED_BLANK_ARMS
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping
@@ -139,7 +138,9 @@ def test_the_grandfather_list_is_exactly_the_shipped_violations(
     something with a roster, and a pair naming nothing is already reported as
     turned, because a column that does not exist violates nothing.
     """
-    monkeypatch.setattr(_retirement, "GRANDFATHERED_BLANK_ARMS", frozenset())
+    monkeypatch.setattr(
+        "dbml_sharepoint.analysis.checks._retirement.GRANDFATHERED_BLANK_ARMS", frozenset(),
+    )
     fired = set()
     for solution in available_solutions():
         schema = parse_dbml(solution.schema_path)

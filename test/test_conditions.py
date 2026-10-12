@@ -724,7 +724,7 @@ def test_a_zoned_unquoted_yaml_datetime_is_refused_showing_the_zone_as_read() ->
     )
     shown = "datetime.datetime(2026, 7, 29, 14, 30, tzinfo=datetime.timezone.utc)"
     for render in (to_caml, to_validation, to_expression):
-        with pytest.raises(ValueError) as err:
+        with pytest.raises(ValueError, match="is an unquoted YAML datetime; quote it") as err:
             render(condition, TYPES)
         assert f"{shown} is an unquoted YAML datetime; quote it." in str(err.value)
 

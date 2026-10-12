@@ -179,7 +179,8 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     the same shape as any two readers disagreeing about one declaration.
     Comments asserted the agreement; this asserts it.
     """
-    import dbml_sharepoint.analysis.checks._demo as _demo
+    import importlib
+
     from dbml_sharepoint.analysis.condition_rendering import _TODAY
     from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
     from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
@@ -188,6 +189,7 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     assert _TODAY_OFFSET is TODAY_SENTINEL
     # Through `vars`: the question is whether the module binds the name itself,
     # which attribute access through a module that only imported it hides.
+    _demo = importlib.import_module("dbml_sharepoint.analysis.checks._demo")
     assert vars(_demo)["TODAY_SENTINEL"] is TODAY_SENTINEL
 
 
@@ -321,7 +323,7 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     """
     from typing import Any
 
-    import pytest as _pytest
+    import pytest
 
     from dbml_sharepoint.generators.demogen import _field_plan
 
@@ -329,7 +331,7 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
         None, 123, "", "   ", {"url": None}, {"url": ""},
     ]
     for refused in refused_by_planner:
-        with _pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^Link:"):
             _field_plan("hyperlink", "Link", refused)
 
     accepted: list[Any] = [
@@ -349,5 +351,5 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     # planner is the laxer of the two there rather than the stricter.
     refused_on_a_multi_value_column: list[Any] = ["View", None, 3]
     for refused in refused_on_a_multi_value_column:
-        with _pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^Events:"):
             _field_plan("audit_event[]", "Events", refused)

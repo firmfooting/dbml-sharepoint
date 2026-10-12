@@ -100,7 +100,7 @@ def test_a_release_key_that_is_not_text_is_refused_before_the_unknown_keys(
         name="release.yaml",
     )
     path = tmp_path / "release.yaml"
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match="; quote it") as err:
         load_release(path)
     assert str(err.value) == f"{path}: {read}; quote it"
 
@@ -115,7 +115,7 @@ def test_a_release_key_yaml_1_2_reads_as_text_is_an_unknown_key(tmp_path: Path) 
         name="release.yaml",
     )
     path = tmp_path / "release.yaml"
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match=r"unknown key\(s\)") as err:
         load_release(path)
     assert str(err.value) == (
         f"{path}: unknown key(s) ['No'] (known: ['date', 'deployer_version', "

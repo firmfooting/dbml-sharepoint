@@ -606,25 +606,29 @@ def _mapping_and_schema_agree(vc: ValidationContext) -> list[Finding]:
     """Every mapping entity needs a table, and every table a mapping entry."""
     findings: list[Finding] = []
     # Every entity in the mapping must exist in the schema.
-    for entity_name in vc.bundle.mapping.entities:
-        if entity_name not in vc.table_names:
-            findings.append(Finding(
-                FindingCode.ENTITY_NOT_IN_SCHEMA,
-                f"Mapping references unknown entity: {entity_name}",
-                location=Location(Section.ENTITIES, entity=entity_name),
-            ))
+    findings.extend(
+        Finding(
+            FindingCode.ENTITY_NOT_IN_SCHEMA,
+            f"Mapping references unknown entity: {entity_name}",
+            location=Location(Section.ENTITIES, entity=entity_name),
+        )
+        for entity_name in vc.bundle.mapping.entities
+        if entity_name not in vc.table_names
+    )
 
     # ...and every schema table must have a mapping entry (opposite direction).
     # build_schema_json silently skips unmapped tables, so an unmapped schema
     # entity would otherwise be dropped from the deploy plan without any error.
-    for table in vc.schema.tables:
-        if table.name not in vc.bundle.mapping.entities:
-            findings.append(Finding(
-                FindingCode.UNMAPPED_SCHEMA_TABLE,
-                f"Schema table {table.name} has no mapping entry in "
-                "sharepoint-mapping.yaml (would be omitted from the deploy plan).",
-                location=Location(Section.SCHEMA, entity=table.name),
-            ))
+    findings.extend(
+        Finding(
+            FindingCode.UNMAPPED_SCHEMA_TABLE,
+            f"Schema table {table.name} has no mapping entry in "
+            "sharepoint-mapping.yaml (would be omitted from the deploy plan).",
+            location=Location(Section.SCHEMA, entity=table.name),
+        )
+        for table in vc.schema.tables
+        if table.name not in vc.bundle.mapping.entities
+    )
     return findings
 
 
@@ -935,12 +939,14 @@ def _duplicate_indexes(
     findings: list[Finding] = []
     names = [target.column for target in targets]
     duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
-    for duplicate in duplicates:
-        findings.append(Finding(
+    findings.extend(
+        Finding(
             FindingCode.DUPLICATE_INDEX_TARGET,
             f"{entity_name}.indexes: duplicate index target {duplicate!r}.",
             location=Location(Section.SCHEMA, entity=entity_name, sub="indexes"),
-        ))
+        )
+        for duplicate in duplicates
+    )
     # Unique fields carry an implicit SharePoint index and count toward
     # the same per-list ceiling as explicit declarations.
     for duplicate in sorted(set(names) & unique_indexes):
@@ -1193,15 +1199,17 @@ def _polymorphic_patterns(vc: ValidationContext) -> list[Finding]:
 def _versioning_overrides(vc: ValidationContext) -> list[Finding]:
     """A versioning override keyed by a name no list carries is read by nobody."""
     findings: list[Finding] = []
-    for entity_name in vc.bundle.mapping.versioning_overrides:
-        if entity_name not in vc.tables_by_name:
-            findings.append(Finding(
-                FindingCode.UNKNOWN_ENTITY,
-                f"versioning.overrides: unknown entity {entity_name!r} -- the "
-                f"override is read by nobody, so the real list keeps the "
-                f"defaults.",
-                location=Location(Section.VERSIONING, sub="overrides"),
-            ))
+    findings.extend(
+        Finding(
+            FindingCode.UNKNOWN_ENTITY,
+            f"versioning.overrides: unknown entity {entity_name!r} -- the "
+            f"override is read by nobody, so the real list keeps the "
+            f"defaults.",
+            location=Location(Section.VERSIONING, sub="overrides"),
+        )
+        for entity_name in vc.bundle.mapping.versioning_overrides
+        if entity_name not in vc.tables_by_name
+    )
     return findings
 
 
@@ -1327,8 +1335,8 @@ def _calculated_formula(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
         ))
-    for ref in sorted(refs - rendered - builtins):
-        findings.append(Finding(
+    findings.extend(
+        Finding(
             FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
             f"{table.name}.{col.name}: calculated formula references "
             f"[{ref}], which is not a rendered column of "
@@ -1337,7 +1345,9 @@ def _calculated_formula(
             location=Location(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
-        ))
+        )
+        for ref in sorted(refs - rendered - builtins)
+    )
     findings += _formula_operands(table, col, refs, rendered, columns_by_name)
     # A DEFERRED lookup exists by the end of the deploy but not when
     # this field is created. jsgen orders calculated fields only
@@ -1448,17 +1458,19 @@ def _formula_targets(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     for entity_name, cols in vc.bundle.mapping.calculated_formulas.items():
         calc_names = vc.calculated_by_entity.get(entity_name, set())
-        for col_name in cols:
-            if col_name not in calc_names:
-                findings.append(Finding(
-                    FindingCode.FORMULA_TARGET_NOT_CALCULATED,
-                    f"calculated_formulas[{entity_name}]: {col_name!r} is not "
-                    f"a calculated column of {entity_name} -- its DBML type "
-                    f"must be one of {CALCULATED_TYPE_LIST}.",
-                    location=Location(
-                        Section.CALCULATED_FORMULAS, entity=entity_name,
-                    ),
-                ))
+        findings.extend(
+            Finding(
+                FindingCode.FORMULA_TARGET_NOT_CALCULATED,
+                f"calculated_formulas[{entity_name}]: {col_name!r} is not "
+                f"a calculated column of {entity_name} -- its DBML type "
+                f"must be one of {CALCULATED_TYPE_LIST}.",
+                location=Location(
+                    Section.CALCULATED_FORMULAS, entity=entity_name,
+                ),
+            )
+            for col_name in cols
+            if col_name not in calc_names
+        )
         findings += _formula_cycle(entity_name, cols, calc_names)
     return findings
 

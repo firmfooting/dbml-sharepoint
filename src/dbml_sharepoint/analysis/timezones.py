@@ -145,9 +145,11 @@ def suggest_zones(name: str, *, limit: int = 3) -> tuple[str, ...]:
         return ()
     lowered = wanted.lower()
     found: list[str] = []
-    for zone in sorted(known_zones()):
-        if zone.lower() == lowered or zone.rsplit("/", 1)[-1].lower() == lowered:
-            found.append(zone)
+    found.extend(
+        zone
+        for zone in sorted(known_zones())
+        if zone.lower() == lowered or zone.rsplit("/", 1)[-1].lower() == lowered
+    )
     for zone in get_close_matches(wanted, sorted(known_zones()), n=limit, cutoff=0.6):
         if zone not in found:
             found.append(zone)

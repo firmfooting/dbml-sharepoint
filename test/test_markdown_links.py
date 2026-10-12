@@ -50,7 +50,9 @@ def test_every_command_named_in_markdown_outside_the_docs_site_exists() -> None:
     named = re.compile(r"`dbml-sharepoint ([a-z][a-z-]*)")
     unknown = []
     for name in _tracked_markdown():
-        for match in named.finditer((REPO_ROOT / name).read_text(encoding="utf-8")):
-            if match.group(1) not in commands:
-                unknown.append(f"{name}: dbml-sharepoint {match.group(1)}")
+        unknown.extend(
+            f"{name}: dbml-sharepoint {match.group(1)}"
+            for match in named.finditer((REPO_ROOT / name).read_text(encoding="utf-8"))
+            if match.group(1) not in commands
+        )
     assert unknown == []

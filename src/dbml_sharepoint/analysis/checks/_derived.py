@@ -112,17 +112,19 @@ def _one(
 ) -> list[Finding]:
     findings: list[Finding] = []
     where = f"derived_columns.{entity}[{index}]"
-    for name in derived_output_names(entry):
-        if name in available:
-            findings.append(Finding(
-                FindingCode.DERIVED_NAME_COLLIDES,
-                f"{where}: {name!r} is already a column of this list's "
-                f"report query. A derived column is ADDED, so a name that "
-                f"is taken fails the refresh rather than overwriting it. "
-                f"Rename it, or set `replace: true` to compute over the "
-                f"column that is there.",
-                location=_at(entity, name),
-            ))
+    findings.extend(
+        Finding(
+            FindingCode.DERIVED_NAME_COLLIDES,
+            f"{where}: {name!r} is already a column of this list's "
+            f"report query. A derived column is ADDED, so a name that "
+            f"is taken fails the refresh rather than overwriting it. "
+            f"Rename it, or set `replace: true` to compute over the "
+            f"column that is there.",
+            location=_at(entity, name),
+        )
+        for name in derived_output_names(entry)
+        if name in available
+    )
     if entry.kind == "expr":
         findings += _expr(entry, entity, where, available)
         return findings

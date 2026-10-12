@@ -83,9 +83,11 @@ def compute_phases(
     for src in table_names:
         for dst in edges[src]:
             if final_order.index(src) < final_order.index(dst):
-                for col in by_name[src].columns:
-                    if col.ref is not None and col.ref.target_table == dst:
-                        deferred.append((src, col.name))
+                deferred.extend(
+                    (src, col.name)
+                    for col in by_name[src].columns
+                    if col.ref is not None and col.ref.target_table == dst
+                )
 
     plan = DeployPlan()
     plan.list_creation_order = final_order

@@ -138,13 +138,15 @@ def _view_dependencies(
     for title, fields, remedy in views:
         if col_name not in fields:
             continue
-        for missing in sorted(references - fields):
-            findings.append(Finding(
+        findings.extend(
+            Finding(
                 FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
                 f"{ctx}: view {title!r} displays {col_name!r} but omits "
                 f"formatter dependency {missing!r}. {remedy}",
                 location=Location(Section.VIEWS, entity=entity_name, view=title),
-            ))
+            )
+            for missing in sorted(references - fields)
+        )
     return findings
 
 
@@ -222,13 +224,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at,
                 ))
             findings.extend(_view_dependencies(bundle, entity_name, col_name, formatter, rendered))
-            for ref in sorted(formatter_field_refs(formatter) - rendered):
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.FORMATTER_FIELD_NOT_RENDERED,
                     f"{ctx}: formatter references [${ref}], which is not a "
                     f"rendered column of {entity_name}.",
                     location=at,
-                ))
+                )
+                for ref in sorted(formatter_field_refs(formatter) - rendered)
+            )
 
     # Style specs: a severity/pill map naming a choice the enum does not
     # contain is a declaration bug (same ethos as [$Field] checking);
@@ -351,13 +355,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                 members = style_enum_members.get(types_by_col.get(source, ""))
                 if members is None:
                     continue
-                for unknown in _keys_outside(block, members):
-                    findings.append(Finding(
+                findings.extend(
+                    Finding(
                         map_rule.code,
                         f"{ctx}: {map_rule.label} {unknown!r} is not a member of "
                         f"enum {types_by_col[source]!r}.",
                         location=at,
-                    ))
+                    )
+                    for unknown in _keys_outside(block, members)
+                )
             for ref_rule in registered.column_refs:
                 block = _nested(spec, ref_rule.at)
                 if block is None:
@@ -397,13 +403,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                 Section.FORM_FORMATTING, entity=entity_name, sub=part_name,
             )
             refs = formatter_field_refs(part_json)
-            for ref in sorted(refs - rendered):
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.FORMATTER_FIELD_NOT_RENDERED,
                     f"{ctx}: references [${ref}], which is not a rendered "
                     f"column of {entity_name}.",
                     location=at,
-                ))
+                )
+                for ref in sorted(refs - rendered)
+            )
             # A calculated column reads as an empty string in a header or
             # footer, established on a live tenant against a saved item
             # that had a value. Nothing errors there: the part renders and
@@ -415,8 +423,8 @@ def check(vc: ValidationContext) -> list[Finding]:
             # NAMES rather than reading values, so a calculated column in a
             # section renders on the Display form as intended.
             if part_name in ("header", "footer"):
-                for ref in sorted(refs & calculated_by_entity.get(entity_name, set())):
-                    findings.append(Finding(
+                findings.extend(
+                    Finding(
                         FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN,
                         f"{ctx}: references [${ref}], a calculated column. "
                         f"Calculated columns resolve to an empty string in a "
@@ -424,7 +432,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"with no error. Show it through column_formatting "
                         f"in a body section instead.",
                         location=at,
-                    ))
+                    )
+                    for ref in sorted(refs & calculated_by_entity.get(entity_name, set()))
+                )
         if form.body is not None:
             sections = form.body.get("sections")
             body_at = Location(

@@ -114,7 +114,7 @@ def test_a_ref_to_a_missing_table_is_reported_in_our_own_words(
         }
     """)
 
-    with pytest.raises(ValueError) as raised:
+    with pytest.raises(ValueError, match=r"targets table .Nope.") as raised:
         parse_dbml(path)
 
     message = str(raised.value)
@@ -133,7 +133,7 @@ def test_a_duplicate_table_is_reported_in_our_own_words(tmp_path: Path) -> None:
         }
     """)
 
-    with pytest.raises(ValueError) as raised:
+    with pytest.raises(ValueError, match="declared more than once") as raised:
         parse_dbml(path)
 
     message = str(raised.value)
@@ -151,7 +151,7 @@ def test_a_ref_error_cites_the_line_when_it_can_find_it(tmp_path: Path) -> None:
         }
     """)
 
-    with pytest.raises(ValueError) as raised:
+    with pytest.raises(ValueError, match=r"targets table .Nope.") as raised:
         parse_dbml(path)
 
     # Line 5 is the `Owner ... [ref: > Nope.Id]` line: the dedented block

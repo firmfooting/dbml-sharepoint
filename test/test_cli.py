@@ -334,9 +334,11 @@ def test_help_text_is_ascii() -> None:
             for attr in ("help", "short_help", "epilog")
             if isinstance(value := getattr(command, attr, None), str)
         ]
-        for param in getattr(command, "params", ()):
-            if isinstance(value := getattr(param, "help", None), str):
-                found.append((f"{path} {param.name} help", value))
+        found.extend(
+            (f"{path} {param.name} help", value)
+            for param in getattr(command, "params", ())
+            if isinstance(value := getattr(param, "help", None), str)
+        )
         for name, sub in getattr(command, "commands", {}).items():
             found.extend(texts(sub, f"{path} {name}"))
         return found
@@ -442,6 +444,7 @@ def test_version_command_available_on_direct_module_run() -> None:
         [sys.executable, "-m", "dbml_sharepoint.cli", "version"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     # Compare against the package version rather than a literal so

@@ -46,7 +46,7 @@ ALL_TEMPLATES = sorted(
 KNOWN_CONTEXT = {
     # every generator (provenance + identity)
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
-    # jsgen (deploy.js)
+    # jsgen, for deploy.js
     "schema_json", "phases",
     # The assessment's inputs, imported from assessgen so deploy.js and
     # assess.js cannot disagree about the same site.
@@ -97,7 +97,7 @@ KNOWN_CONTEXT = {
     "deployment_log_list", "deployment_log_change_list",
     "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
-    # extractgen (extract.js)
+    # extractgen, for extract.js
     "list_paths", "live_format", "download_name",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
@@ -293,12 +293,11 @@ def _path_consts() -> dict[str, str]:
     One level of indirection is all the templates use, and all this resolves.
     A second level would show up as an unresolvable suffix below, which fails.
     """
-    found: dict[str, str] = {}
-    for rel in ALL_TEMPLATES:
-        text = (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
-        for name, value in _PATH_CONST.findall(text):
-            found[name] = value
-    return found
+    return {
+        name: value
+        for rel in ALL_TEMPLATES
+        for name, value in _PATH_CONST.findall((TEMPLATES_DIR / rel).read_text(encoding="utf-8"))
+    }
 
 
 def _family(suffix: str, consts: dict[str, str], where: str) -> str:

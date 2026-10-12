@@ -100,7 +100,7 @@ def _render_sql_enriched(plan: ListPlan) -> str:
     for i, (fk_col, target_title, display, projections) in enumerate(
         plan.joins, start=1,
     ):
-        target_title = target_title.replace("]", "]]")
+        escaped_title = target_title.replace("]", "]]")
         alias = f"j{i}"
         base = fk_col.removesuffix("Id")
         select_lines.append(f"    {alias}.[{display}] AS [{base}{display}]")
@@ -116,7 +116,7 @@ def _render_sql_enriched(plan: ListPlan) -> str:
             for target_column in projections
         ]
         join_lines.append(
-            f"LEFT JOIN [$(ReportSchema)].[vw_{target_title}] AS {alias}\n"
+            f"LEFT JOIN [$(ReportSchema)].[vw_{escaped_title}] AS {alias}\n"
             f"    ON t.[{fk_col}] = {alias}.[Id]",
         )
     return (
@@ -199,10 +199,10 @@ def _render_user_added_columns_sql(plans: list[ListPlan], prefix: str) -> str:
     expected_rows = []
     for plan in plans:
         names = ["Id"] + [name for name, _ in plan.sql_columns]
-        for name in dict.fromkeys(names):
-            expected_rows.append(
-                f"    ({_sql_string(plan.list_title)}, {_sql_string(name)})",
-            )
+        expected_rows.extend(
+            f"    ({_sql_string(plan.list_title)}, {_sql_string(name)})"
+            for name in dict.fromkeys(names)
+        )
     # Emitting SQL text is this generator's purpose; identifiers come
     # from the validated schema, never from runtime user input.
     return (

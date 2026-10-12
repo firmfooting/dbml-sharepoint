@@ -167,15 +167,15 @@ def public_definitions(module_name: str) -> list[tuple[str, str]]:
                 defs.append(("class", node.name))
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                # Public constants only: lowercase top-level assignments
-                # are wiring (e.g. typer apps), not API.
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id.isupper()
-                    and not target.id.startswith("_")
-                ):
-                    defs.append(("constant", target.id))
+            # Public constants only: lowercase top-level assignments
+            # are wiring (e.g. typer apps), not API.
+            defs.extend(
+                ("constant", target.id)
+                for target in targets
+                if isinstance(target, ast.Name)
+                and target.id.isupper()
+                and not target.id.startswith("_")
+            )
     return defs
 
 

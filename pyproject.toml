@@ -114,8 +114,8 @@ target-version = "py315"
 # enforced cannot rot; a rule that lives in a document can.
 select = [
   "A", "ANN", "B", "BLE", "C4", "C901", "DTZ", "E", "F", "FURB", "I", "ISC",
-  "N", "PIE", "PLC0415", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID251", "TID252",
-  "UP", "W",
+  "N", "PIE", "PLC", "PLE", "PLW", "PLR", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID251",
+  "TID252", "UP", "W", "TRY", "PGH", "LOG", "G", "PT", "PERF", "ERA", "INP", "SLF", "ICN", "PYI",
 ]
 ignore = [
   # MEASURED 2026-08-17: 58 sites across the linted roots, most of them on a
@@ -128,6 +128,12 @@ ignore = [
   # because `Any` satisfies the protocol in both directions and conformance
   # tests cannot see it come back.
   "ANN401",
+  "TRY003",  # org-wide: the long operator-facing error prose is the product
+  "TRY004",  # org-wide: every config failure funnels into one ValueError-shaped refusal
+  "PT018",
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917",  # org-wide: complexity is held by C901
+  "PLR2004",
+  "ISC001",  # org-wide: the formatter is on
   "UP037",  # quotes keep TYPE_CHECKING-only names inspectable; 3.14+ evaluates annotations lazily
   "B008",  # typer.Option in defaults is the framework idiom
   "C408",  # dict(key=...) literals are deliberate where used
@@ -161,9 +167,9 @@ ban-relative-imports = "all"
 
 # The three it is holding, each ASSERTED by test/test_complexity_ratchet.py,
 # which measures them with this same ruff rather than restating them:
-#   `_formatting.py::check` at 54
-#   `_views.py::check` at 53
-#   `_permissions.py::check` at 42
+#   `_formatting.py::check` at 50
+#   `_views.py::check` at 50
+#   `_permissions.py::check` at 40
 # They were prose once, and three of the four numbers had rotted (#311).
 
 # Two functions left the three on 2026-09-13 with #14. `jsgen.py::build_schema_json`
@@ -181,7 +187,7 @@ ban-relative-imports = "all"
 # Deliberately NOT the default of 10. That flags 35 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
-max-complexity = 54
+max-complexity = 50
 
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: RE-MEASURED 2026-09-14 after the jsgen
@@ -191,7 +197,7 @@ max-complexity = 54
 # `wizard.py` and two in `extract/wizard.py` break a genuine cycle with
 # `cli.py` (#171), and seven in `bundle.py` keep that module importable for its
 # packaging helpers without pulling in the whole generation stack.
-"test/**" = ["S101", "PLC0415"]
+"test/**" = ["S101", "PLC0415", "PLR2004", "SLF", "INP"]
 "src/dbml_sharepoint/model/_yaml.py" = ["TID251"]  # the one module that parses YAML
 "test/test_yaml_loading.py" = ["TID251"]  # the parser's own test, compares it with ruamel.yaml's loader
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print

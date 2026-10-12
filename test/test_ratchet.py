@@ -7,6 +7,7 @@ That is the same failure the ratchets exist to catch, one level up, which is
 why the logic is pinned directly rather than through any gate that uses it.
 """
 
+import pytest
 from _ratchet import Ratchet
 
 R = Ratchet(
@@ -79,9 +80,5 @@ def test_all_three_problems_are_reported_together() -> None:
 
 
 def test_check_raises_what_problems_returns() -> None:
-    try:
+    with pytest.raises(AssertionError, match="b"):
         R.check(recorded=set(), violating={"b"}, universe={"b"})
-    except AssertionError as raised:
-        assert "b" in str(raised)
-    else:  # pragma: no cover - the assert above is the contract
-        raise AssertionError("check() accepted an unrecorded violation")
