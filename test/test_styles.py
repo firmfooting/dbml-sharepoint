@@ -183,7 +183,7 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
     assert "toLocaleDateString(Date(if(" in out["children"][1]["txtContent"]
 
 
-@pytest.mark.parametrize("spec, fragment", [
+@pytest.mark.parametrize(("spec", "fragment"), [
     ({"style": "nope"}, "unknown style"),
     # The shape before the word: a list is not a style spelled wrongly, and
     # `str()` on one reported it as the unknown style "['severity']".
@@ -214,7 +214,7 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
     ({"style": "overdue-date", "guard": ["Status"]}, "guard must be a mapping"),
 ])
 def test_invalid_specs_fail_closed_with_context(spec: dict[str, Any], fragment: str) -> None:
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match=re.escape(fragment)) as err:
         expand_style(spec, "column_formatting.T.C")
     assert "column_formatting.T.C" in str(err.value)
     assert fragment in str(err.value)
@@ -325,7 +325,7 @@ def test_theme_overrides_tokens() -> None:
 
 
 def test_theme_rejects_unknown_tokens() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"unknown token .shiny."):
         parse_theme({"shiny": {"classes": ["x"]}}, "style_theme")
 
 
@@ -364,7 +364,7 @@ def test_theme_token_names_must_be_strings() -> None:
         parse_theme({1: {"classes": ["x"]}}, "style_theme")
 
 
-@pytest.mark.parametrize("spec, typo", [
+@pytest.mark.parametrize(("spec", "typo"), [
     ({"style": "severity", "map": {"A": "good"}, "calculatd": True}, "calculatd"),
     ({"style": "severity", "map": {"A": "good"}, "icon": False}, "icon"),
     ({"style": "pill", "map": {"A": "good"}, "calculated": True}, "calculated"),
@@ -391,7 +391,7 @@ def test_theme_override_unknown_keys_are_rejected() -> None:
         parse_theme({"good": {"classes": ["x"], "icons": "Emoji2"}}, "style_theme")
 
 
-@pytest.mark.parametrize("spec, key", [
+@pytest.mark.parametrize(("spec", "key"), [
     ({"style": "severity", "map": {"A": "good"}, "calculated": "false"}, "calculated"),
     ({"style": "severity", "map": {"A": "good"}, "icons": "false"}, "icons"),
     ({"style": "data-bar", "max": 25,
@@ -604,7 +604,7 @@ def test_a_field_name_ending_in_a_newline_is_refused() -> None:
         )
 
 
-@pytest.mark.parametrize("value, expected", [
+@pytest.mark.parametrize(("value", "expected"), [
     (25, 25), ("25", 25), ("float;#25", 25),
     (4, 4), ("4", 4), ("float;#4", 4),
     (0, 0), ("0", 0), ("float;#0", 0),

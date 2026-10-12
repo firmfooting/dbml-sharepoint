@@ -229,7 +229,7 @@ def test_a_tag_is_refused_in_a_journey_s_front_matter(
         f"---\ntitle: J\nsummary: S\nsolutions: [a]\n{_TAGGED}\n---\n", encoding="utf-8",
     )
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match="front matter") as err:
         catalogue.available_journeys()
     assert str(err.value) == f"{journey}: front matter {_HEADER}\n{_found(5, 4)}"
 
@@ -391,7 +391,7 @@ def test_valid_yaml_the_loader_refuses_in_a_journey_is_worded_as_refused(
     journey = journeys / "j.md"
     journey.write_text(f"---\ntitle: J\nsummary: S\n{text}\n---\n", encoding="utf-8")
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match="front matter is refused") as err:
         catalogue.available_journeys()
     assert str(err.value).startswith(f"{journey}: front matter is refused: {problem}")
 

@@ -323,7 +323,7 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     """
     from typing import Any
 
-    import pytest as _pytest
+    import pytest
 
     from dbml_sharepoint.generators.demogen import _field_plan
 
@@ -331,7 +331,7 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
         None, 123, "", "   ", {"url": None}, {"url": ""},
     ]
     for refused in refused_by_planner:
-        with _pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^Link:"):
             _field_plan("hyperlink", "Link", refused)
 
     accepted: list[Any] = [
@@ -351,5 +351,5 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     # planner is the laxer of the two there rather than the stricter.
     refused_on_a_multi_value_column: list[Any] = ["View", None, 3]
     for refused in refused_on_a_multi_value_column:
-        with _pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^Events:"):
             _field_plan("audit_event[]", "Events", refused)

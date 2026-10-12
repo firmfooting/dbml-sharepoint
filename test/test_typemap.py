@@ -151,7 +151,7 @@ def test_enum_typed_column_is_choice() -> None:
 
 
 def test_unknown_type_raises() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"unknown type .not_a_real_type."):
         map_column(Column(name="Bad", type="not_a_real_type"), ENUM_NAMES)
 
 
@@ -248,7 +248,7 @@ def test_both_unknown_type_sites_say_the_same_thing(tmp_path: Path) -> None:
     findings = validate_all(schema, bundle, BaseExtension())
     message = only(findings, FindingCode.UNKNOWN_COLUMN_TYPE).message
 
-    with pytest.raises(ValueError) as raised:
+    with pytest.raises(ValueError, match=r"unknown type .decimal.") as raised:
         map_column(
             next(c for c in schema.tables[0].columns if c.name == "Cost"), set(),
         )

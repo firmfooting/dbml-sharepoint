@@ -1367,7 +1367,7 @@ def test_manifest_lists_default_formulas() -> None:
     assert f"re-applied in Phase {pn('defaults')}" in md
 
 
-@pytest.mark.parametrize("role,visible", [("default", True), ("finance", False)])
+@pytest.mark.parametrize(("role", "visible"), [("default", True), ("finance", False)])
 def test_retention_title_precedes_another_roles_entity(role: str, visible: bool) -> None:
     schema = make_schema(make_table("Current", "Title"), make_table("Archive", "Title"))
     bundle = make_bundle(

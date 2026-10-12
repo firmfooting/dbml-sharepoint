@@ -819,9 +819,8 @@ def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.chdir(tmp_path)
 
 
-def test_cli_report_writes_queries_and_docs(
-    tmp_path: Path, _cwd_has_no_env_file: None,
-) -> None:
+@pytest.mark.usefixtures("_cwd_has_no_env_file")
+def test_cli_report_writes_queries_and_docs(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app
@@ -852,9 +851,8 @@ def test_cli_report_writes_queries_and_docs(
     assert "[vw_APP_UserAddedColumns]" in views
 
 
-def test_cli_report_works_without_release(
-    tmp_path: Path, _cwd_has_no_env_file: None,
-) -> None:
+@pytest.mark.usefixtures("_cwd_has_no_env_file")
+def test_cli_report_works_without_release(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app
@@ -871,9 +869,8 @@ def test_cli_report_works_without_release(
     assert (out / "data-dictionary.md").exists()
 
 
-def test_cli_report_rejects_unknown_site_role(
-    tmp_path: Path, _cwd_has_no_env_file: None,
-) -> None:
+@pytest.mark.usefixtures("_cwd_has_no_env_file")
+def test_cli_report_rejects_unknown_site_role(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app
@@ -3127,7 +3124,7 @@ def test_report_endpoints_encode_url_metacharacters() -> None:
     assert endpoint + "/RootFolder" in query
 
 
-@pytest.mark.parametrize("title,reason", [
+@pytest.mark.parametrize(("title", "reason"), [
     ("APP_DataDictionary", "collides"), ("A" * 126, "exceeds 128"),
     ("List$(SiteUrl)", "SQLCMD"),
 ])

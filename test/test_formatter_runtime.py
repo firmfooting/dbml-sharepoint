@@ -69,7 +69,7 @@ BANDS = {"style": "numeric-severity", "calculated": True,
          "otherwise": "severe"}
 
 
-@pytest.mark.parametrize("value, treatment", [
+@pytest.mark.parametrize(("value", "treatment"), [
     (-1, "good"), (0, "good"), (0.5, "warning"), (1, "warning"), (2, "severeWarning"),
     ("float;#0", "good"), ("float;#1", "warning"), ("float;#2", "severeWarning"),
     ("number;#0", "good"),
@@ -92,7 +92,7 @@ def test_numeric_bands_hide_empty_values(value: str) -> None:
 
 
 @pytest.mark.parametrize("calculated", [False, True])
-@pytest.mark.parametrize("value, width", [(-1, "0%"), (0, "0%"), (1, "4%"),
+@pytest.mark.parametrize(("value", "width"), [(-1, "0%"), (0, "0%"), (1, "4%"),
                                           (12.5, "50%"), (25, "100%"), (30, "100%")])
 def test_bar_bounds_preserve_the_label(calculated: bool, value: float, width: str) -> None:
     cell = render({"style": "data-bar", "max": 25, "calculated": calculated},
@@ -124,7 +124,7 @@ def test_calculated_colour_source_matches_exactly() -> None:
     assert "severeWarning" in render(spec, 25, {"Rating": "string;#High"})["attributes"]["class"]
 
 
-@pytest.mark.parametrize("current, baseline, icon", [
+@pytest.mark.parametrize(("current", "baseline", "icon"), [
     (0, 0, ""), (1, 0, "SortUp"), (0, 1, "SortDown"), ("bad", 1, ""), (1, "bad", ""),
     (1, "", ""), ("float;#2", "float;#1", "SortUp"),
 ])
@@ -136,7 +136,7 @@ def test_trend_operands(current: Any, baseline: Any, icon: str) -> None:
         assert cell["children"][0]["attributes"]["class"] == ""
 
 
-@pytest.mark.parametrize("value, display, icon", [
+@pytest.mark.parametrize(("value", "display", "icon"), [
     ("", "none", ""), ("datetime;#", "none", ""), ("bad", "flex", ""),
     ("2026-09-15T00:00:00Z", "flex", "Warning"),
     ("datetime;#2026-09-15T00:00:00Z", "flex", "Warning"),
@@ -178,7 +178,7 @@ def test_current_styles_round_trip(spec: dict[str, Any]) -> None:
     {"bands": [{"max": 1, "token": "good", "typo": 1}]},
 ])
 def test_invalid_bands_fail_closed(changes: dict[str, Any]) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"^test: "):
         expand_style({**BANDS, **changes}, "test")
 
 
@@ -193,7 +193,7 @@ def test_nonfinite_numeric_configuration_is_refused(value: Any) -> None:
     for spec in ({"style": "trend", "against": value},
                  {**BANDS, "bands": [{"max": value, "token": "good"}]},
                  {"style": "data-bar", "max": value}):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^test: "):
             expand_style(spec, "test")
 
 
@@ -213,7 +213,7 @@ def test_visual_probe_generation(tmp_path: Any) -> None:
         assert json.loads(raw)["debugMode"] is True
 
 
-@pytest.mark.parametrize("value, display, icon", [
+@pytest.mark.parametrize(("value", "display", "icon"), [
     ("", "none", ""),
     ("2026-09-15", "flex", "Warning"),
     ("2026-09-15T09:30:00Z", "flex", "Warning"),
@@ -244,7 +244,7 @@ def test_native_date_references_are_not_reparsed(ref: str) -> None:
     assert calculated.value.startswith("Date(if(")
 
 
-@pytest.mark.parametrize("value, label", [
+@pytest.mark.parametrize(("value", "label"), [
     ("Section;#Closed", "Section;#Closed"),
     ("unknown;#Closed", "unknown;#Closed"),
     ("Sectionstring;#Closed", "Sectionstring;#Closed"),
@@ -262,7 +262,7 @@ def test_calculated_text_only_strips_a_leading_known_prefix(value: str, label: s
     assert ("sp-field-severity--good" in bar["attributes"]["class"]) == (label == "Closed")
 
 
-@pytest.mark.parametrize("spec, value", [
+@pytest.mark.parametrize(("spec", "value"), [
     (BANDS, "Section;#1"),
     ({"style": "data-bar", "max": 25, "calculated": True}, "unknown;#25"),
     ({"style": "overdue-date", "calculated": True}, "Section;#2026-09-15T00:00:00Z"),
@@ -275,7 +275,7 @@ def test_embedded_delimiters_do_not_turn_invalid_scalars_into_valid_values(
     assert cell["children"][-1]["txtContent"] == value
 
 
-@pytest.mark.parametrize("current, baseline", [("unknown;#2", 1), (2, "unknown;#1")])
+@pytest.mark.parametrize(("current", "baseline"), [("unknown;#2", 1), (2, "unknown;#1")])
 def test_trend_does_not_strip_unknown_operand_prefixes(current: Any, baseline: Any) -> None:
     cell = render({"style": "trend", "against": "Baseline", "calculated": True,
                    "against_calculated": True}, current, {"Baseline": baseline})

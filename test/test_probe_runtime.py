@@ -8234,8 +8234,8 @@ def test_library_columns_failed_control_preserves_independent_observations(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-@pytest.mark.parametrize("column,value", [("choice", "Beta"), ("lookup", "1")])
-@pytest.mark.parametrize("control_status,expected", [(400, "FAIL"), (429, "NOT ESTABLISHED")])
+@pytest.mark.parametrize(("column", "value"), [("choice", "Beta"), ("lookup", "1")])
+@pytest.mark.parametrize(("control_status", "expected"), [(400, "FAIL"), (429, "NOT ESTABLISHED")])
 def test_library_column_metadata_refusals_require_control(
     column: str, value: str, control_status: int, expected: str,
 ) -> None:

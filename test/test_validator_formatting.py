@@ -892,7 +892,7 @@ def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
     assert by_severity(validate_against_mapping(schema, bundle), "error") == []
 
 
-@pytest.mark.parametrize("column_type, spec", [
+@pytest.mark.parametrize(("column_type", "spec"), [
     ("nvarchar", "{style: data-bar, max: 25}"),
     ("person", "{style: data-bar, max: 25}"),
     ("int[]", "{style: trend, against: 2}"),
@@ -917,7 +917,7 @@ def test_scalar_styles_reject_incompatible_targets(
     assert finding.location == Location(Section.COLUMN_FORMATTING, entity="Risk", column="Value")
 
 
-@pytest.mark.parametrize("styled, spec, scalar_type", [
+@pytest.mark.parametrize(("styled", "spec", "scalar_type"), [
     ("Baseline", "{style: data-bar, max: 25}", "number"),
     ("Baseline", "{style: numeric-severity, bands: [{max: 1, token: good}], otherwise: severe}",
      "number"),
@@ -959,7 +959,7 @@ def test_scalar_style_inputs_follow_documented_lookup_shape(
                                                 entity="Risk", column=styled)
 
 
-@pytest.mark.parametrize("calculated, expected", [(False, True), (True, False)])
+@pytest.mark.parametrize(("calculated", "expected"), [(False, True), (True, False)])
 def test_calculated_trend_operand_requires_its_decoder(
     tmp_path: Path, calculated: bool, expected: bool,
 ) -> None:
@@ -984,7 +984,7 @@ def test_calculated_trend_operand_requires_its_decoder(
     assert not any(f.code == FindingCode.STYLE_INPUT_TYPE_MISMATCH for f in findings)
 
 
-@pytest.mark.parametrize("fields, missing", [
+@pytest.mark.parametrize(("fields", "missing"), [
     ("Title, Score", True), ("Title, Score, Baseline", False), ("Title", False),
 ])
 @pytest.mark.parametrize("formatter", [
@@ -1041,9 +1041,9 @@ def test_explicit_lookup_property_formatting_remains_available(tmp_path: Path) -
     )
 
 
-@pytest.mark.parametrize("kind, template", [("List", 100), ("DocumentLibrary", 101)])
+@pytest.mark.parametrize(("kind", "template"), [("List", 100), ("DocumentLibrary", 101)])
 @pytest.mark.parametrize("dependency", ["Author", "Editor", "Baseline", "BaselineTitle"])
-@pytest.mark.parametrize("hidden, missing", [("", False), ("DEPENDENCY", True),
+@pytest.mark.parametrize(("hidden", "missing"), [("", False), ("DEPENDENCY", True),
                                              ("DEPENDENCY, Target", False)])
 def test_generated_all_items_checks_hidden_formatter_dependencies(
     tmp_path: Path, kind: str, template: int, dependency: str, hidden: str, missing: bool,
@@ -1120,7 +1120,7 @@ def test_readable_fields_without_formatter_deployment_are_rejected(
                for f in findings)
 
 
-@pytest.mark.parametrize("kind, template", [("List", 100), ("DocumentLibrary", 101)])
+@pytest.mark.parametrize(("kind", "template"), [("List", 100), ("DocumentLibrary", 101)])
 @pytest.mark.parametrize("surface", ["column", "row"])
 def test_implicit_docicon_is_readable_only_in_library_formatters(
     tmp_path: Path, kind: str, template: int, surface: str,

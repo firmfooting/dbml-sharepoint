@@ -223,7 +223,7 @@ def test_a_journey_declaring_a_key_twice_is_refused(
     )
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(ValueError, match="front matter is not valid YAML") as err:
         catalogue.available_journeys()
     message = str(err.value)
     assert message.startswith(f"{journey}: front matter is not valid YAML: "), message

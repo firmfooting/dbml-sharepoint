@@ -400,10 +400,14 @@ def test_rendering_either_returns_a_formula_or_fails_closed(
     what `_push`'s unknown-operator branch exists to prevent, and nothing was
     holding the renderers to the same standard.
     """
+    rendered: str | None = None
+    refusal: ValueError | None = None
     try:
         rendered = _RENDER[target](condition, COLUMN_TYPES)
     except ValueError as err:
-        assert target in str(err), f"refusal must name the target: {err}"
+        refusal = err
+    if refusal is not None:
+        assert target in str(refusal), f"refusal must name the target: {refusal}"
         return
     assert isinstance(rendered, str)
     assert rendered.strip() != ""

@@ -133,7 +133,7 @@ def test_a_named_library_is_deployed_and_navigated_under_its_own_title(tmp_path:
     "title: '../escape'", "title: '   '",
 ])
 def test_library_identity_rejects_invalid_names(tmp_path: Path, spec: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"^entities\.Doc\.(internal_name|title)"):
         pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=f"""
             entities:
               Doc:
