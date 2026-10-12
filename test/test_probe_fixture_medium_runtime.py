@@ -1174,3 +1174,70 @@ def test_threshold_index_establishes_its_lists_and_columns() -> None:
     _assert_held(rows, _TI_LISTS)
     _assert_held(rows, _TI_COLUMNS)
     assert rows["scale.index.fixture-indexes-set"]["outcome"] == "CONFIRMED"
+
+
+# --------------------------------------------------------------------------
+# library-lookup-write-probe: an incomplete fixture stops the run, and a whole-item
+# read that fails for a reason other than a refusal settles nothing.
+# --------------------------------------------------------------------------
+_LOOKUP_WRITE = "library-lookup-write-probe.js"
+_WHOLE_READ_ID = "library.lookup.control-whole-item-read-before-lookups"
+
+#: The shared mock plus item MERGE and per-item reads, and a configurable whole-item read.
+_LOOKUP_WRITE_MOCK = _MOCK + textwrap.dedent("""
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      const upload = new RegExp("^web/lists/getbytitle\\\\('([^']+)'\\\\)/RootFolder/Files/add"
+        + "\\\\(url='([^']+)'").exec(path);
+      if (upload && lists.get(upload[1])) {
+        const library = lists.get(upload[1]);
+        SENT.push({ verb: 'POST', path, body: '' });
+        library.items.push({ Id: library.nextItem, FileLeafRef: upload[2], Title: null });
+        library.nextItem += 1;
+        return jsonResponse(200, { Name: upload[2] });
+      }
+      const item = /^web\\/lists\\/getbytitle\\('([^']+)'\\)\\/items\\((\\d+)\\)(.*)$/.exec(path);
+      const list = item && lists.get(item[1]);
+      const held = list && list.items.find((row) => row.Id === Number(item[2]));
+      if (!held) return baseFetch(url, opts);
+      const verb = (opts.headers || {})['X-HTTP-Method'] || opts.method || 'GET';
+      if (verb === 'MERGE') {
+        SENT.push({ verb, path, body: String(opts.body) });
+        Object.assign(held, JSON.parse(String(opts.body)));
+        return jsonResponse(204, {});
+      }
+      if (item[3].includes('$select')) return jsonResponse(200, held);
+      if (list.BaseTemplate === 100 && CONFIG.wholeStatus !== undefined) {
+        SENT.push({ verb, path, body: '' });
+        if (CONFIG.wholeStatus === 0) throw new TypeError('network down');
+        return refusal(CONFIG.wholeStatus, 'whole item read');
+      }
+      return jsonResponse(200, held);
+    };
+""")
+
+
+def test_an_incomplete_lookup_write_fixture_aborts_before_any_measurement() -> None:
+    """The shared mock serves no item MERGE, so the titled file never takes its Title."""
+    rows, sent = _run_probe(_MOCK, {}, _LOOKUP_WRITE)
+
+    assert rows["library.lookup.fixture-write-containers-ready"]["outcome"] == "FAIL"
+    assert not [r for r in sent if "fields/addfield" in r["path"]], sent
+    unsettled = [row for row_id, row in rows.items()
+                 if row_id != "library.lookup.fixture-write-containers-ready"
+                 and row["outcome"] != "PASS"]
+    assert unsettled
+    assert {row["outcome"] for row in unsettled} == {"ABORTED"}, unsettled
+
+
+@pytest.mark.parametrize(
+    ("status", "outcome"),
+    [(0, "NOT ESTABLISHED"), (401, "NOT ESTABLISHED"), (429, "NOT ESTABLISHED"), (500, "FAILS")],
+)
+def test_a_whole_item_read_settles_only_on_a_server_refusal(status: int, outcome: str) -> None:
+    rows, _sent = _run_probe(_LOOKUP_WRITE_MOCK, {"wholeStatus": status}, _LOOKUP_WRITE)
+
+    fixture = rows["library.lookup.fixture-write-containers-ready"]
+    assert fixture["outcome"] == "PASS", fixture
+    assert rows[_WHOLE_READ_ID]["outcome"] == outcome, rows[_WHOLE_READ_ID]

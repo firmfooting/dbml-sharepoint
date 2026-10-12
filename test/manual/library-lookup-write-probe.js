@@ -12,7 +12,7 @@
  *   measured for ONE column, ONE method and ONE file shape, and a family
  *   that shipped two such columns rested on the create alone.
  *
- * REVISION: b8ed4396
+ * REVISION: ecfd86f5
  *
  * WHY: `analysis/checks/_naming.py` accepts `display_column: FileLeafRef` on a
  * document library because the create is measured. Whether a user can then
@@ -633,7 +633,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision b8ed4396. Quote this when reporting results.');
+  log('INFO', 'probe revision ecfd86f5. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic note in the header.
   const LIB = 'dbmlsp Probe LibWrite Lib';
@@ -1090,15 +1090,15 @@
     && targetRowId !== null && mergeRowId !== null && formRowId !== null
     && plainId !== null && titledId !== null && titledTitle === TITLED_TITLE;
   answer('library.lookup.fixture-write-containers-ready', fixtureReady ? 'PASS' : 'FAIL', notes.join('; '));
-  if (target.id === null || source.id === null || libId === null || mergeRowId === null || formRowId === null) {
-    return abortEverything(`a container or row this probe writes on was never created: ${notes.join('; ')}`);
+  if (!fixtureReady) {
+    return abortEverything(`the fixture is incomplete, so no measurement could be trusted: ${notes.join('; ')}`);
   }
 
   // A whole-item read, the one shape no shipped consumer sends, asked three
   // times as the list gains columns so a failure can be attributed.
   const wholeRead = async (id, when) => {
     const res = await spGetText(`${srcPath}/items(${mergeRowId})`);
-    answer(id, readFailed(res) ? 'FAILS' : 'ANSWERS',
+    answer(id, !readFailed(res) ? 'ANSWERS' : isRefusal(res.status) ? 'FAILS' : 'NOT ESTABLISHED',
            `items(${mergeRowId}) with no $select, ${when}: HTTP ${res.status}`
            + (readFailed(res) ? ` ${spError(res)}` : ''));
   };

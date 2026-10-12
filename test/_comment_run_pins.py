@@ -157,9 +157,6 @@ PINNED: dict[str, list[str]] = {
         "84213a6d8142",
         "87215d42feff",
     ],
-    "src/dbml_sharepoint/analysis/lookups.py": [
-        "b2d43a793a24",
-    ],
     "src/dbml_sharepoint/analysis/permissions.py": [
         "7fc8fdcccbcf",
         "d0823f0eb40c",

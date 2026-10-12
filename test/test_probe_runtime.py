@@ -9891,20 +9891,29 @@ def test_a_list_created_under_a_title_that_was_rebound_is_not_adopted() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_create_that_answers_without_an_id_still_claims_the_list() -> None:
-    """What a list POST returns is not measured on a live tenant, so the
-    cross-check above cannot be a prerequisite. The run says which evidence it
-    claimed the list on and carries on."""
-    rows, urls, output = _run_operator_grant_probe(createOmitsId=True)
+def test_a_create_that_answers_without_an_id_aborts_rather_than_adopting_the_title() -> None:
+    """With no claimed Id the title read-back would be adopted unchecked."""
+    rows, urls, _output = _run_operator_grant_probe(createOmitsId=True)
 
-    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
-    assert any(
-        line.startswith("[INFO] ")
-        and "the list create did not answer with an Id" in line
-        and f"claimed as list {_OPERATOR_CREATED_LIST_ID}" in line
-        for line in output.splitlines()
-    ), output
-    assert not _unbracketed(urls), _unbracketed(urls)
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert "carried no list Id" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_requested_cleanup_that_does_not_reset_the_list_aborts() -> None:
+    """A failed reset must not fall through to reusing the list it was meant to clear."""
+    rows, urls, _output = _run_operator_grant_probe(
+        cleanup=True, listExists=True, cleanupIdReadMismatch=True,
+    )
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert "was not reset" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
