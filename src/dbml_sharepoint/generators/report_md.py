@@ -227,8 +227,8 @@ def generate_reporting_md(
          "everywhere. The report still renders. The numbers are just "
          "wrong. The `... Key` columns are `Site Url`, the list's declared URL "
          "(its **list title** when none is declared) and the id together, "
-         "which is unique across any number of sites and lists, and they are why the relationships below are safe to "
-         "append."),
+         "which is unique across any number of sites and lists, and they are "
+         "why the relationships below are safe to append."),
         "",
         "## Relationships (Power BI model)",
         "",
