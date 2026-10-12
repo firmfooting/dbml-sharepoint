@@ -3,17 +3,24 @@ the server-relative form.
 
 Shared for the reason joins.py is: the report generator builds the key in M and
 pro builds the same key in a flow expression, and a rule written twice drifts.
-The input is the mapping's declared web-relative root folder URL.
+The input is the mapping's declared web-relative root folder URL, written decoded.
 """
+import re
 from unicodedata import category
-from urllib.parse import unquote
 
 from dbml_sharepoint.model.errors import MappingValueError
 
+_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
+
 
 def list_url_path(declared: str) -> str:
-    """The declared URL decoded, with slashes normalised, in its declared case."""
-    text = unquote(declared).strip().replace("\\", "/")
+    """The declared URL with slashes normalised, in its declared case."""
+    # Learn documents % as legal in a name, so decoding would alias two lists.
+    if _ESCAPE.search(declared):
+        raise MappingValueError(
+            f"list URL {declared!r} holds a %XX escape; write the decoded form",
+        )
+    text = declared.strip().replace("\\", "/")
     if "|" in text:
         raise MappingValueError(f"list URL {declared!r} holds '|', which the key splits on")
     if any(category(c) == "Cc" for c in text):
