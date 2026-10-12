@@ -242,6 +242,8 @@ class _Composer(Composer):
         self._enclosing: dict[str, StreamMark] = {}
         # How many levels each composed collection nests, itself included.
         self._height: dict[Node, int] = {}
+        # The depth at which the entries of the `<<` list being composed stand.
+        self._merge_list: int | None = None
 
     def _refuse_tag(self, tag: str, mark: StreamMark, *, scalar: bool) -> None:
         """Record an explicit `tag`, which would read its value by rules of its own."""
@@ -287,8 +289,32 @@ class _Composer(Composer):
             # ruamel.yaml composes a key with no index, and reads a sequence key as a tuple.
             self._refuse_collection_key(parent, event)
         if isinstance(event, AliasEvent) and event.anchor in self.anchors:
-            self._refuse_deep_alias(self.anchors[event.anchor], event.start_mark)
-        return super().compose_node(parent, index)
+            self._refuse_deep_alias(
+                self.anchors[event.anchor], event.start_mark, self._merged_levels(parent, index),
+            )
+        listed = (
+            isinstance(parent, MappingNode) and index is not None and _is_merge(index)
+            and isinstance(event, SequenceStartEvent)
+        )
+        if listed:
+            self._merge_list = self._depth + 1
+        node: Node = super().compose_node(parent, index)
+        if listed:
+            self._merge_list = None
+        return node
+
+    def _merged_levels(self, parent: Node | None, index: Node | None) -> int:
+        """How many levels above an alias standing here its collection's pairs join the document.
+
+        A merged mapping's pairs join the mapping that merges it, so a source stands
+        at that mapping's level: one above the alias for `<<: *a`, two above it for
+        `<<: [*a]`, where the list is not built.
+        """
+        if isinstance(parent, MappingNode) and index is not None and _is_merge(index):
+            return 1
+        if isinstance(parent, SequenceNode) and self._depth == self._merge_list:
+            return 2
+        return 0
 
     def _refuse_collection_key(self, mapping: MappingNode, event: Event) -> None:
         """Refuse a sequence or mapping key of `mapping`, marked where it or its alias is."""
@@ -302,9 +328,12 @@ class _Composer(Composer):
                 f"found a {kind} used as a key; a key must be a single value", event.start_mark,
             )
 
-    def _refuse_deep_alias(self, aliased: Node, mark: StreamMark) -> None:
-        """Refuse an alias whose collection, standing where the alias does, nests past the limit."""
-        room = _MAX_DEPTH - self._depth
+    def _refuse_deep_alias(self, aliased: Node, mark: StreamMark, lifted: int) -> None:
+        """Refuse an alias whose collection, standing where the alias does, nests past the limit.
+
+        `lifted` is how many levels higher a merge source stands than the alias.
+        """
+        room = _MAX_DEPTH - self._depth + lifted
         if self._height.get(aliased, 0) <= room:
             return
         # Down the deepest branch to the collection that would stand one level past the limit.
@@ -357,11 +386,29 @@ class _Composer(Composer):
         return node
 
 
+def _is_merge(key: Node) -> bool:
+    """Whether `key` is the merge key `<<`."""
+    return key.tag == _MERGE_TAG
+
+
 def _children(node: Node) -> list[Node]:
-    """The nodes a sequence or mapping holds, a mapping's keys among them."""
+    """The nodes that stand one level below a sequence or mapping, a mapping's keys among them.
+
+    A merged mapping's pairs join the mapping that merges it, so they stand
+    at its level and are listed in place of the merge.
+    """
     if isinstance(node, MappingNode):
         pairs: list[tuple[Node, Node]] = node.value
-        return [part for pair in pairs for part in pair]
+        found: list[Node] = []
+        for key, value in pairs:
+            if not _is_merge(key):
+                found += [key, value]
+                continue
+            sources: list[Node] = value.value if isinstance(value, SequenceNode) else [value]
+            for source in sources:
+                if isinstance(source, MappingNode):
+                    found += _children(source)
+        return found
     items: list[Node] = node.value
     return items
 
