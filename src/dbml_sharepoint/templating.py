@@ -9,8 +9,10 @@ in exactly one place.
 """
 
 import re
+from collections import ChainMap
+from collections.abc import MutableMapping
 from pathlib import Path
-from typing import cast
+from typing import override
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -58,7 +60,17 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("|", "&#124;").replace("\n", " ")
 
 
-def script_env(application: str = APPLICATION_NAME) -> Environment:
+class ScriptEnvironment(Environment):
+    """Jinja types `globals` by its defaults, which rejects data, so ours sit beside them."""
+
+    script_globals: dict[str, object]
+
+    @override
+    def make_globals(self, d: MutableMapping[str, object] | None) -> ChainMap[str, object]:
+        return ChainMap(super().make_globals(d), self.script_globals)
+
+
+def script_env(application: str = APPLICATION_NAME) -> ScriptEnvironment:
     """Environment for every generated artifact (scripts and manifests).
 
     `application` is the identity the artifacts stamp; the version is the distribution's.
@@ -67,18 +79,18 @@ def script_env(application: str = APPLICATION_NAME) -> Environment:
     # No autoescape by design: these templates emit JavaScript and
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).
-    env = Environment(
+    env = ScriptEnvironment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         undefined=StrictUndefined,
-        autoescape=False,  # noqa: S701 (see comment above)
+        autoescape=False,
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
     )
     env.filters["comment_safe"] = comment_safe
     env.filters["markdown_cell"] = markdown_cell
-    # Jinja types `globals` by its defaults, but it stores any value; nothing reads it back typed.
-    env_globals = cast("dict[str, object]", env.globals)
+    env_globals: dict[str, object] = {}
+    env.script_globals = env_globals
 
     # A GLOBAL rather than a per-render argument, because the fact belongs to
     # every script that reconciles a field and no generator should be able to

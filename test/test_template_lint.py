@@ -31,7 +31,7 @@ from jinja2 import Environment, TemplateSyntaxError, meta, nodes
 
 from dbml_sharepoint.analysis.phases import DEPLOY_GROUPS
 from dbml_sharepoint.model.parser import Table, TableIndex
-from dbml_sharepoint.templating import TEMPLATES_DIR, script_env
+from dbml_sharepoint.templating import TEMPLATES_DIR, ScriptEnvironment, script_env
 
 SRC_DIR = TEMPLATES_DIR.parent
 REPO_ROOT = TEMPLATES_DIR.parents[2]
@@ -130,7 +130,7 @@ def _source(rel: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def env() -> Environment:
+def env() -> ScriptEnvironment:
     return script_env()
 
 
@@ -200,11 +200,11 @@ def test_generated_dataclass_docs_preserve_constructor_semantics() -> None:
     assert "= list()" not in table_docs
 
 
-def test_template_variables_are_known_context(env: Environment) -> None:
+def test_template_variables_are_known_context(env: ScriptEnvironment) -> None:
     failures: list[str] = []
     for rel in ALL_TEMPLATES:
         tree = env.parse(_source(rel), name=rel)
-        unknown = meta.find_undeclared_variables(tree) - KNOWN_CONTEXT
+        unknown = meta.find_undeclared_variables(tree) - KNOWN_CONTEXT - set(env.script_globals)
         if unknown:
             failures.append(f"{rel}: unknown variable(s) {sorted(unknown)}")
     assert not failures, (
