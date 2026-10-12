@@ -30,11 +30,10 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     ListPlan,
     build_plans,
-    read_by_another,
     tables_for_role,
 )
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
@@ -146,10 +145,11 @@ def generate_reporting_md(
         ("1. **Manage Parameters -> New parameter**: a *Text* parameter named "
          "`SiteUrl` holding the **site** URL, e.g. "
          "`https://tenant.sharepoint.com/sites/YourSite` (no trailing slash). "
-         "That is the site, not a list or a page. Note the address bar shows the "
-         "*list* URL (`.../Lists/YourList`) while you are looking at a list; "
-         "each query trims that back to the site for you, so a pasted list, "
-         "form, page or API URL still works.")
+         "That is the bare site root, not a list or a page. The address bar "
+         "shows the *list* URL (`.../Lists/YourList`) while you are looking "
+         "at a list, which is not the site root; a list, form, page or API "
+         "URL, or a trailing slash, fails the refresh with the error "
+         "`SiteUrl.NotSiteRoot`.")
         if site_url is None else
         ("1. **Nothing to configure.** Each query already carries the site it "
          f"was built for (`{site_url}`) as its first line. See *Reporting on "
@@ -338,7 +338,6 @@ def generate_reporting_md(
         "Long names use a digest suffix. Cross-query references use the same names. "
          "SQL view names must remain distinct from metadata views and within 128 characters."),
         "",
-        *_loading_warning(plans),
         *_reads_paragraphs(plans),
         *_date_zone_guide_paragraphs(time_zone),
         "",
@@ -392,45 +391,6 @@ def generate_reporting_md(
 # ---------------------------------------------------------- Data dictionary
 
 
-def _base_example(plans: list[ListPlan]) -> tuple[str, str] | None:
-    """A list of this build that has a base function, with that function's name.
-
-    The loading warning names a real file of the build, so the operator can
-    check it against the folder rather than translate an invented one. A
-    build in which no query reads another list emits no base function, so
-    there is nothing to warn about and this returns None.
-    """
-    based = read_by_another(plans)
-    if not based:
-        return None
-    return based[0].list_title, base_query_name(based[0].list_title)
-
-
-def _loading_warning(plans: list[ListPlan]) -> list[str]:
-    """The warning to load each query under its file's name, or nothing."""
-    example = _base_example(plans)
-    if example is None:
-        return []
-    example_title, example_base = example
-    return [
-        ":::warning Load each query under the name of its file",
-        ("A query that reads another list calls that list's base function "
-         f"by name, so `{example_base}.pq` must be loaded as `{example_base}` "
-         f"for a query that reads `{example_title}` to resolve. Renaming it "
-         "breaks every derived column that reads it, at refresh, and the "
-         "error names only the first missing import. A base function fetches "
-         "the list's rows for the site URL it is given, keyed like the list's "
-         "query and without its reporting-only columns. No query reads "
-         "another query, because two queries that read each other are a "
-         "cyclic reference that only a refresh can see. Power BI does not "
-         "load a function to the model. A duplicated query pointed at "
-         "another site calls each base with that site, so its reporting-only "
-         "columns read that site's rows without further editing."),
-        ":::",
-        "",
-    ]
-
-
 def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
     """Which names each query reads, so a consumer that loads the files
     under names of its own knows what to rewrite before the refresh tells
@@ -441,7 +401,7 @@ def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
     for plan in plans:
         reads: list[str] = []
         for step in plan.derived:
-            if step.reads and step.reads not in reads:
+            if step.reads and not step.reads_base and step.reads not in reads:
                 reads.append(step.reads)
         if reads:
             named = ", ".join(f"`{name}`" for name in reads)
@@ -449,9 +409,7 @@ def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
     if not rows:
         return []
     return [
-        ("Queries that read other queries or base functions, and the names "
-         "they read them under. No base function reads anything, so no "
-         "chain of reads returns to where it started:"),
+        "Queries that read other queries, and the names they read them under:",
         "",
         *rows,
         "",

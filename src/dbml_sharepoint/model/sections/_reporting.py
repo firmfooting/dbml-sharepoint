@@ -6,7 +6,7 @@ The deploy reads neither, which is why this is the family
 consumes a section rather than how long it is.
 """
 
-from typing import Any
+from collections.abc import Mapping
 
 from dbml_sharepoint.analysis.derived import DERIVED_AGGREGATES, DERIVED_TYPES
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
@@ -18,7 +18,7 @@ from dbml_sharepoint.model.errors import (
 )
 from dbml_sharepoint.model.mapping_types import DerivedColumn, ReportingOptions
 from dbml_sharepoint.model.reading import optional_bool, optional_str, strict_bool, strict_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _DERIVED_KEYS: dict[str, frozenset[str]] = {
     "expr": frozenset({
@@ -35,7 +35,7 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
 }
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     derived_columns = _parse_derived_columns(sc.block("derived_columns"))
     reporting = _parse_reporting(sc.block("reporting"))
     return {"reporting": reporting, "derived_columns": derived_columns}
@@ -54,7 +54,7 @@ REMOVED_TIME_ZONE_KEY_MESSAGE = (
 )
 
 
-def _parse_reporting(block: Any) -> ReportingOptions:
+def _parse_reporting(block: object) -> ReportingOptions:
     section = _require_mapping(block, "reporting")
     # Refused by name, before the generic unknown-key check can call it a
     # typo: the key existed, and the author needs to know where it went.
@@ -69,7 +69,7 @@ def _parse_reporting(block: Any) -> ReportingOptions:
     })
 
 
-def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
+def _derived_text(item: Mapping[str, object], key: str, where: str) -> str:
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
         raise MappingShapeError(
@@ -78,7 +78,7 @@ def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
     return value
 
 
-def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
+def _parse_derived_column(raw_item: object, where: str) -> DerivedColumn:
     """One `derived_columns` entry, refused rather than defaulted.
 
     SHAPE ONLY. Whether the entity exists, whether `via` really is a lookup
@@ -86,7 +86,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     SEMANTIC questions, and they belong to the validator, which can say them
     all at once with locations rather than aborting on the first.
     """
-    item = _require_mapping(item, where)
+    item = _require_mapping(raw_item, where)
     kind = item.get("kind")
     # A kind that is not there is a required key missing, not a word declined.
     if kind is None:
@@ -141,12 +141,15 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
         types = _require_mapping(item.get("types"), f"{where}.types")
         if not pick:
             raise MappingShapeError(f"{where}: pick must name at least one column")
+        picked: dict[str, str] = {}
+        typed: dict[str, str] = {}
         for new_name, source in pick.items():
             if not isinstance(source, str) or not source.strip():
                 raise MappingShapeError(
                     f"{where}.pick.{new_name} must be a non-empty string, "
                     f"got {source!r}",
                 )
+            picked[new_name] = source
             declared = types.get(new_name)
             # Every picked column is typed, so none can reach the query as
             # `type any` and load as an Error in every populated cell.
@@ -167,6 +170,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
                     f"{where}.types.{new_name} must be one of "
                     f"{', '.join(sorted(DERIVED_TYPES))}, got {declared!r}",
                 )
+            typed[new_name] = declared
         unknown = set(types) - set(pick)
         if unknown:
             raise MappingReferenceError(
@@ -178,8 +182,8 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             from_entity=_derived_text(item, "from", where),
             via=via,
             key=join_key,
-            pick=dict(pick),
-            types=dict(types),
+            pick=picked,
+            types=typed,
             hidden=hidden,
             description=description,
         )
@@ -221,7 +225,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     )
 
 
-def _parse_derived_columns(raw: Any) -> dict[str, list[DerivedColumn]]:
+def _parse_derived_columns(raw: object) -> dict[str, list[DerivedColumn]]:
     """The `derived_columns` section: {entity: [column, ...]}."""
     out: dict[str, list[DerivedColumn]] = {}
     for entity, items in _require_mapping(raw, "derived_columns").items():

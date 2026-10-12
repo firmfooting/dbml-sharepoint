@@ -31,6 +31,7 @@ from functools import cache
 from typing import Any
 
 import pytest
+from _narrow import as_dict, as_list
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
@@ -567,7 +568,7 @@ def test_every_body_section_name_comes_from_the_arc(template: str) -> None:
             continue  # a missing body is the form_formatting test's complaint
         names = [
             str(section.get("displayname", ""))
-            for section in body.get("sections", [])
+            for section in as_list(body.get("sections", []))
             if isinstance(section, dict)
         ]
         # The cap counts SECTIONS, and a beat may span consecutive ones, so
@@ -1994,16 +1995,17 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
     stem at load, so the wizard's rewrite of `prefix:` renames the groups
     and levels with the lists. A stem typed in ("RR Risk Managers") would
     survive that rewrite and leave a site with ACME_ lists and RR groups."""
-    raw = _yaml.safe_load(
+    raw = as_dict(_yaml.safe_load(
         (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
         .read_text(encoding="utf-8"),
-    )
+    ))
     typed = [
-        g["name"] for g in (raw.get("groups") or [])
-        if g["name"] not in SHARED_GROUPS and not str(g["name"]).startswith("{prefix} ")
+        as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
+        if as_dict(g)["name"] not in SHARED_GROUPS
+        and not str(as_dict(g)["name"]).startswith("{prefix} ")
     ] + [
-        lvl["name"] for lvl in (raw.get("permission_levels") or [])
-        if not str(lvl["name"]).startswith("{prefix} ")
+        as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
+        if not str(as_dict(lvl)["name"]).startswith("{prefix} ")
     ]
     assert not typed, (
         f"{template}: these group or level names carry a typed stem instead of "

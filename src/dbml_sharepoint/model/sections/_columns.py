@@ -7,7 +7,6 @@ Each names a column and says how it deploys. Shape only: whether the entity
 and the column exist is the validator's question.
 """
 
-from typing import Any
 
 from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping, _text_key
 from dbml_sharepoint.model.conditions import parse_condition
@@ -21,10 +20,10 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.reading import optional_str, optional_value, require_str, strict_str
 from dbml_sharepoint.model.sections._extensions import _extension_config
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     # `_require_list` for all three lists, where `or []` read `watched_lists: ''` as none.
     cross_site = []
     for i, item in enumerate(_require_list(

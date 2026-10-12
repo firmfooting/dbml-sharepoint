@@ -1754,7 +1754,7 @@ expression, and an author never writes a display title. Another list is read
 as it is fetched, columns and keys, without its reporting-only columns. Its
 query carries those, and two queries whose reporting-only columns read each
 other are a cyclic reference that only a refresh can see, so the generator
-reads a list through a base function that stops before them. Declaration
+inlines the other list's fetch, which stops before them. Declaration
 order is the contract for this list's own rows: an entry may read a column an
 entry above it produced, and may not read one below it.
 
@@ -1789,15 +1789,6 @@ it takes every query queued behind it.
 Derived columns are Power Query only. The SQL views carry the lists' own
 columns and the lookup joins, because a row-level expression written in M has
 no SQL to translate to.
-
-:::warning Load each query under the name of its file
-A query that reads another list calls that list's base function, so
-`APP_Risk_Base.pq` must be loaded as `APP_Risk_Base` beside `APP_Risk`. The
-function fetches the list's rows for the site URL it is given, and Power BI
-does not load a function to the model. A duplicated query pointed at another
-site calls each base with that site, so its reporting-only columns follow the
-copy without further editing.
-:::
 
 ## Structure and behaviour
 

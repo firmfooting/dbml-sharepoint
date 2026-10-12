@@ -17,9 +17,12 @@ from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyErr
 
 
 def test_a_mapping_passes_through_unchanged() -> None:
-    """The same object, not a copy. Callers index the result afterwards."""
+    """Equal to the block, and a copy: editing the result leaves the YAML-owned dict alone."""
     block = {"Risk": {"title": "Risks"}}
-    assert _require_mapping(block, "mapping.entities") is block
+    result = _require_mapping(block, "mapping.entities")
+    assert result == block
+    result["Other"] = {}
+    assert "Other" not in block
 
 
 @pytest.mark.parametrize(
@@ -48,7 +51,7 @@ def test_a_key_yaml_1_1_read_otherwise_is_judged_as_yaml_1_2_reads_it() -> None:
     as False and 8 (#686). YAML 1.2 reads the text "No", which passes, and
     the number 10, which is refused."""
     block = _yaml.safe_load("No: =TODAY()\nRisk: {}")
-    assert _require_mapping(block, "default_formulas.Risk") is block
+    assert _require_mapping(block, "default_formulas.Risk") == block
     with pytest.raises(MappingShapeError) as err:
         _require_mapping(_yaml.safe_load("010: =TODAY()\nRisk: {}"), "default_formulas.Risk")
     assert str(err.value) == (
@@ -181,7 +184,7 @@ def test_a_key_that_is_not_text_is_refused_before_the_unknown_keys() -> None:
 def test_known_keys_returns_the_block_it_checked() -> None:
     """The same object, typed by what the guard proved, so callers index it."""
     block = {"title": "Risks"}
-    assert _known_keys(block, {"title"}, "mapping.views") is block
+    assert _known_keys(block, {"title"}, "mapping.views") == block
 
 
 def test_known_keys_refuses_what_the_guard_refuses() -> None:

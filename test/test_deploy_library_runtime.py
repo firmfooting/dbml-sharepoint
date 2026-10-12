@@ -1819,3 +1819,21 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     assert any("declared folder 'Field operations' was not found" in m for m in messages), \
         messages
     assert not any("items(undefined)" in c["url"] for c in calls)
+
+
+def test_a_no_op_folder_policy_does_not_excuse_an_already_unique_folder(tmp_path: Path) -> None:
+    """A policy that writes nothing manages nothing, so the guard still names the folder (#617)."""
+    mapping = _FOLDER_ACL_LIBRARY.replace(
+        "    Escalation:\n      break_inheritance: true\n      reconcile: exact\n"
+        "      assignments:\n        - principal: { kind: group, name: \"{member} Editors\" }\n"
+        "          level: \"Folder Editor\"\n",
+        "    Escalation:\n      break_inheritance: false\n      reconcile: configured\n",
+    )
+    assert mapping != _FOLDER_ACL_LIBRARY
+    summary, calls = _folder_acl_run(
+        tmp_path, mapping=mapping, flags="globalThis.__folderScoped = true;\n",
+    )
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("1 undeclared item/folder unique permission scope(s)" in m for m in messages), \
+        messages
+    assert not any("removeroleassignment" in c["url"] for c in calls)

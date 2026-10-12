@@ -8,8 +8,7 @@ order, and expands every name under the current prefix and each previous
 one.
 """
 
-from collections.abc import Sequence
-from typing import Any, cast
+from collections.abc import Mapping, Sequence
 
 from dbml_sharepoint.model._keys import (
     _known_keys,
@@ -18,22 +17,19 @@ from dbml_sharepoint.model._keys import (
     _require_mapping,
 )
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
-from dbml_sharepoint.model.identities import MEMBERSHIP_MODES, MembershipMode
+from dbml_sharepoint.model.identities import MembershipMode, is_membership_mode
 from dbml_sharepoint.model.mapping_types import (
-    FILE_SCOPES,
     PRINCIPAL_KIND_LIST,
-    PRINCIPAL_KINDS,
     CustomPermissionLevel,
-    FileScopes,
     GroupsFromEnum,
     LegacyFlag,
     ListPermissionPolicy,
     PermissionsConfig,
     Principal,
-    PrincipalKind,
-    ReconcileMode,
     RoleAssignment,
     SiteGroup,
+    is_file_scopes,
+    is_principal_kind,
 )
 from dbml_sharepoint.model.prefix import (
     MEMBER_PLACEHOLDER,
@@ -50,7 +46,7 @@ from dbml_sharepoint.model.reading import (
     strict_bool,
     strict_str,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
@@ -76,7 +72,7 @@ _POLICY_KEYS = _FOLDER_POLICY_KEYS | {"file_scopes"}
 _DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     prefix = sc.loaded["prefix"]
     previous_prefixes = sc.loaded["previous_prefixes"]
 
@@ -140,12 +136,13 @@ def read(sc: SectionContext) -> dict[str, Any]:
     default_policy_site_role: str | None = None
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
-        default_policy = _parse_policy(
-            raw_default, "list_permissions.default", _DEFAULT_POLICY_KEYS, prefix=prefix,
+        default_block = _known_keys(
+            raw_default, _DEFAULT_POLICY_KEYS, "list_permissions.default",
         )
+        default_policy = _parse_policy(default_block, "list_permissions.default", prefix=prefix)
         # A blank applies the policy to the entities of every role, so it is recorded.
         default_policy_site_role = optional_str(
-            raw_default, "site_role", "list_permissions.default", record_blank=True,
+            default_block, "site_role", "list_permissions.default", record_blank=True,
         )
 
     overrides: dict[str, ListPermissionPolicy] = {}
@@ -156,7 +153,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
         if raw_policy is None:
             continue
         ctx = f"list_permissions.overrides.{entity_name}"
-        overrides[entity_name] = _parse_policy(raw_policy, ctx, _POLICY_KEYS, prefix=prefix)
+        overrides[entity_name] = _parse_policy(
+            _known_keys(raw_policy, _POLICY_KEYS, ctx), ctx, prefix=prefix,
+        )
 
     # One policy per entity, applied to every folder that entity declares.
     # Not keyed by folder name on purpose: the folders are already declared
@@ -169,7 +168,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             continue
         ctx = f"list_permissions.folders.{entity_name}"
         folder_policies[entity_name] = _parse_policy(
-            raw_policy, ctx, _FOLDER_POLICY_KEYS, prefix=prefix,
+            _known_keys(raw_policy, _FOLDER_POLICY_KEYS, ctx), ctx, prefix=prefix,
         )
 
     return {
@@ -213,7 +212,7 @@ def _reject_member_placeholders(group: SiteGroup, context: str) -> None:
 
 
 def _enrolment(
-    grp: dict[str, Any], context: str,
+    grp: Mapping[str, object], context: str,
 ) -> tuple[tuple[str, ...], tuple[str, ...], MembershipMode, tuple[LegacyFlag, ...]]:
     """`enroll`, `enroll_during_run` and `membership`, with the two old booleans folded in.
 
@@ -225,11 +224,14 @@ def _enrolment(
     for key, names in (("enroll", enroll), ("enroll_during_run", during)):
         if repeated := sorted({n for n in names if names.count(n) > 1}):
             raise MappingValueError(f"{context}.{key} names {', '.join(repeated)} twice")
-    mode = strict_str(grp, "membership", context, default="")
-    if mode and mode not in MEMBERSHIP_MODES:
-        raise MappingValueError(
-            f"{context}.membership must be 'additive' or 'exclusive', got {mode!r}",
-        )
+    declared_mode = strict_str(grp, "membership", context, default="")
+    mode: MembershipMode | None = None
+    if declared_mode:
+        if not is_membership_mode(declared_mode):
+            raise MappingValueError(
+                f"{context}.membership must be 'additive' or 'exclusive', got {declared_mode!r}",
+            )
+        mode = declared_mode
     legacy: list[LegacyFlag] = []
     if optional_bool(grp, "enroll_enterprise_reader", context):
         legacy.append(LegacyFlag(
@@ -247,13 +249,12 @@ def _enrolment(
         if "operator" not in during:
             during.append("operator")
     return (
-        tuple(enroll), tuple(during),
-        cast("MembershipMode", mode or "additive"), tuple(legacy),
+        tuple(enroll), tuple(during), mode or "additive", tuple(legacy),
     )
 
 
 def _parse_group(
-    grp: dict[str, Any], context: str, prefix: str, previous_prefixes: Sequence[str],
+    grp: Mapping[str, object], context: str, prefix: str, previous_prefixes: Sequence[str],
 ) -> SiteGroup:
     """One `groups[i]` entry, whether it names itself or an enum.
 
@@ -298,7 +299,7 @@ def _parse_group(
     )
 
 
-def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Principal:
+def _parse_principal(raw_principal: object, context: str, prefix: str = "") -> Principal:
     """Parse a principal dict into a Principal dataclass.
 
     The admission gate reads `PRINCIPAL_KINDS`, derived from the
@@ -312,8 +313,8 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
             f"{context}: principal must be a mapping, "
             f"got {type(raw_principal).__name__}",
         )
-    _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
-    kind = raw_principal.get("kind")
+    principal = _known_keys(raw_principal, {"kind", "name"}, context)
+    kind = principal.get("kind")
     # An assignment with no principal reaches here as `{}`, so absent is a
     # required key missing rather than a word this vocabulary declines.
     if kind is None:
@@ -325,12 +326,12 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
     # test below raises the TypeError the CLI deliberately does not catch.
     if not isinstance(kind, str):
         raise MappingShapeError(f"{context}: principal kind must be a string, got {kind!r}")
-    if kind not in PRINCIPAL_KINDS:
+    if not is_principal_kind(kind):
         raise MappingValueError(
             f"{context}: principal kind must be one of "
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
-    name = raw_principal.get("name")
+    name = principal.get("name")
     # A number or a list was carried through as the group name the deploy looks up.
     if name is not None and not isinstance(name, str):
         raise MappingShapeError(f"{context}: principal name must be a string, got {name!r}")
@@ -339,16 +340,15 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
     if kind == "group" and not name:
         raise MappingShapeError(f"{context}: principal kind=group requires a 'name'")
     return Principal(
-        kind=cast("PrincipalKind", kind),
+        kind=kind,
         name=name if kind == "group" else None,
     )
 
 
 def _parse_policy(
-    raw_policy: Any, context: str, keys: frozenset[str], *, prefix: str = "",
+    raw_policy: Mapping[str, object], context: str, *, prefix: str = "",
 ) -> ListPermissionPolicy:
-    """Parse a list permission policy dict."""
-    _reject_unknown_keys(raw_policy, keys, context)
+    """Parse a list permission policy dict, its keys already checked."""
     # Read STRICTLY, and before the reconcile guard below. bool("false") is
     # True, so a lenient read coerces the quoted spelling to True and the
     # guard then tests the coerced value, breaking inheritance the author
@@ -357,11 +357,8 @@ def _parse_policy(
     # The shape before the word, as the other two vocabulary readers do, and
     # `strict_str` so a blank `reconcile:` is recorded: its default is the
     # mode that leaves an existing ACL alone.
-    reconcile_mode = cast(
-        "ReconcileMode",
-        strict_str(raw_policy, "reconcile", context, default="configured"),
-    )
-    if reconcile_mode not in {"configured", "exact"}:
+    reconcile_mode = strict_str(raw_policy, "reconcile", context, default="configured")
+    if reconcile_mode not in ("configured", "exact"):
         raise MappingValueError(
             f"{context}.reconcile must be 'configured' or 'exact', "
             f"got {reconcile_mode!r}",
@@ -371,10 +368,8 @@ def _parse_policy(
             f"{context}: reconcile 'exact' requires break_inheritance: true; "
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
-    file_scopes = cast(
-        "FileScopes", strict_str(raw_policy, "file_scopes", context, default="refuse"),
-    )
-    if file_scopes not in FILE_SCOPES:
+    file_scopes = strict_str(raw_policy, "file_scopes", context, default="refuse")
+    if not is_file_scopes(file_scopes):
         raise MappingValueError(
             f"{context}.file_scopes must be 'refuse' or 'external', got {file_scopes!r}",
         )

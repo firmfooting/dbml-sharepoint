@@ -45,6 +45,38 @@ PRINCIPAL_KINDS = frozenset({'associated_member_group', 'associated_owner_group'
 PRINCIPAL_KIND_LIST = "'associated_member_group', 'associated_owner_group', 'associated_visitor_group', 'group'"
 ```
 
+### `is_entity_kind`
+
+```python
+def is_entity_kind(value: str) -> TypeIs[EntityKind]
+```
+
+Whether `value` is one of the entity kinds, so a caller can narrow a string to it.
+
+### `is_view_scope`
+
+```python
+def is_view_scope(value: str) -> TypeIs[ViewScope]
+```
+
+Whether `value` is a view scope, so a caller can narrow a string to it.
+
+### `is_principal_kind`
+
+```python
+def is_principal_kind(value: str) -> TypeIs[PrincipalKind]
+```
+
+Whether `value` is a principal kind, so a caller can narrow a string to it.
+
+### `is_file_scopes`
+
+```python
+def is_file_scopes(value: str) -> TypeIs[FileScopes]
+```
+
+Whether `value` is a file-scopes mode, so a caller can narrow a string to it.
+
 ### `RETIRED_SUFFIX`
 
 ```python
@@ -207,6 +239,14 @@ ManageLists) are widely said to see every item regardless, and that has
 NOT been measured here. `deployment-log`'s `30-deploy/deploy.md` carries
 the probe that has to run before any reader posture leans on it.
 
+### `VersioningOverride`
+
+The versioning keys one entity declares; a key it leaves out takes the default's.
+
+### `ItemSecurityOverride`
+
+The item-security keys one entity declares; a key it leaves out takes the default's.
+
 ### `ITEM_SECURITY_SCOPES`
 
 ```python
@@ -228,7 +268,7 @@ class WatchUse:
     id: str | None = None
     on: WatchOn = 'change'
     when: dbml_sharepoint.model.conditions.Condition | None = None
-    settings: collections.abc.Mapping[typing.Any, typing.Any] = field(default_factory=dict)
+    settings: collections.abc.Mapping[object, object] = field(default_factory=dict)
 ```
 
 One Power Automate use of a watched column; core does not interpret `name` or `settings`.
@@ -337,7 +377,7 @@ class ViewDef:
     sort: list[dbml_sharepoint.model.mapping_types.ViewSort] = field(default_factory=list)
     group_by: dbml_sharepoint.model.mapping_types.ViewGroupBy | None = None
     row_limit: int | None = None
-    formatting: dict[str, typing.Any] | None = None
+    formatting: dict[str, object] | None = None
     widths: dict[str, int] = field(default_factory=dict)
     totals: dict[str, str] = field(default_factory=dict)
     scope: dbml_sharepoint.model.mapping_types.ViewScope | None = None
@@ -375,7 +415,7 @@ file holds, so the upload is a real file rather than an empty one.
 @dataclass(frozen=True)
 class DemoItem:
     key: str
-    values: dict[str, typing.Any]
+    values: dict[str, object]
     file: dbml_sharepoint.model.mapping_types.DemoFile | None = None
 ```
 
@@ -395,9 +435,9 @@ per-list confirmation before every delete.
 ```python
 @dataclass(frozen=True)
 class FormFormatting:
-    header: dict[str, typing.Any] | None = None
-    body: dict[str, typing.Any] | None = None
-    footer: dict[str, typing.Any] | None = None
+    header: dict[str, object] | None = None
+    body: dict[str, object] | None = None
+    footer: dict[str, object] | None = None
 ```
 
 Declared list-form layout parts (SP ClientFormCustomFormatter).
@@ -695,7 +735,7 @@ class Mapping:
     entities: dict[str, dbml_sharepoint.model.mapping_types.EntityMapping]
     cross_site_reference_columns: list[dbml_sharepoint.model.mapping_types.CrossSiteRef]
     versioning_default: Versioning
-    versioning_overrides: dict[str, dict[str, typing.Any]]
+    versioning_overrides: dict[str, dbml_sharepoint.model.mapping_types.VersioningOverride]
     enum_sources: dict[str, pathlib.Path]
     watched_lists: list[dbml_sharepoint.model.mapping_types.WatchedList]
     polymorphic_patterns: list[dbml_sharepoint.model.mapping_types.PolymorphicPattern] = field(default_factory=list)
@@ -716,8 +756,8 @@ class Mapping:
     display_name_mode: str | None = None
     display_name_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     reporting: ReportingOptions = field(default_factory=ReportingOptions)
-    column_style_specs: dict[str, dict[str, dict[str, typing.Any]]] = field(default_factory=dict)
-    column_formatting: dict[str, dict[str, dict[str, typing.Any]]] = field(default_factory=dict)
+    column_style_specs: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
+    column_formatting: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     form_formatting: dict[str, dbml_sharepoint.model.mapping_types.FormFormatting] = field(default_factory=dict)
     list_validation: dict[str, dbml_sharepoint.model.mapping_types.ListValidation] = field(default_factory=dict)
     retired_columns: dict[str, dict[str, dbml_sharepoint.model.mapping_types.RetiredColumn]] = field(default_factory=dict)
@@ -727,7 +767,7 @@ class Mapping:
     prevent_list_deletion: bool = False
     attachments: bool = True
     item_security_default: ItemSecurity = field(default_factory=ItemSecurity)
-    item_security_overrides: dict[str, dict[str, typing.Any]] = field(default_factory=dict)
+    item_security_overrides: dict[str, dbml_sharepoint.model.mapping_types.ItemSecurityOverride] = field(default_factory=dict)
 ```
 
 The full schema/sharepoint-mapping.yaml structure.
@@ -875,10 +915,8 @@ rather than merely tidies.
 (`permissions_for_entity`); versioning was the missing fifth
 accessor.
 
-Overrides are still stored RAW (`dict[str, Any]`), because
-`mapping_loader` validates their values without narrowing their
-types; the coercions here are the ones the three call sites were
-each performing.
+Overrides are stored as the keys the author declared, each checked
+by the loader, so nothing here coerces.
 
 ### `GovernanceVocabulary`
 
@@ -955,7 +993,7 @@ class MappingBundle:
     enum_choices: dict[str, list[str]]
     retention_policies: dict[str, dbml_sharepoint.model.mapping_types.RetentionPolicy]
     retention_list_defaults: dict[str, str]
-    extension_configs: dict[str, dict[str, typing.Any]] = field(default_factory=dict)
+    extension_configs: dict[str, dict[object, object]] = field(default_factory=dict)
     source_paths: dict[str, pathlib.Path] = field(default_factory=dict)
     governance: Governance = field(default_factory=Governance)
 ```
@@ -965,7 +1003,7 @@ Mapping + the generic configs it references, all loaded.
 #### `MappingBundle.extension_config_for`
 
 ```python
-def extension_config_for(self, name: str | None) -> dict[str, Any]
+def extension_config_for(self, name: str | None) -> dict[object, object]
 ```
 
 The named extension's config block; {} when name is None or the
