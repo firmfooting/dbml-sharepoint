@@ -34,10 +34,18 @@ PhaseStep(key: str, name: str, template: str)
 DEPLOY_GROUPS = (('PREPARE', (PhaseStep(key='assess', name='site assessment', template='deploy/_assess_gate.js.j2'), PhaseStep(key='preflight', name='read-only preflight', template='deploy/_preflight.js.j2'), PhaseSt…
 ```
 
+### `StepContext`
+
+One step as deploy.js.j2 reads it.
+
+### `GroupContext`
+
+One group of steps as deploy.js.j2 reads it.
+
 ### `phases_context`
 
 ```python
-def phases_context() -> list[dict[str, Any]]
+def phases_context() -> list[GroupContext]
 ```
 
 Render-ready structure for deploy.js.j2 (numbers derived).

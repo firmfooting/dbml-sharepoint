@@ -11,7 +11,7 @@ import re
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from difflib import get_close_matches
-from typing import Any, Literal
+from typing import Literal, TypedDict
 
 from dbml_sharepoint.analysis.limits import (
     MAX_FIELD_DESCRIPTION,
@@ -648,8 +648,18 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
     return _scalar(col, description, enum_names)
 
 
+class _SharedFields(TypedDict, closed=True):
+    """The `SPField` arguments every scalar column carries, whatever its kind."""
+
+    name: str
+    required: bool
+    unique: bool
+    default: ColumnDefault | None
+    description: str
+
+
 def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
-    base: dict[str, Any] = dict(
+    base = _SharedFields(
         name=col.name, required=col.required, unique=col.unique,
         default=col.default, description=description,
     )

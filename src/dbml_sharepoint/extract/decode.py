@@ -14,7 +14,6 @@ means, so the tables here name its vocabulary rather than restating it.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from dbml_sharepoint.analysis.column_refs import rewrite_formula_refs
 from dbml_sharepoint.analysis.typemap import (
@@ -30,6 +29,7 @@ from dbml_sharepoint.extract.inverse import (
     invert_column_validation,
     invert_form_visibility,
 )
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_types import auto_display_name
 
 #: SharePoint `Type` to a DBML scalar, for the types that carry no further
@@ -127,9 +127,9 @@ class DecodedEntity:
     #: what `display_names: {mode: auto}` would produce.
     display_overrides: dict[str, str] = field(default_factory=dict)
     calculated_formulas: dict[str, str] = field(default_factory=dict)
-    column_formatting: dict[str, dict[str, Any]] = field(default_factory=dict)
-    form_visibility: dict[str, dict[str, Any]] = field(default_factory=dict)
-    column_validation: dict[str, dict[str, Any]] = field(default_factory=dict)
+    column_formatting: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
+    form_visibility: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
+    column_validation: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
     #: Formatters this tool could not express as a style spec, kept whole so
     #: the operator can paste them back rather than rebuild them.
     preserved_formatters: dict[str, str] = field(default_factory=dict)

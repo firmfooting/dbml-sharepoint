@@ -89,7 +89,7 @@ STYLES = {'severity': StyleSpec(expand=<function _severity>, keys=frozenset({'ca
 ### `expand_style`
 
 ```python
-def expand_style(spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None = None) -> dict[str, Any]
+def expand_style(spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None = None) -> ColumnFormatter
 ```
 
 Expand a declared style spec into plain SP column-formatting JSON.

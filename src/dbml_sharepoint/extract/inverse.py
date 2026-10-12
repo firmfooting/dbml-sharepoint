@@ -14,8 +14,8 @@ The parsing can be approximate because the verification is exact.
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from dbml_sharepoint.analysis.condition_rendering import (
     ConditionRefusal,
@@ -26,6 +26,7 @@ from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.formatter_values import ScalarValue, text_value
 from dbml_sharepoint.analysis.styles import TOKENS, expand_style
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
+from dbml_sharepoint.jsonvalue import JsonObject, JsonValue, as_json_object
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 
 #: The suffix `_severity` appends to its class expression.
@@ -77,24 +78,23 @@ def _canonical(formatter: object) -> str:
 # === Column formatting ======================================================
 
 
-def _class_expression(formatter: dict[str, Any]) -> str | None:
+def _class_expression(formatter: Mapping[str, JsonValue]) -> str | None:
     """The formatter's `attributes.class`, or None when it is not text."""
-    attributes: object = formatter.get("attributes")
-    if not isinstance(attributes, dict):
+    attributes = formatter.get("attributes")
+    if not isinstance(attributes, Mapping):
         return None
-    entries: dict[object, object] = attributes
-    class_expr = entries.get("class")
+    class_expr = attributes.get("class")
     return class_expr if isinstance(class_expr, str) else None
 
 
-def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
+def _severity_candidate(formatter: Mapping[str, JsonValue]) -> JsonObject | None:
     """A `severity` or `pill` spec proposed from a formatter's class chain."""
     class_expr = _class_expression(formatter)
     if class_expr is None:
         return None
     calculated = text_value(calculated=True) in class_expr
     chain = class_expr.removesuffix(_SEVERITY_TEXT_SUFFIX)
-    value_map: dict[str, str] = {}
+    value_map: dict[str, JsonValue] = {}
     for match in _ARM.finditer(chain):
         value = match.group(1)
         token = _TOKEN_BY_CLASSES.get(match.group(2))
@@ -105,7 +105,7 @@ def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
         value_map[_unquote(value)] = token
     if not value_map:
         return None
-    spec: dict[str, Any] = {"style": "severity", "map": value_map}
+    spec: JsonObject = {"style": "severity", "map": value_map}
     if calculated:
         spec["calculated"] = True
     # `icons: false` drops the leading span; the shape says which was used.
@@ -115,12 +115,12 @@ def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     return spec
 
 
-def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
+def _overdue_date_candidate(formatter: Mapping[str, JsonValue]) -> JsonObject | None:
     """An `overdue-date` spec proposed from a formatter's class expression."""
     class_expr = _class_expression(formatter)
     if class_expr is None or "@now" not in class_expr:
         return None
-    spec: dict[str, Any] = {"style": "overdue-date"}
+    spec: JsonObject = {"style": "overdue-date"}
     if text_value(calculated=True) in class_expr:
         spec["calculated"] = True
     # Two groups, so findall gives one pair of strings per match.
@@ -140,7 +140,7 @@ def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     return spec
 
 
-def _numeric_severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
+def _numeric_severity_candidate(formatter: Mapping[str, JsonValue]) -> JsonObject | None:
     """Recover numeric bands using the same scalar expression as the generator."""
     expression = _class_expression(formatter)
     if expression is None:
@@ -151,7 +151,7 @@ def _numeric_severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | N
         re.escape(f"if({scalar.valid} && {scalar.value} <= ")
         + r"(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?), '([^']*)', "
     )
-    bands = []
+    bands: list[JsonValue] = []
     for match in arm.finditer(expression):
         token = _TOKEN_BY_CLASSES.get(match[2])
         if token is None:
@@ -161,20 +161,21 @@ def _numeric_severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | N
     fallback = re.search(re.escape(f"if({scalar.valid}, '") + r"([^']*)'", expression)
     if not bands or fallback is None or fallback[1] not in _TOKEN_BY_CLASSES:
         return None
-    candidate: dict[str, Any] = {
+    candidate: JsonObject = {
         "style": "numeric-severity", "bands": bands,
         "otherwise": _TOKEN_BY_CLASSES[fallback[1]],
     }
     if calculated:
         candidate["calculated"] = True
-    if len(formatter.get("children", [])) == 1:
+    children = formatter.get("children")
+    if isinstance(children, list) and len(children) == 1:
         candidate["icons"] = False
     return candidate
 
 
 def invert_column_formatting(
     raw_formatter: str, context: str,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+) -> tuple[JsonObject | None, JsonObject | None]:
     """Recover a style spec from a stored `CustomFormatter`.
 
     Returns `(spec, parsed_formatter)`. `spec` is `None` when no candidate
@@ -183,10 +184,10 @@ def invert_column_formatting(
     only when the stored value is not JSON at all.
     """
     try:
-        observed = json.loads(raw_formatter)
+        observed = as_json_object(json.loads(raw_formatter))
     except (TypeError, ValueError):
         return None, None
-    if not isinstance(observed, dict):
+    if observed is None:
         return None, None
 
     # `pill` is deliberately not proposed: its classes come from a table
@@ -211,7 +212,7 @@ def invert_column_formatting(
 # === Conditions =============================================================
 
 
-def _expression_leaf(text: str) -> dict[str, Any] | None:
+def _expression_leaf(text: str) -> JsonObject | None:
     """One `[$Col] <op> 'value'` comparison, as an authored condition leaf."""
     text = text.strip()
     for spelling, op in sorted(_EXPR_OPS.items(), key=lambda pair: -len(pair[0])):
@@ -222,11 +223,9 @@ def _expression_leaf(text: str) -> dict[str, Any] | None:
         if ref is None:
             return None
         literal = tail.strip()
-        if literal.startswith("'") and literal.endswith("'") and len(literal) >= 2:
-            value: Any = _unquote(literal[1:-1])
-        else:
+        if not (literal.startswith("'") and literal.endswith("'") and len(literal) >= 2):
             return None
-        return {"field": ref.group(1), "op": op, "value": value}
+        return {"field": ref.group(1), "op": op, "value": _unquote(literal[1:-1])}
     return None
 
 
@@ -257,7 +256,7 @@ def _split_top_level(text: str, separator: str) -> list[str]:
     return parts
 
 
-def _expression_condition(text: str) -> list[dict[str, Any]] | dict[str, Any] | None:
+def _expression_condition(text: str) -> list[JsonValue] | None:
     """An authored `when:` proposed from a rendered expression predicate."""
     text = text.strip()
     if text.startswith("(") and text.endswith(")"):
@@ -267,7 +266,7 @@ def _expression_condition(text: str) -> list[dict[str, Any]] | dict[str, Any] | 
     for separator, kind in ((" && ", "all_of"), (" || ", "any_of")):
         parts = _split_top_level(text, separator)
         if len(parts) > 1:
-            leaves: list[dict[str, Any]] = []
+            leaves: list[JsonValue] = []
             for part in parts:
                 leaf = _expression_leaf(part)
                 if leaf is None:
@@ -280,7 +279,7 @@ def _expression_condition(text: str) -> list[dict[str, Any]] | dict[str, Any] | 
 
 def invert_form_visibility(
     formula: str, types: dict[str, str], context: str,
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     """Recover a `form_visibility` declaration from a stored formula.
 
     Verified by re-composing: a candidate is returned only when
@@ -310,7 +309,7 @@ def invert_form_visibility(
         new = existing = False
         gated_only = True
 
-    declared: dict[str, Any] = {}
+    declared: JsonObject = {}
     if not new:
         declared["new"] = False
     if not existing:
@@ -321,16 +320,18 @@ def invert_form_visibility(
         if when is None:
             return None
         declared["when"] = when
-    return _verified_visibility(declared, when, types, formula, context)
+    return _verified_visibility(declared, new, existing, when, types, formula, context)
 
 
 def _verified_visibility(
-    declared: dict[str, Any],
+    declared: JsonObject,
+    new: bool,
+    existing: bool,
     when: object,
     types: dict[str, str],
     observed: str,
     context: str,
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     condition: Condition | None = None
     if when is not None:
         try:
@@ -339,8 +340,8 @@ def _verified_visibility(
             return None
     try:
         rendered = compose_visibility(
-            new=declared.get("new", True),
-            existing=declared.get("existing", True),
+            new=new,
+            existing=existing,
             when=condition,
             types=types,
         )
@@ -357,7 +358,7 @@ _SHIFTED_REF = re.compile(r"^(?P<ref>.+?)(?P<shift>[+-]\d+)?$")
 
 def _save_instant_leaf(
     head: str, op: str, tail: str, types: dict[str, str],
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     """A comparison against `[Modified]`, the save instant, back to the
     `today`/`now` sentinel the build rendered it from (see
     `analysis/condition_rendering._save_instant_leaf`).
@@ -390,7 +391,7 @@ def _save_instant_leaf(
     return {"field": name, "op": op, "value": value}
 
 
-def _validation_leaf(text: str, types: dict[str, str]) -> dict[str, Any] | None:
+def _validation_leaf(text: str, types: dict[str, str]) -> JsonObject | None:
     """One comparison from a validation formula, as an authored leaf.
 
     SharePoint stores these normalised: brackets it does not need are
@@ -418,7 +419,7 @@ def _validation_leaf(text: str, types: dict[str, str]) -> dict[str, Any] | None:
     return None
 
 
-def _validation_operand(text: str, column_type: str) -> Any:
+def _validation_operand(text: str, column_type: str) -> str | int | float | None:
     """A validation formula's right-hand side, as an authored value."""
     if text.upper() in ("TODAY()", "NOW()"):
         return text.upper().removesuffix("()").lower()
@@ -447,7 +448,7 @@ class Unrenderable:
 
 def invert_column_validation(
     formula: str, message: str, types: dict[str, str], context: str,
-) -> dict[str, Any] | Unrenderable | None:
+) -> JsonObject | Unrenderable | None:
     """Recover a `column_validation` declaration from a stored rule.
 
     Only a single comparison is attempted. Anything else is reported as
@@ -459,7 +460,7 @@ def invert_column_validation(
     leaf = _validation_leaf(body, types)
     if leaf is None:
         return None
-    declared = {"when": [leaf], "message": message}
+    declared: JsonObject = {"when": [leaf], "message": message}
     try:
         condition = parse_condition(declared["when"], context)
         rendered = f"={to_validation(condition, types)}"

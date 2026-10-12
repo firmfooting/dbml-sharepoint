@@ -17,7 +17,6 @@ from contextlib import suppress
 from difflib import get_close_matches
 from pathlib import Path
 from textwrap import wrap
-from typing import Any
 
 import typer
 
@@ -72,6 +71,7 @@ from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import IdentityError
 from dbml_sharepoint.project import (
     CONFIG_ERRORS,
@@ -96,7 +96,7 @@ from dbml_sharepoint.templating import check_application_name
 
 # Empty schema view used to render a findings-only manifest when validation
 # fails: build_schema_json cannot run safely on an invalid schema.
-_EMPTY_SCHEMA_JSON: dict[str, Any] = {
+_EMPTY_SCHEMA_JSON: dict[str, JsonValue] = {
     "lists": [],
     "phase2_lookups": [],
     "indexed_columns": [],

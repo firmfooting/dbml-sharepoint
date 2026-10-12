@@ -663,17 +663,13 @@ def test_no_extension_hook_parameter_is_any() -> None:
         )
 
 
-def test_a_hook_return_type_may_still_be_any() -> None:
-    """The two `dict[str, Any]` returns are deliberate and stay allowed.
-
-    A seeded field dictionary is genuinely arbitrary JSON. Gating returns as
-    well would force a fictitious type on the one place `Any` is honest.
-    """
-    hints = typing.get_type_hints(BaseExtension.seed_lists)
-    assert mentions_any(hints["return"]), (
-        "seed_lists returns dict[str, dict[str, Any]]; if that changed, this "
-        "test is the record of why it was allowed to"
-    )
+def test_no_extension_hook_return_type_is_any() -> None:
+    """A seeded field dictionary is JSON data, so the hooks return `JsonValue` shapes."""
+    hooks = ("extra_validators", "expand_column", "seed_lists", "manifest_extras")
+    for owner in (DeploymentExtension, BaseExtension):
+        for hook in hooks:
+            hints = typing.get_type_hints(getattr(owner, hook))
+            assert not mentions_any(hints["return"]), f"{owner.__name__}.{hook} returns Any"
     assert [name for name, annotation in hook_parameters(BaseExtension)
             if mentions_any(annotation)] == []
 

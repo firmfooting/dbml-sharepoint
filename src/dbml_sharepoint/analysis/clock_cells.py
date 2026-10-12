@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 from dbml_sharepoint.analysis.condition_rendering import (
     CAML,
@@ -40,6 +40,9 @@ Status = Literal["measured", "unmeasured", "clock", "refused"]
 SENTINELS: tuple[Sentinel, ...] = ("today", "today_offset", "now")
 COLUMN_KINDS: tuple[str, ...] = tuple(sorted(DATE_TYPES))
 TARGETS: tuple[str, ...] = (VALIDATION, CAML, EXPRESSION)
+
+#: A validation cell is keyed by (op, spelling), a CAML cell by its spelling.
+RenderingKey = tuple[str, str] | str
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,7 @@ class ClockCell:
     status: Status
     #: Validation: (op, spelling) -> the whole formula for `Leaf("D", op, spelling)`.
     #: CAML: spelling -> the `<Value>` element the clock renders to.
-    renderings: Mapping[Any, str] = field(default_factory=dict)
+    renderings: Mapping[RenderingKey, str] = field(default_factory=dict)
     evidence: Evidence | None = None
     refusal: ConditionRefusalKind | None = None
 
@@ -111,12 +114,12 @@ DEFAULT_EVIDENCE = Evidence(
 )
 
 
-def _save_instant(*, sign: str, ops: dict[str, str]) -> dict[Any, str]:
+def _save_instant(*, sign: str, ops: dict[str, str]) -> dict[RenderingKey, str]:
     """The date-only renderings against [Modified] for one offset spelling."""
     return {(op, sign): rendering for op, rendering in ops.items()}
 
 
-def _against_modified(value: str, shift_day: str, shift_next: str) -> dict[Any, str]:
+def _against_modified(value: str, shift_day: str, shift_next: str) -> dict[RenderingKey, str]:
     day, nxt = f"[D]{shift_day}", f"[D]{shift_next}"
     return _save_instant(sign=value, ops={
         "leq": f"{day}<=[Modified]",
@@ -128,13 +131,13 @@ def _against_modified(value: str, shift_day: str, shift_next: str) -> dict[Any, 
     })
 
 
-def _plain(value: str, literal: str) -> dict[Any, str]:
+def _plain(value: str, literal: str) -> dict[RenderingKey, str]:
     symbols = {"leq": "<=", "lt": "<", "gt": ">", "geq": ">=", "eq": "=", "neq": "<>"}
     return {(op, value): f"[D]{symbol}{literal}" for op, symbol in symbols.items()}
 
 
 _TODAY_XML = '<Value Type="DateTime"><Today/></Value>'
-_OFFSET_XML = {
+_OFFSET_XML: dict[RenderingKey, str] = {
     "today+3": '<Value Type="DateTime"><Today OffsetDays="3"/></Value>',
     "today-1": '<Value Type="DateTime"><Today OffsetDays="-1"/></Value>',
 }

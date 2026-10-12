@@ -232,6 +232,25 @@ def test_a_journey_declaring_a_key_twice_is_refused(
     assert '"<unicode string>", line 5, column 1' in message, message
 
 
+@pytest.mark.parametrize(
+    "body",
+    ["- a\n- b\n", "1: x\ntitle: T\n"],
+    ids=["a list", "a key that is not text"],
+)
+def test_a_journey_whose_front_matter_is_not_a_text_keyed_mapping_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str,
+) -> None:
+    journeys = tmp_path / catalogue.JOURNEYS_DIRNAME
+    journeys.mkdir()
+    journey = journeys / "j.md"
+    journey.write_text(f"---\n{body}---\n", encoding="utf-8")
+
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    with pytest.raises(ValueError, match="front matter must be a mapping with text keys") as err:
+        catalogue.available_journeys()
+    assert str(err.value).startswith(f"{journey}: "), str(err.value)
+
+
 def test_load_solution_names_the_alternatives() -> None:
     """A typo'd template name should not make the user go and list them."""
     with pytest.raises(UnknownSolutionError) as caught:

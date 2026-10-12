@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_formatting.py
 """Column formatting, style specs, and form formatting."""
 
-from typing import Any
+from collections.abc import Mapping
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.clock_cells import cell_for, sentinel_of
@@ -46,7 +46,7 @@ def _as_sharepoint_receives(
     return rewrite_formula_refs(f"={rendered}", names)
 
 
-def _nested(spec: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | None:
+def _nested(spec: Mapping[str, object], path: tuple[str, ...]) -> dict[object, object] | None:
     """The mapping a style rule points into, or None when the spec has no such block."""
     node: object = spec
     for step in path:
@@ -56,7 +56,7 @@ def _nested(spec: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | Non
     return node if isinstance(node, dict) else None
 
 
-def _keys_outside(block: dict[str, Any], members: set[str]) -> list[object]:
+def _keys_outside(block: Mapping[object, object], members: set[str]) -> list[object]:
     """The block's map keys that are not `members`, in a stable order.
 
     A Mapping built in code never meets the loader's refusals, so a map that
@@ -107,15 +107,15 @@ def _scalar_input_findings(
 
 
 def _style_type_findings(
-    registered: StyleSpec, spec: dict[str, Any], col_name: str,
+    registered: StyleSpec, spec: Mapping[str, object], col_name: str,
     types: dict[str, str], lookups: set[str], context: str, at: Location,
 ) -> list[Finding]:
     """One type and calculated-flag contract for targets and referenced operands."""
     if registered.calculated_type is None:
         return []
     inputs = [(col_name, "calculated")]
-    inputs.extend((spec[key], flag) for key, flag in registered.scalar_refs
-                  if isinstance(spec.get(key), str))
+    inputs.extend((ref, flag) for key, flag in registered.scalar_refs
+                  if isinstance(ref := spec.get(key), str))
     return [finding for column, flag in inputs for finding in _scalar_input_findings(
         registered, column, spec.get(flag) is True, flag, types, lookups, context, at,
     )]
@@ -123,7 +123,7 @@ def _style_type_findings(
 
 def _view_dependencies(
     bundle: MappingBundle, entity_name: str, col_name: str,
-    formatter: dict[str, Any], rendered: set[str],
+    formatter: object, rendered: set[str],
 ) -> list[Finding]:
     """Check column dependencies only where the formatted column is displayed."""
     findings: list[Finding] = []
