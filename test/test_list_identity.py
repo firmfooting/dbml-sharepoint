@@ -24,12 +24,12 @@ def test_a_list_may_declare_its_url(tmp_path: Path) -> None:
     assert bundle.mapping.entities["Task"].internal_name == "Lists/MailLedger"
 
 
-def test_the_manifest_records_a_declared_list_url(tmp_path: Path) -> None:
+def _manifest_for(tmp_path: Path, url: str) -> str:
     schema, bundle = pack(
         tmp_path, dbml=table("Task", ID_PK, TITLE),
-        mapping="entities:\n" + _list("Task", "internal_name: Lists/MailLedger"),
+        mapping="entities:\n" + _list("Task", f"internal_name: '{url}'"),
     )
-    manifest = generate_manifest(
+    return generate_manifest(
         resolved=resolve(schema, bundle.mapping),
         schema_json=build_schema_json(
             schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
@@ -39,8 +39,22 @@ def test_the_manifest_records_a_declared_list_url(tmp_path: Path) -> None:
         source_dbml="schema.dbml", generated_at="2026-09-15T00:00:00Z",
         source_mtime="2026-09-15T00:00:00Z",
     )
+
+
+def test_the_manifest_records_a_declared_list_url(tmp_path: Path) -> None:
+    manifest = _manifest_for(tmp_path, "Lists/MailLedger")
     assert "Declared list URL: `Lists/MailLedger`" in manifest
     assert "Immutable library URL name" not in manifest
+
+
+@pytest.mark.parametrize(("url", "span"), [
+    ("Lists/a`b", "``Lists/a`b``"), ("Lists/a``b", "```Lists/a``b```"),
+    ("Lists/a`", "`` Lists/a` ``"),
+])
+def test_a_backtick_in_a_list_url_cannot_close_the_manifest_code_span(
+    tmp_path: Path, url: str, span: str,
+) -> None:
+    assert f"Declared list URL: {span}\n" in _manifest_for(tmp_path, url)
 
 
 @pytest.mark.parametrize("value", ["Lists/a|b", "Lists/../x", "/"])
