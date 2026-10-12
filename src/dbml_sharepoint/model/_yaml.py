@@ -139,6 +139,7 @@ class _Scanner(Scanner):
             ) from exc
         return number
 
+    # Adapted from ruamel.yaml (MIT); copyright and permission notice in NOTICE.
     @override
     def scan_flow_scalar_non_spaces(self, double: object, start_mark: object) -> object:
         """ruamel.yaml 0.19.1's, refusing a `\\u` or `\\U` escape that names no character.
