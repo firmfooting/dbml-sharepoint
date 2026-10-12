@@ -271,7 +271,7 @@ def test_the_shipped_roots_come_from_packaging() -> None:
     # And what the real file says today, so moving any key fails here instead
     # of silently narrowing what the gate scans.
     assert _shipped_roots() == (
-        "src/dbml_sharepoint", "README.md", "LICENSE", "pyproject.toml",
+        "src/dbml_sharepoint", "README.md", "LICENSE", "NOTICE", "pyproject.toml",
     )
 
 
