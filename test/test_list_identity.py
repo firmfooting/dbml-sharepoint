@@ -71,3 +71,17 @@ def test_a_list_url_is_stored_normalised(tmp_path: Path, spelling: str) -> None:
         mapping="entities:\n" + _list("Task", f"internal_name: '{spelling}'"),
     )
     assert bundle.mapping.entities["Task"].internal_name == "Lists/MailLedger"
+
+
+@pytest.mark.parametrize("name", [
+    "Policy Documents", "Policy-Docs", "Politiques d\u00e9taill\u00e9es",
+])
+def test_a_library_root_with_spaces_hyphens_or_unicode_still_loads(
+    tmp_path: Path, name: str,
+) -> None:
+    mapping = (
+        "entities:\n  Doc: {kind: DocumentLibrary, base_template: 101, "
+        f"site_role: default, internal_name: '{name}'}}"
+    )
+    _, bundle = pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=mapping)
+    assert bundle.mapping.entities["Doc"].internal_name == name
