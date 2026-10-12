@@ -121,7 +121,7 @@ class FindingCode(StrEnum):
     def __new__(cls, value: str, severity: Severity) -> "FindingCode":
         member = str.__new__(cls, value)
         member._value_ = value
-        member._severity = severity
+        member._severity = severity  # noqa: SLF001 -- `member` is this class's own instance, built in __new__
         return member
 
     _severity: Severity
