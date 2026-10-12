@@ -331,7 +331,7 @@ def generate_reporting_md(
          "backed by no SharePoint field. `data-dictionary.md` marks each "
          "one, and the SQL views do not carry them."),
         "",
-        ("SQL ItemURL is null unless the library declares an immutable internal_name. "
+        ("SQL ItemURL is null unless the list or library declares an immutable internal_name. "
         "Power Query resolves the current root from SharePoint and flags fallback links."),
         "",
         ("Report filenames encode filesystem-unsafe characters with percent escapes. "

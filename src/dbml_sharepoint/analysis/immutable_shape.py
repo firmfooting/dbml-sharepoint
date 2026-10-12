@@ -31,5 +31,5 @@ IMMUTABLE_LOOKUP_PROPERTIES: tuple[str, ...] = ("LookupList", "LookupField")
 #: Read back for every declared list.
 IMMUTABLE_LIST_PROPERTIES: tuple[str, ...] = ("BaseTemplate",)
 
-#: Library root identity is checked only when internal_name is declared.
-IMMUTABLE_LIBRARY_PROPERTIES: tuple[str, ...] = ("RootFolder",)
+#: Root identity (list or library) is checked only when internal_name is declared.
+IMMUTABLE_ROOT_PROPERTIES: tuple[str, ...] = ("RootFolder",)

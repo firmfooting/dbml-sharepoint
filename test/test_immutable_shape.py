@@ -6,9 +6,9 @@ from _paths import FIXTURES, JINJA_TEMPLATES
 
 from dbml_sharepoint.analysis.immutable_shape import (
     IMMUTABLE_FIELD_PROPERTIES,
-    IMMUTABLE_LIBRARY_PROPERTIES,
     IMMUTABLE_LIST_PROPERTIES,
     IMMUTABLE_LOOKUP_PROPERTIES,
+    IMMUTABLE_ROOT_PROPERTIES,
 )
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import (
@@ -117,7 +117,7 @@ def test_the_field_collector_and_the_vocabulary_cover_the_same_properties() -> N
 
 def test_the_list_collector_and_the_vocabulary_cover_the_same_properties() -> None:
     compared = _compared_properties(_deploy_js(), "immutableListMismatches")
-    assert compared == set(IMMUTABLE_LIST_PROPERTIES) | set(IMMUTABLE_LIBRARY_PROPERTIES)
+    assert compared == set(IMMUTABLE_LIST_PROPERTIES) | set(IMMUTABLE_ROOT_PROPERTIES)
 
 
 def test_every_field_property_is_in_the_select_it_is_read_with() -> None:
