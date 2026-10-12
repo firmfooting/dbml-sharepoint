@@ -39,6 +39,7 @@ from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_CHANGE_COLUMNS,
+    CENTRAL_CHANGE_OPTIONAL_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_FIELDS,
@@ -81,6 +82,9 @@ _HARNESS = textwrap.dedent(r"""
     // and --deployment-changes is left at its new default, unprovisioned,
     // title.
     const CENTRAL_CHANGES_ABSENT = false;
+    // The server stores a different ListId than the one sent, to drive the
+    // read-back mismatch branch.
+    const STORE_WRONG_LIST_ID = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
     const REFUSE_CHANGE_FIELD = '';
     const SEED_ITEMS = {};
@@ -308,8 +312,13 @@ _HARNESS = textwrap.dedent(r"""
           const bad = itemRefusal(body, ['Title'].concat(centralList.fields), centralList.itemType);
           if (bad) return bad;
           const row = { Id: state.nextItem++, ...body };
+          if (STORE_WRONG_LIST_ID && row.ListId) row.ListId = 'deadbeef-0';
           centralList.items().push(row);
           return reply(201, { d: { Id: row.Id } });
+        }
+        if (centralItem && method === 'GET') {
+          const row = centralList.items().find((r) => r.Id === Number(centralItem[1]));
+          return row ? reply(200, { d: row }) : notFound();
         }
         if (/\/items/.test(u)) {
           const key = filteredKey(u);
@@ -518,6 +527,8 @@ def _run_deploy(
     refuse_change_field: str = "",
     central_columns: bool = True,
     central_change_columns: bool = True,
+    central_list_id: bool = False,
+    store_wrong_list_id: bool = False,
     central_absent: bool = False,
     central_changes_absent: bool = False,
     central_can_close: bool = False,
@@ -545,11 +556,19 @@ def _run_deploy(
         harness, "const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;",
         f"const CENTRAL_FIELDS = {json.dumps(deployments_fields)};",
     )
+    change_fields = list(CENTRAL_CHANGE_COLUMNS) if central_change_columns else []
+    if central_list_id:
+        change_fields += list(CENTRAL_CHANGE_OPTIONAL_COLUMNS)
     harness = _substitute(
         harness, "const CENTRAL_CHANGE_FIELDS = CENTRAL_CHANGE_FIELD_NAMES;",
         f"const CENTRAL_CHANGE_FIELDS = "
-        f"{json.dumps(list(CENTRAL_CHANGE_COLUMNS) if central_change_columns else [])};",
+        f"{json.dumps(change_fields)};",
     )
+    if store_wrong_list_id:
+        harness = _substitute(
+            harness, "const STORE_WRONG_LIST_ID = false;",
+            "const STORE_WRONG_LIST_ID = true;",
+        )
     if central_absent:
         harness = _substitute(
             harness, "const CENTRAL_ABSENT = false;", "const CENTRAL_ABSENT = true;",
@@ -1085,6 +1104,41 @@ def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
 
     assert summary["loggingFailures"] == []
     assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
+
+
+def _created_list_row(run: Json) -> Json:
+    return next(
+        r for r in run["state"]["centralChanges"]
+        if r.get("ChangeKind") == "create"
+    )
+
+
+def test_a_list_create_row_records_the_created_lists_id_and_reads_it_back() -> None:
+    run = _run_deploy(central_list_id=True)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
+    row = _created_list_row(run)
+    guid = run["state"]["lists"][row["TargetName"].text]["Id"].text
+    assert row["ListId"] == guid
+    assert any(
+        c["method"] == "GET" and f"items({row['Id']})?$select=ListId" in c["url"]
+        for c in run["calls"]
+    ), "the stored ListId was never read back"
+    assert run["summary"]["loggingFailures"] == []
+
+
+def test_a_changes_list_without_a_listid_column_still_takes_create_rows() -> None:
+    run = _run_deploy()
+    row = _created_list_row(run)
+    assert "ListId" not in row
+    assert run["summary"]["loggingFailures"] == []
+    assert "ListId" in run["output"]
+
+
+def test_a_stored_listid_that_differs_from_the_created_lists_id_is_a_named_failure() -> None:
+    run = _run_deploy(central_list_id=True, store_wrong_list_id=True)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
+    failures = [str(f) for f in run["summary"]["loggingFailures"]]
+    assert any("ListId read-back mismatch" in f for f in failures), failures
 
 
 def test_the_close_reads_and_writes_the_changes_list_not_the_deployments_list(

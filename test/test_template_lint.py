@@ -97,6 +97,7 @@ KNOWN_CONTEXT = {
     "deployment_log_list", "deployment_log_change_list",
     "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
+    "deployment_log_change_optional_columns",
     # extractgen, for extract.js
     "list_paths", "live_format", "download_name",
     # maintaingen (protection.js, columns.js): one list, named by the

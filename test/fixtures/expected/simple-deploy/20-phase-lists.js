@@ -64,7 +64,8 @@
         invalidateListShapes();  // the enumeration no longer knows every list
         summary.listsCreated.push(list.title);
         logChange({ key: `list: ${list.title}`, kind: 'create', target: list.title,
-          oldValue: '', newValue: `created by ${RELEASE_TAG}` });
+          oldValue: '', newValue: `created by ${RELEASE_TAG}`,
+          listId: created.d.Id });
       }
       listShape = await reconcileListShape(list, digest);
       listGuids[list.title] = listShape.Id;

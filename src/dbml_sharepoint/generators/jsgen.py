@@ -47,7 +47,11 @@ from dbml_sharepoint.analysis.role_definition_description import (
     marker_for_level,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
-from dbml_sharepoint.analysis.sidecars import CENTRAL_CHANGE_COLUMNS, CENTRAL_LOG_COLUMNS
+from dbml_sharepoint.analysis.sidecars import (
+    CENTRAL_CHANGE_COLUMNS,
+    CENTRAL_CHANGE_OPTIONAL_COLUMNS,
+    CENTRAL_LOG_COLUMNS,
+)
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     ENTITY_TYPE_BY_KIND,
@@ -241,6 +245,7 @@ def generate_deploy_js(
         # change feed, which is what lets a run with a central log create no
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
+        deployment_log_change_optional_columns=list(CENTRAL_CHANGE_OPTIONAL_COLUMNS),
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

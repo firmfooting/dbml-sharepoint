@@ -254,6 +254,12 @@ CENTRAL_CHANGE_COLUMNS: tuple[str, ...] = tuple(
     str(field["Title"]) for field in CHANGE_FIELDS
 )
 
+#: Columns a central Changes list may carry without being required to. A list
+#: provisioned before one was added still takes every change row; the deploy
+#: writes the column only where the probe finds it, so adding one here never
+#: costs an older log its change feed.
+CENTRAL_CHANGE_OPTIONAL_COLUMNS: tuple[str, ...] = ("ListId",)
+
 #: The run log's stamp columns, in the same createField-body form as
 #: `CHANGE_FIELDS` and created by the same probe/create/read-back loop.
 #:
