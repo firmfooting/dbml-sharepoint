@@ -708,3 +708,40 @@ def test_an_edit_after_resolution_is_refused_by_a_helper_taking_no_bundle() -> N
     assert excinfo.value.detail == "its groups changed after it was resolved"
     with pytest.raises(MismatchedResolutionError):
         lists_granting_group(resolved, "Late Arrivals", ["Risk"])
+
+
+def _bundle_of(resolved: ResolvedMapping) -> MappingBundle:
+    return MappingBundle(
+        mapping=resolved.mapping, enum_choices={}, retention_policies={},
+        retention_list_defaults={},
+    )
+
+
+def test_a_resolution_not_derived_from_its_mapping_is_refused() -> None:
+    """`replace` and a hand-built resolution re-snapshot the mapping (#675)."""
+    schema = make_schema(make_table("Risk", "Title"))
+    resolved = _resolved_with_a_folder_policy()
+    evil = ListPermissionPolicy(
+        break_inheritance=True,
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="group", name="Everyone"), level="Full Control",
+            ),
+        ),
+    )
+    extra_group = _group("Everyone")
+    require_matching_resolution(resolved, _bundle_of(resolved), schema)
+
+    cases = [
+        replace(resolved, folders={"Risk": ("Restricted",)}),
+        replace(resolved, folder_policies={"Risk": (("Shared", evil),)}),
+        replace(resolved, groups=(extra_group,)),
+        ResolvedMapping(
+            mapping=resolved.mapping, enum_members=resolved.enum_members,
+            folders=resolved.folders, folder_policies={"Risk": (("Shared", evil),)},
+            groups=resolved.groups,
+        ),
+    ]
+    for forged in cases:
+        with pytest.raises(MismatchedResolutionError, match="not what resolving"):
+            require_matching_resolution(forged, _bundle_of(forged), schema)

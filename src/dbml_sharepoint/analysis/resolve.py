@@ -322,12 +322,27 @@ def require_matching_resolution(
     The schema is compared on `enum_members`, which is the whole of what a
     resolution takes from a schema, so two schemas differing only in ways
     the resolution cannot see are correctly accepted.
+
+    With a schema, `folders`, `folder_policies` and `groups` are also compared
+    with a fresh `resolve()` of the same mapping.
     """
     if resolved.mapping is not bundle.mapping:
         raise MismatchedResolutionError("its mapping is a different object")
     require_current_resolution(resolved)
     if schema is not None and resolved.enum_members != enum_members_of(schema):
         raise MismatchedResolutionError("its enum members are not this schema's")
+    if schema is not None:
+        # `replace` and hand-built resolutions re-snapshot `consumed` (#675).
+        fresh = resolve(schema, resolved.mapping)
+        differing = [
+            name.replace("_", " ")
+            for name in ("folders", "folder_policies", "groups")
+            if getattr(resolved, name) != getattr(fresh, name)
+        ]
+        if differing:
+            raise MismatchedResolutionError(
+                f"its {', '.join(differing)} are not what resolving its mapping gives",
+            )
 
 
 def require_current_resolution(resolved: ResolvedMapping) -> None:

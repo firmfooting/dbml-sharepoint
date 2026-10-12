@@ -206,6 +206,9 @@ The schema is compared on `enum_members`, which is the whole of what a
 resolution takes from a schema, so two schemas differing only in ways
 the resolution cannot see are correctly accepted.
 
+With a schema, `folders`, `folder_policies` and `groups` are also compared
+with a fresh `resolve()` of the same mapping.
+
 ### `require_current_resolution`
 
 ```python
