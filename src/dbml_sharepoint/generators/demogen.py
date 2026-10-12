@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.typemap import (
     TODAY_SENTINEL,
     element_type,
     is_hyperlink,
+    is_multi_person,
     is_multi_value,
     is_person,
 )
@@ -98,6 +99,10 @@ def _field_plan(
             "metadata_type": MULTI_VALUE_LOOKUP_METADATA_TYPE,
             "value": keys,
         }
+    if is_multi_person(col_type):
+        raise ValueError(
+            f"{name}: a person[] column cannot be seeded by a demo row.",
+        )
     if is_person(col_type):
         return {"name": name, "kind": "me", "value": None}
     if is_hyperlink(col_type):

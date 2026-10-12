@@ -823,6 +823,14 @@ def build_plans(
                     plan.selects.append(f"{sp.name}Id")
                     plan.multi_value_joins.append((f"{sp.name}Id", False))
                     plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
+                case "UserMulti":
+                    # Ids only and joined, as for LookupMulti: the items
+                    # endpoint reads `<Name>Id` back as an array of ids
+                    # (`field.version.fixture-payload-item`), and an expand of
+                    # a collection is not flattened here.
+                    plan.selects.append(f"{sp.name}Id")
+                    plan.multi_value_joins.append((f"{sp.name}Id", False))
+                    plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
                 case _:
                     # WITHOUT THIS THE TWO DRIFT AUDITS CONTRADICT EACH OTHER,
                     # and neither of them can say so.

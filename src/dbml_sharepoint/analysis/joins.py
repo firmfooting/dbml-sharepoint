@@ -102,7 +102,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
     rendered_columns,
     system_columns_for,
 )
-from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
+from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES, element_type
 from dbml_sharepoint.model.mapping_types import EntityKind, EntityMapping
 from dbml_sharepoint.model.parser import Table
 
@@ -150,7 +150,7 @@ def join_bearing_columns(table: Table, cross_site_cols: AbstractSet[str]) -> set
     for col in table.columns:
         if col.name in cross_site_cols:
             continue
-        if col.ref is not None or col.type in JOIN_BEARING_TYPES:
+        if col.ref is not None or element_type(col.type) in JOIN_BEARING_TYPES:
             bearing.add(col.name)
     return bearing
 

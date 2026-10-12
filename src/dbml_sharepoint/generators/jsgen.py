@@ -1346,6 +1346,17 @@ def _field_body(
             body["DisplayFormat"] = sp.display_format
         case "User":
             body["SelectionMode"] = sp.selection_mode
+        case "UserMulti":
+            body["SelectionMode"] = sp.selection_mode
+            body["AllowMultipleValues"] = True
+            # AddField has no arity, so this is created from schema XML as a
+            # multi-value lookup is (`field.version.fixture-payload-people-column`).
+            # Required and Description arrive on the reconciler's MERGE.
+            return {
+                "title": sp.name,
+                "body": body,
+                "user_creation_xml": {"type": sp.kind, "name": sp.name},
+            }
         case "Lookup" | "LookupMulti":
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
