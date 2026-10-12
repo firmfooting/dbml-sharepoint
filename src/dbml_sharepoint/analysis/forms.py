@@ -12,7 +12,6 @@ from dataclasses import replace
 from dbml_sharepoint.analysis.condition_rendering import EXPRESSION
 from dbml_sharepoint.analysis.conditions import condition_findings
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location
-from dbml_sharepoint.analysis.typemap import is_boolean
 from dbml_sharepoint.model.conditions import Condition
 
 
@@ -33,7 +32,7 @@ def validate_form_visibility(
 ) -> list[Finding]:
     """Semantic problems with one column's declaration, as Findings.
 
-    Six distinct rules live here, and each has its own code. The severity
+    Five distinct rules live here, and each has its own code. The severity
     is carried structurally rather than described in the prose: every
     message used to be returned as a bare string and wrapped by the caller
     as an error, including the one case the spec makes a WARNING, a
@@ -43,9 +42,9 @@ def validate_form_visibility(
     not be deployed at all.
 
     Returning Findings rather than (severity, message) pairs is what keeps
-    those six apart. The caller cannot supply the code, because it does
+    those five apart. The caller cannot supply the code, because it does
     not know which rule fired. One code at the call site would collapse
-    all six into one.
+    all five into one.
 
     `at` locates the DECLARATION, which is `retired_columns[E]` when the
     retirement fold synthesised it and `form_visibility[E]` otherwise. The
@@ -58,18 +57,6 @@ def validate_form_visibility(
             FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN,
             (f"{at.path}: {column!r} is a calculated column -- calculated columns never "
              f"appear on entry forms, so declaring their visibility is a mistake"),
-            location=at,
-        ))
-    if (when is not None or not (new or existing)) and is_boolean(types.get(column)):
-        # SharePoint refuses a composed client formula (a `when`,
-        # or `hidden` = `=if(false, ...)`) on kind 8 with HTTP 500.
-        # A gate-only declaration is untested, so it stays deployable.
-        findings.append(Finding(
-            FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
-            (f"{at.path}: {column!r} is a Yes/No column and SharePoint refuses "
-             f"client formulas on that field type, so a 'when' or a column hidden "
-             f"on every form cannot be deployed -- leave it visible, place it "
-             f"with form_formatting, or move the column off boolean"),
             location=at,
         ))
     if not new and not existing and when is not None:

@@ -158,47 +158,15 @@ def test_calculated_columns_cannot_declare_visibility() -> None:
     assert "calculated" in found.message
 
 
-def test_a_condition_on_a_yes_no_column_is_refused() -> None:
-    """Measured live on 2026-09-04, and the shape is the one the shipped
-    `visitor-log` family carried: a boolean column with a `when`.
-
-    The deploy aborted in phase 2.1 on `VI_Visit.InductionSighted` with
-    HTTP 500 "This field type does not support validation formulas", so
-    the composed formula never reached the field and the paste stopped
-    part-way through a fresh provision. Refusing it at build time is the
-    difference between an unbuildable mapping and a half-deployed site.
-    """
+def test_a_required_yes_no_column_declared_hidden_is_refused() -> None:
+    """A required Yes/No stays visible on the New form whatever the hide
+    formula says (field.client-validation.boolean-form-ignores-required),
+    so the declaration cannot do what it says."""
     found = only(
-        _visibility_findings(column="Sighted", when=WHEN),
-        FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
-    )
-
-    assert "Yes/No" in found.message
-    assert found.severity == "error"
-
-
-def test_a_hidden_yes_no_column_is_refused() -> None:
-    """`hidden` compiles to a composed client formula, which SharePoint refused
-    on a Yes/No field with HTTP 500 "This field type does not support
-    validation formulas"."""
-    found = only(
-        _visibility_findings(column="Sighted", new=False, existing=False),
-        FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
+        _visibility_findings(column="Sighted", new=False, required=True),
+        FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM,
     )
     assert found.severity == "error"
-    assert "form_formatting" in found.message
-
-
-def test_a_hidden_column_that_is_not_yes_no_still_builds() -> None:
-    assert _visibility_findings(column="Name", new=False, existing=False) == []
-
-
-def test_a_yes_no_column_may_still_be_gated_per_form() -> None:
-    """Only the composed formula is measured. A gate is carried by the same
-    property, so this is not obviously safe, but nothing has established
-    that it fails, and a guard wider than the measurement refuses a
-    declaration the platform may well accept."""
-    assert _visibility_findings(column="Sighted", new=False) == []
 
 
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
@@ -225,14 +193,13 @@ def test_statically_provable_cases_stay_errors() -> None:
 
 def test_each_rule_here_has_its_own_code() -> None:
     """The reason this function returns Findings rather than
-    (severity, message) pairs. The caller cannot know which of the six
+    (severity, message) pairs. The caller cannot know which of the five
     rules fired, so one code assigned there would collapse all of them,
     and a rule with no code of its own can never be asserted on, or
     suppressed, or looked up in the catalogue.
     """
     codes = [
         _visibility_findings(is_calculated=True)[0].code,
-        _visibility_findings(column="Sighted", when=WHEN)[0].code,
         _visibility_findings(new=False, existing=False, when=WHEN)[0].code,
         _visibility_findings(new=False, required=True)[0].code,
         _visibility_findings(when=WHEN, required=True)[0].code,

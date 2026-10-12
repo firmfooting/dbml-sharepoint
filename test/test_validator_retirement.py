@@ -152,6 +152,32 @@ def test_column_validation_cannot_reference_another_column() -> None:
     )
     assert "['Owner']" in f.message
 
+def test_column_validation_on_a_yes_no_column_is_refused() -> None:
+    """SharePoint refuses a ValidationFormula on a Yes/No field
+    (field.client-validation.boolean-server-only); the rule belongs in
+    `list_validation`."""
+    schema = make_schema(make_table(
+        "Board", make_column("Title"), make_column("Flag", "boolean"),
+        note="Board fixture.",
+    ))
+    bundle = make_bundle(
+        entities=["Board"],
+        column_validation={
+            "Board": EntitySection(columns={
+                "Flag": ColumnValidation(
+                    when=Leaf(field="Flag", op="is_not_null"), message="Needs a value.",
+                ),
+            }),
+        },
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.COLUMN_VALIDATION_ON_A_BOOLEAN_COLUMN,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.COLUMN_VALIDATION, entity="Board", column="Flag")
+
+
 def test_retired_columns_errors(tmp_path: Path) -> None:
     """Fail closed where a retirement mistake would break the list. The
     not-null-with-no-default case is the one that matters: retirement hides
