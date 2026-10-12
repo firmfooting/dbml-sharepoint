@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.14.0...v0.15.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **loader:** refuse surrogate escapes, count merges at their own level and report wizard prefix errors at file positions ([#810](https://github.com/firmfooting/dbml-sharepoint/issues/810))
+* **analysis:** type-check demo values and text condition literals ([#805](https://github.com/firmfooting/dbml-sharepoint/issues/805))
+
+### Features
+
+* add a person[] column kind holding several people ([#822](https://github.com/firmfooting/dbml-sharepoint/issues/822)) ([9a2fc3a](https://github.com/firmfooting/dbml-sharepoint/commit/9a2fc3a0d90e18f2856f8cb95b0bd43ec3b095a6))
+* record each created list's id in the deployment log ([#821](https://github.com/firmfooting/dbml-sharepoint/issues/821)) ([aeae931](https://github.com/firmfooting/dbml-sharepoint/commit/aeae93184370a8be3887e567acb3b7a879854ce6))
+
+
+### Bug Fixes
+
+* **analysis:** type-check demo values and text condition literals ([#805](https://github.com/firmfooting/dbml-sharepoint/issues/805)) ([18c8d50](https://github.com/firmfooting/dbml-sharepoint/commit/18c8d501929130d1b1be261ab59a15a669623623))
+* **deploy:** filter the current change row with IsCurrent eq 1 ([#827](https://github.com/firmfooting/dbml-sharepoint/issues/827)) ([f21a81c](https://github.com/firmfooting/dbml-sharepoint/commit/f21a81c7cbed206498052f958b2575730cbb485b))
+* **loader:** refuse surrogate escapes, count merges at their own level and report wizard prefix errors at file positions ([#810](https://github.com/firmfooting/dbml-sharepoint/issues/810)) ([c8db575](https://github.com/firmfooting/dbml-sharepoint/commit/c8db575ee0f9a32ea1d1581ddc4d22b3be62c1e8))
+
 ## [0.14.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.13.0...v0.14.0) (2026-10-12)
 
 
