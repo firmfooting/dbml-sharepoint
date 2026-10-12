@@ -74,6 +74,8 @@ class ListPlan:
     skipped: list[str] = field(default_factory=list)
     item_url_path: str = ''
     item_url_authoritative: bool = False
+    list_url: str = ''
+    target_identities: dict[str, str] = field(default_factory=dict)
     item_url_suffix: str = ''
     renames: list[tuple[str, str]] = field(default_factory=list)
     field_internal_names: list[str] = field(default_factory=list)
@@ -130,6 +132,16 @@ started shipping the lossy bundle; the deletion was reverted with a test
 when it goes again. The knowledge is not duplicated -- both this and the
 validator ask `analysis/exports.ambiguous_members`, which is the one
 place the rule is written.
+
+### `key_identity`
+
+```python
+def key_identity(list_url: str, list_title: str) -> str
+```
+
+The list half of a row key: the declared URL, else the title behind a prefix.
+
+The prefix keeps a title from ever spelling a declared URL.
 
 ### `is_expand_queryable`
 

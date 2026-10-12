@@ -44,6 +44,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     ListPlan,
     build_plans,
     grouped_record_expands,
+    key_identity,
     read_by_another,
     reads_zone,
     tables_for_role,
@@ -61,8 +62,8 @@ def _m_string(text: str) -> str:
     return '"' + text.replace('#(', '#(#)(').replace('"', '""') + '"'
 
 
-def _row_key_m(list_title: str, id_expression: str) -> str:
-    """The M expression for one row key: site, LIST, and item id.
+def _row_key_m(identity: str, id_expression: str) -> str:
+    """The M expression for one row key: site, list identity, and item id.
 
     THE ONE definition of the key format, used for both a table's own
     ``<Entity> Key`` and the ``<Target> Key`` every lookup carries. Those two
@@ -70,25 +71,17 @@ def _row_key_m(list_title: str, id_expression: str) -> str:
     relationship that matches nothing, and matching nothing renders as
     empty visuals rather than as an error.
 
-    MEASURED implicitly on a live tenant, 2026-08-11: the key was site + id
-    with nothing naming the list. Every SharePoint list numbers its items
-    from 1, so two lists on ONE site produce colliding keys the moment their
-    queries are appended (the multi-site, multi-list model this pack's own
-    guide tells the operator to build). Wrong row counts and wrong
-    relationships, and nothing anywhere raises.
-
-    The list TITLE, not its GUID, and deliberately: a GUID would survive a
-    rename, but the query addresses the list by title in
-    ``getbytitle('<title>')`` two steps above, so a rename breaks the query
-    outright regardless. The title therefore adds no failure mode the query
-    does not already have, and it costs no second round trip to the site.
+    The identity is the list's declared URL, lower-cased, when the mapping
+    declares one (``analysis.list_url``), and ``title:`` plus the title
+    otherwise. Two lists on one site number their items from 1, so the key
+    must name the list or appended queries collide.
 
     ``SiteRoot`` rather than the raw ``SiteUrl``: two operators pasting the
     same site in different shapes must produce the SAME key, or appending
     their copies breaks the relationship rather than the URL.
     """
     return (
-        f'SiteRoot & "|" & {_m_string(list_title)} & "|" '
+        f'SiteRoot & "|" & {_m_string(identity)} & "|" '
         f"& Number.ToText({id_expression})"
     )
 
@@ -1029,7 +1022,7 @@ def _fetch_m(
         # are wrong. Format and rationale: `_row_key_m`.
         "    WithRowKey = Table.AddColumn(",
         f'        WithListTitle, "{plan.entity}{REPORT_KEY_SUFFIX}",',
-        f"        each {_row_key_m(plan.list_title, '[Id]')},",
+        f"        each {_row_key_m(key_identity(plan.list_url, plan.list_title), '[Id]')},",
         "        type text",
         "    )",
     ]
@@ -1054,6 +1047,7 @@ def _fetch_m(
         plan.joins, start=1,
     ):
         step = f"WithFkKey{i}"
+        target_identity = plan.target_identities.get(target_title, key_identity('', target_title))
         lines[-1] += ","
         lines += [
             f"    {step} = Table.AddColumn(",
@@ -1066,7 +1060,7 @@ def _fetch_m(
             # against the row key the target table publishes, so it has to be
             # spelled the way the TARGET spells it. Both come from
             # `_row_key_m`, which is the point of that function.
-            f"              else {_row_key_m(target_title, f'[{fk_col}]')},",
+            f"              else {_row_key_m(target_identity, f'[{fk_col}]')},",
             "        type text",
             "    )",
         ]
