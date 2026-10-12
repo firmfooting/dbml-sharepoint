@@ -100,7 +100,7 @@ Table Changes {
 
   // SourceSite, ChangeKey, Application and IsCurrent are the type-2 close
   // filter, read as one four-way AND (`SourceSite eq X and ChangeKey eq Y
-  // and Application eq Z and IsCurrent eq true`), on a list that grows
+  // and Application eq Z and IsCurrent eq 1`), on a list that grows
   // with every change any firmfooting application makes, on any site.
   // Microsoft documents that such a filter is blocked once it would scan
   // past the 5,000-item list view threshold without an indexed column,
