@@ -90,10 +90,7 @@ def _require_mapping(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
     entries: dict[object, object] = block
-    for key in entries:
-        _text_key(key, context)
-    checked: dict[str, object] = block
-    return checked
+    return {_text_key(key, context): value for key, value in entries.items()}
 
 
 def _require_list(block: object, context: str) -> list[object]:
@@ -140,11 +137,11 @@ def _known_keys(
             f"{context}: expected a mapping, got {type(block).__name__}",
         )
     entries: dict[object, object] = block
-    unknown = {_text_key(key, context) for key in entries} - set(allowed)
+    result = {_text_key(key, context): value for key, value in entries.items()}
+    unknown = set(result) - set(allowed)
     if unknown:
         raise UnknownMappingKeyError(
             f"{context}: unknown key(s) {sorted(unknown)} "
             f"(known: {sorted(allowed)})",
         )
-    checked: dict[str, object] = block
-    return checked
+    return result

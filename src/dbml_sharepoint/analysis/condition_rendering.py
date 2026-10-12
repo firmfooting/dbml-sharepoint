@@ -1437,9 +1437,16 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
     if leaf.property and leaf.measure != "length":
         column_type = _ACCESSOR_TYPES.get(leaf.property, column_type)
 
-    # `_check` has refused a value that is not a list, so the second test only narrows it.
-    members = leaf.value
-    if leaf.op in ("in", "not_in") and is_object_list(members):
+    if leaf.op in ("in", "not_in"):
+        # `_check` has refused this already; the test only narrows the value and fails closed.
+        members = leaf.value
+        if not is_object_list(members):
+            raise _reject(
+                ConditionRefusalKind.VALUE_NOT_A_LIST,
+                target,
+                f"operator {leaf.op!r} needs a list 'value'",
+                where,
+            )
         if target == CAML and leaf.op == "not_in":
             # CAML's bare Neq drops an empty field, but an empty value is
             # outside every non-empty set. Admit null once around the whole
