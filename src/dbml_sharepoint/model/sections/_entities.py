@@ -168,7 +168,7 @@ def _internal_name(spec: dict[str, Any], name: str) -> str | None:
                 reason = "use a decoded folder name without traversal or control characters"
         else:
             try:
-                list_url_path(value)
+                value = list_url_path(value)
             except ValueError as exc:
                 reason = str(exc)
         if reason:
