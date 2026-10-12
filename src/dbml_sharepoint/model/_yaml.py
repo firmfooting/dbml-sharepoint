@@ -64,6 +64,13 @@ _MAX_LISTED = 20
 #: NEL (U+0085), by code point so no string literal here holds a character a console cannot print.
 _NEL = chr(0x85)
 
+#: The surrogate code points, which UTF-8 cannot write.
+_SURROGATES = (0xD800, 0xDFFF)
+
+#: The line breaks YAML knows, and the characters that end a run of plain text in a quoted scalar.
+_BREAKS = "\n\r" + _NEL + chr(0x2028) + chr(0x2029)
+_ENDS = " '\"\\\0\t" + _BREAKS
+
 
 def _tag_name(tag: str) -> str:
     """`tag` as an author would write it."""
@@ -145,7 +152,7 @@ class _Scanner(Scanner):
         srf = self.reader.forward
         while True:
             length = 0
-            while srp(length) not in " \n'\"\\\0\t\r\x85\u2028\u2029":
+            while srp(length) not in _ENDS:
                 length += 1
             if length != 0:
                 chunks.append(self.reader.prefix(length))
@@ -165,34 +172,8 @@ class _Scanner(Scanner):
                     chunks.append(self.ESCAPE_REPLACEMENTS[ch])
                     srf()
                 elif ch in self.ESCAPE_CODES:
-                    length = self.ESCAPE_CODES[ch]
-                    srf()
-                    for k in range(length):
-                        if srp(k) not in "0123456789ABCDEFabcdef":
-                            raise ScannerError(
-                                "while scanning a double-quoted scalar", start_mark,
-                                f"expected escape sequence of {length:d} "
-                                f"hexdecimal numbers, but found {srp(k)!r}",
-                                self.reader.get_mark(),
-                            )
-                    digits = self.reader.prefix(length)
-                    code = int(digits, 16)
-                    if code > _LAST_CHARACTER:
-                        raise ScannerError(
-                            "while scanning a double-quoted scalar", start_mark,
-                            "found an escape that names no character; the last is `\\U0010FFFF`",
-                            self.reader.get_mark(),
-                        )
-                    if 0xD800 <= code <= 0xDFFF:
-                        raise ScannerError(
-                            "while scanning a double-quoted scalar", start_mark,
-                            f"found the escape `\\{ch}{digits}`, which names a surrogate "
-                            "and so no character",
-                            slash,
-                        )
-                    chunks.append(chr(code))
-                    srf(length)
-                elif ch in "\n\r\x85\u2028\u2029":
+                    chunks.append(self._read_code(ch, start_mark, slash))
+                elif ch in _BREAKS:
                     self.scan_line_break()
                     chunks.extend(self.scan_flow_scalar_breaks(double, start_mark))
                 else:
@@ -203,6 +184,36 @@ class _Scanner(Scanner):
                     )
             else:
                 return chunks
+
+    def _read_code(self, letter: str, start_mark: StreamMark, slash: StreamMark) -> str:
+        """The character a `\\x`, `\\u` or `\\U` escape names, read after its letter."""
+        length: int = self.ESCAPE_CODES[letter]
+        self.reader.forward()
+        for k in range(length):
+            if self.reader.peek(k) not in "0123456789ABCDEFabcdef":
+                raise ScannerError(
+                    "while scanning a double-quoted scalar", start_mark,
+                    f"expected escape sequence of {length:d} "
+                    f"hexdecimal numbers, but found {self.reader.peek(k)!r}",
+                    self.reader.get_mark(),
+                )
+        digits = self.reader.prefix(length)
+        code = int(digits, 16)
+        if code > _LAST_CHARACTER:
+            raise ScannerError(
+                "while scanning a double-quoted scalar", start_mark,
+                "found an escape that names no character; the last is `\\U0010FFFF`",
+                self.reader.get_mark(),
+            )
+        if _SURROGATES[0] <= code <= _SURROGATES[1]:
+            raise ScannerError(
+                "while scanning a double-quoted scalar", start_mark,
+                f"found the escape `\\{letter}{digits}`, which names a surrogate and so "
+                "no character",
+                slash,
+            )
+        self.reader.forward(length)
+        return chr(code)
 
     @override
     def scan_directive(self) -> DirectiveToken:
