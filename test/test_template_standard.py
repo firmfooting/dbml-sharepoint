@@ -24,6 +24,7 @@ Spec: `docs/superpowers/specs/2026-07-28-template-family-standard-design.md`,
 Part 1 (the seven conventions) and §3.1 (these assertions).
 """
 
+import collections.abc as cabc
 import datetime as dt
 import re
 from dataclasses import dataclass, fields
@@ -56,7 +57,7 @@ from dbml_sharepoint.analysis.list_description import (
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, NUMBER_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -706,7 +707,7 @@ def test_every_seeded_row_passes_its_save_rules(template: str) -> None:
                 if column and blank:
                     continue
                 try:
-                    verdict = _evaluate(normalise(condition), row, types)
+                    verdict = _evaluate(normalise(condition), row, types, lagging=True)
                 except _UnevaluableError as exc:
                     unevaluable.append(f"{entity}/{key}: {exc}")
                     continue
@@ -936,16 +937,19 @@ class _UnevaluableError(Exception):
     naming the view, never silently treated as satisfied."""
 
 
-def _evaluate(node: Condition, row: dict[str, Any], types: dict[str, str]) -> bool | None:
+def _evaluate(
+    node: Condition, row: cabc.Mapping[str, object], types: dict[str, str], *,
+    lagging: bool = False,
+) -> bool | None:
     """Three-valued walk. None means UNKNOWN, a leaf this evaluator cannot
     decide from demo `values` (a calculated column, or the `me` sentinel).
     UNKNOWN propagates the way SQL's does, so it can only ever make the
     answer less certain, never falsely negative."""
     if isinstance(node, Leaf):
-        return _evaluate_leaf(node, row, types)
+        return _evaluate_leaf(node, row, types, lagging=lagging)
     if not isinstance(node, Group):  # pragma: no cover - the type is closed
         raise _UnevaluableError(f"unknown condition node {type(node).__name__}")
-    results = [_evaluate(child, row, types) for child in node.children]
+    results = [_evaluate(child, row, types, lagging=lagging) for child in node.children]
     if node.kind == "all_of":
         if any(result is False for result in results):
             return False
@@ -959,7 +963,9 @@ def _evaluate(node: Condition, row: dict[str, Any], types: dict[str, str]) -> bo
     raise _UnevaluableError(f"group kind {node.kind!r} survived normalisation")
 
 
-def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bool | None:
+def _evaluate_leaf(
+    leaf: Leaf, row: cabc.Mapping[str, object], types: dict[str, str], *, lagging: bool = False,
+) -> bool | None:
     if leaf.property or (leaf.measure and leaf.measure != "length"):
         raise _UnevaluableError(f"{leaf.field}: 'property'/'measure' comparisons are not evaluated")
     if leaf.op not in SUPPORTED_OPS:
@@ -973,11 +979,12 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         return None  # SharePoint fills it from a formula on create, as for a calculated column
     # The renderer reads `today` and ISO text as dates only on a date column.
     dates = column_type in DATE_TYPES
+    numeric = column_type in NUMBER_TYPES
     if leaf.measure == "length":
         # Rendered as LEN([X]), and LEN of a blank is 0, so a measure is never null.
         raw = row.get(leaf.field)
         length = 0 if raw is None or raw == [] else len(str(raw))
-        return _compare(leaf.op, length, leaf.value)
+        return _compare(leaf.op, length, leaf.value, numeric=True)
     raw = row.get(leaf.field)
     # `[]` counts as empty because the emitter omits an empty multi-value field
     # from the payload and M4 measured that column reading back `null`.
@@ -994,7 +1001,7 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         # 2026-08-10, which returned the empty row.
         return leaf.op in _NULL_INCLUSIVE_NEGATIVES
     if column_type == "datetime" and leaf.op in _ORDERING_OPS:
-        return _compare_instants(leaf.field, leaf.op, raw, leaf.value)
+        return _compare_instants(leaf.field, leaf.op, raw, leaf.value, lagging=lagging)
     if column_type == "boolean" and leaf.op in _ORDERING_OPS:
         return _compare_booleans(leaf.field, leaf.op, raw, leaf.value)
     if leaf.op in ("includes", "not_includes"):
@@ -1003,31 +1010,38 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
             # this is the two readers having drifted, not an authored shape.
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} against a non-list")
         members = raw
-        hit = any(_compare("eq", member, leaf.value, dates=dates) for member in members)
+        hit = any(
+            _compare("eq", member, leaf.value, dates=dates, numeric=numeric) for member in members
+        )
         return hit if leaf.op == "includes" else not hit
     if leaf.op in ("in", "not_in"):
         if not isinstance(leaf.value, list):
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} value is not a list")
         # The renderer expands a set into `eq` per member, so each takes the typed equality.
-        member = _any_member(leaf.field, column_type, raw, leaf.value, dates=dates)
+        member = _any_member(
+            leaf.field, column_type, raw, leaf.value, dates=dates, numeric=numeric, lagging=lagging,
+        )
         return member if leaf.op == "in" else not member
-    return _compare(leaf.op, raw, leaf.value, dates=dates)
+    return _compare(leaf.op, raw, leaf.value, dates=dates, numeric=numeric)
 
 
 _ORDERING_OPS = frozenset({"eq", "neq", "lt", "leq", "gt", "geq"})
 
 
-def _any_member(field: str, column_type: str, raw: Any, members: list[Any], *, dates: bool) -> bool:
+def _any_member(
+    field: str, column_type: str, raw: object, members: list[object], *,
+    dates: bool, numeric: bool, lagging: bool,
+) -> bool:
     """True if any member equals `raw`; unevaluable if none does and one could not be decided."""
     undecided: _UnevaluableError | None = None
     for candidate in members:
         try:
             if column_type == "datetime":
-                hit = _compare_instants(field, "eq", raw, candidate)
+                hit = _compare_instants(field, "eq", raw, candidate, lagging=lagging)
             elif column_type == "boolean":
                 hit = _compare_booleans(field, "eq", raw, candidate)
             else:
-                hit = _compare("eq", raw, candidate, dates=dates)
+                hit = _compare("eq", raw, candidate, dates=dates, numeric=numeric)
         except _UnevaluableError as exc:
             undecided = exc
             continue
@@ -1038,7 +1052,46 @@ def _any_member(field: str, column_type: str, raw: Any, members: list[Any], *, d
     return False
 
 
-def _compare_instants(field: str, op: str, raw: Any, value: Any) -> bool:
+# The formula clock lags the site by 16 to 20 hours (see analysis/save_rules.py).
+_FORMULA_LAG_DAYS = (0, 1)
+
+
+def _compare_instants(
+    field: str, op: str, raw: object, value: object, *, lagging: bool = False,
+) -> bool:
+    """`lagging` marks a save rule, whose `today±N` must hold for its day and the day before."""
+    # `now` renders against [Modified], the save instant, so only `today±N` reads the lagging clock.
+    offset_today = isinstance(value, str) and _TODAY.match(value.strip()) is not None
+    lags = _FORMULA_LAG_DAYS if lagging and offset_today else (0,)
+    verdicts = {_compare_instants_at(field, op, raw, value, lag) for lag in lags}
+    if len(verdicts) > 1:
+        raise _UnevaluableError(f"{field}: {op} {value!r} turns on the validation clock lag")
+    return verdicts.pop()
+
+
+def _has_offset(value: object) -> bool:
+    """True for an ISO instant carrying an explicit UTC offset."""
+    if isinstance(value, str) and len(value.strip()) > 10:
+        try:
+            return dt.datetime.fromisoformat(value.strip()).tzinfo is not None
+        except ValueError:
+            return False
+    return False
+
+
+def _instant_day(value: object) -> dt.date | None:
+    """The UTC day of an ISO instant with an explicit offset, else the written day."""
+    if isinstance(value, str) and len(value.strip()) > 10:
+        try:
+            parsed = dt.datetime.fromisoformat(value.strip())
+        except ValueError:
+            return _as_date(value)
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(dt.UTC).date()
+    return _as_date(value)
+
+
+def _compare_instants_at(field: str, op: str, raw: object, value: object, lag: int) -> bool:
     """Two datetime operands, known only to the day.
 
     Operands on different days are decided by the day. On one day the time
@@ -1053,10 +1106,14 @@ def _compare_instants(field: str, op: str, raw: Any, value: Any) -> bool:
       a DATETIME column, as `_is_now` renders it.
     """
     is_now = isinstance(value, str) and NOW_SENTINEL.match(value) is not None
-    seeded = _as_date(raw)
-    literal = REFERENCE_DATE if is_now else _as_date(value)
+    seeded = _instant_day(raw)
+    literal = REFERENCE_DATE if is_now else _instant_day(value)
     if seeded is None or literal is None:
         raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r}")
+    literal -= dt.timedelta(days=lag)
+    if not is_now and _has_offset(raw) != _has_offset(value) and abs((seeded - literal).days) < 2:
+        # A bare date or `today` is site-local, so it is within a day of a UTC day only by guess.
+        raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r} mixes local and offset")
     if _is_seeded_instant(raw) != (is_now or _is_seeded_instant(value)):
         # REFERENCE_DATE stands in for the deploy date, which a fixed date is not relative to.
         raise _UnevaluableError(
@@ -1064,7 +1121,7 @@ def _compare_instants(field: str, op: str, raw: Any, value: Any) -> bool:
         )
     if seeded != literal:
         return _compare(op, seeded, literal)
-    if is_now and op in ("leq", "gt"):
+    if is_now and op in ("leq", "gt") and not lag:
         return op == "leq"
     if not is_now and _is_midnight(value):
         if _is_midnight(raw) and not _is_seeded_instant(raw):
@@ -1101,36 +1158,38 @@ def _compare_booleans(field: str, op: str, raw: Any, value: Any) -> bool:
     return (truth(raw) == truth(value)) is (op == "eq")
 
 
-def _compare(op: str, left: Any, right: Any, *, dates: bool = True) -> bool:
-    lhs, rhs = _align(left, right, dates=dates)
-    match op:
-        case "eq":
-            return bool(lhs == rhs)
-        case "neq":
-            return bool(lhs != rhs)
-        case "lt":
-            return bool(lhs < rhs)
-        case "leq":
-            return bool(lhs <= rhs)
-        case "gt":
-            return bool(lhs > rhs)
-        case "geq":
-            return bool(lhs >= rhs)
-        case _:  # pragma: no cover - SUPPORTED_OPS gates this
-            raise _UnevaluableError(f"operator {op!r}")
-
-
-def _align(left: Any, right: Any, *, dates: bool = True) -> tuple[Any, Any]:
+def _compare(
+    op: str, left: object, right: object, *, dates: bool = True, numeric: bool = False,
+) -> bool:
     """Compare like with like: dates if both sides are dates, numbers if both
-    are numeric, strings otherwise. Mixed pairs fall to string comparison,
-    which is what a choice member against a literal wants anyway."""
+    are numeric on a numeric column, strings otherwise (a text `"01"` is not `"1"`).
+    Mixed pairs fall to string comparison, which is what a choice member against a
+    literal wants anyway."""
     left_date, right_date = (_as_date(left), _as_date(right)) if dates else (None, None)
     if left_date is not None and right_date is not None:
-        return left_date, right_date
-    left_number, right_number = _as_number(left), _as_number(right)
+        return _decide(op, left_date, right_date)
+    left_number, right_number = (_as_number(left), _as_number(right)) if numeric else (None, None)
     if left_number is not None and right_number is not None:
-        return left_number, right_number
-    return str(left), str(right)
+        return _decide(op, left_number, right_number)
+    return _decide(op, str(left), str(right))
+
+
+def _decide[T: (dt.date, float, str)](op: str, lhs: T, rhs: T) -> bool:
+    match op:
+        case "eq":
+            return lhs == rhs
+        case "neq":
+            return lhs != rhs
+        case "lt":
+            return lhs < rhs
+        case "leq":
+            return lhs <= rhs
+        case "gt":
+            return lhs > rhs
+        case "geq":
+            return lhs >= rhs
+        case _:  # pragma: no cover - SUPPORTED_OPS gates this
+            raise _UnevaluableError(f"operator {op!r}")
 
 
 def _as_date(value: Any) -> dt.date | None:
@@ -1283,8 +1342,8 @@ def test_a_decisive_branch_settles_a_rule_over_an_unknown_default() -> None:
 
 
 @pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
-    ("2026-06-30", "2026-07-01T12:00:00Z", "lt", True),
-    ("2026-07-02", "2026-07-01T12:00:00Z", "geq", True),
+    ("2026-06-29", "2026-07-01T12:00:00Z", "lt", True),
+    ("2026-07-03", "2026-07-01T12:00:00Z", "geq", True),
 ])
 def test_datetimes_on_different_days_are_decided_by_the_day(
     seeded: str, literal: str, op: str, expected: bool,
@@ -1335,6 +1394,40 @@ def test_an_absolute_date_against_a_relative_one_is_unevaluable(
     leaf = Leaf(field="StampAt", op=op, value=literal)
     with pytest.raises(_UnevaluableError):
         _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES)
+
+
+def test_numeric_looking_text_stays_literal_off_a_number_column() -> None:
+    """`[Code]="1"` is a text comparison, so a stored `01` does not match it."""
+    leaf = Leaf(field="Code", op="eq", value="1")
+    assert _evaluate(leaf, {"Code": "01"}, {"Code": "text"}) is False
+    assert _evaluate(leaf, {"Code": "01"}, {"Code": "int"}) is True
+
+
+def test_an_explicit_offset_is_ordered_as_an_instant() -> None:
+    """23:00-10:00 on 1 July is 09:00Z on 2 July, after 01:00Z, not before it."""
+    leaf = Leaf(field="StampAt", op="lt", value="2026-07-02T01:00:00Z")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "2026-07-01T23:00:00-10:00"}, _CLOCK_TYPES)
+    later = Leaf(field="StampAt", op="gt", value="2026-07-01T12:00:00Z")
+    assert _evaluate(later, {"StampAt": "2026-07-01T23:00:00-10:00"}, _CLOCK_TYPES) is True
+
+
+def test_an_offset_instant_against_a_site_local_day_is_unevaluable() -> None:
+    """03:00+10:00 on 2 July is 1 July in UTC, but after local midnight on a UTC+10 site."""
+    leaf = Leaf(field="StampAt", op="lt", value="2026-07-02")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "2026-07-02T03:00:00+10:00"}, _CLOCK_TYPES)
+
+
+def test_a_validation_today_offset_is_unevaluable_across_the_clock_lag() -> None:
+    """A current-instant seed under `leq today+1` reads the lagging TODAY() as the day before."""
+    leaf = Leaf(field="StampAt", op="leq", value="today+1")
+    row = {"StampAt": "today"}
+    assert _evaluate(leaf, row, _CLOCK_TYPES) is True  # a view's CAML clock is not lagging
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, row, _CLOCK_TYPES, lagging=True)
+    far = Leaf(field="StampAt", op="leq", value="today+3")
+    assert _evaluate(far, row, _CLOCK_TYPES, lagging=True) is True
 
 
 def test_datetime_set_members_keep_the_time_of_day() -> None:

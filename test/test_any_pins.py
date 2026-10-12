@@ -21,7 +21,7 @@ _ANNOTATION = re.compile(rf"[\w.\[\], |]*\b{NAME}\b[\w.\[\], |]*")
 
 PINS: dict[str, int] = {
     "test runtime": 614,
-    "test other": 229,
+    "test other": 217,
     "scripts": 0,
     "website/scripts": 0,
 }
