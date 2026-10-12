@@ -46,7 +46,7 @@ ALL_TEMPLATES = sorted(
 KNOWN_CONTEXT = {
     # every generator (provenance + identity)
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
-    # jsgen (deploy.js)
+    # jsgen, for deploy.js
     "schema_json", "phases",
     # The assessment's inputs, imported from assessgen so deploy.js and
     # assess.js cannot disagree about the same site.
@@ -97,7 +97,7 @@ KNOWN_CONTEXT = {
     "deployment_log_list", "deployment_log_change_list",
     "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
-    # extractgen (extract.js)
+    # extractgen, for extract.js
     "list_paths", "live_format", "download_name",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
