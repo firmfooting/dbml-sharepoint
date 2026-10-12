@@ -217,7 +217,7 @@ def execute_build(
     keyword so the file can supply it, the same shape as `enterprise_reader`.
     """
     # Reassigned, not merely checked: everything below -- SiteContext, the
-    # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
+    # manifest, and the reporting pack's `SiteUrl` and SQLCMD `SiteUrl` --
     # reads this variable, so cleaning it here is what keeps a pasted
     # `?web=1` out of every generated endpoint.
     check_application_name(application)

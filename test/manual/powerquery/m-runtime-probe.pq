@@ -23,10 +23,8 @@
 //      this whole file, Done, Close and Apply. Name the query
 //      `_MRuntimeProbe`.
 //   2. Paste `_ProbeOther.pq` into a second blank query and name it
-//      exactly `_ProbeOther`, and `_Probe_Base.pq` into a third named
-//      exactly `_Probe_Base`. One row below reads the first by name and
-//      one calls the second, which is how a derived lookup or count reads
-//      the `_Users` query and another list's base function respectively.
+//      exactly `_ProbeOther`. One row below reads it by name, which is
+//      how a derived lookup reads the `_Users` query.
 //   3. Read the table. Copy it out.
 //   4. Publish the report to the Power BI Service, refresh it there, and
 //      read the same table again. RUN BOTH. A row that is OK in Desktop
@@ -132,15 +130,6 @@ let
     // way. The quoted form is emitted because a bare identifier is not
     // valid for every query name.
     OtherQuery = try Table.RowCount(#"_ProbeOther") otherwise -1,
-
-    // ---- a base function, called by name ------------------------------
-    // Since 2026-09-18 a derived lookup or count over ANOTHER list calls
-    // that list's `_Base` function with this query's own site root rather
-    // than naming the list's query, so that no query reads a query that
-    // could read it back. The emitted form is `#"<Query>_Base"(SiteRoot)`.
-    BaseCall =
-        try Table.Column(#"_Probe_Base"("https://example.invalid/sites/x"), "Site"){0}
-        otherwise "-1",
 
     Rows = #table(
         type table [Id = text, Question = text, Expected = text, Observed = text],
@@ -297,16 +286,6 @@ let
                     & "differently, and every such column fails at refresh",
                 "1",
                 Text.From(OtherQuery)
-            },
-            {
-                "m.crossquery.base-function-call-resolves",
-                "A derived lookup or count over another list calls that "
-                    & "list's base function by name, passing the site. If "
-                    & "this reads -1 the function query is absent, named "
-                    & "differently or not invocable, and every such column "
-                    & "fails at refresh",
-                "https://example.invalid/sites/x",
-                BaseCall
             }
         }
     ),

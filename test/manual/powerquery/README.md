@@ -30,15 +30,14 @@ refreshes.
 | --- | --- | --- |
 | `m-runtime-probe.pq` | no | Does the emitted M mean what the generator thinks: the type tests behind the date conversion, the offset lookup, the row-aware replace, the grouped count, the two-field expand, the set comparison, and a cross-query reference |
 | `_ProbeOther.pq` | no | Nothing. It exists to be read by name, which is how a derived lookup into `_Users` reads that query |
-| `_Probe_Base.pq` | no | Nothing. A function that echoes its argument, called by name, which is how a derived lookup or count reads another list since 2026-09-18: through that list's `_Base` function rather than its query, so that no query reads a query that could read it back |
 | `sharepoint-feed-probe.pq` | yes | What the feed hands back through the exact call the pack makes: the shape of a date-only value, of a calculated date, of a projected dependent lookup, and whether the zone and the list's own folder read at all |
 
 ## Running them
 
 1. Power BI Desktop, Get data, Blank query, Advanced Editor, paste the whole
    file, Done.
-2. Name each query as its header says. `_ProbeOther` and `_Probe_Base` in
-   particular are read by name, and a query loaded under a different name is
+2. Name each query as its header says. `_ProbeOther` in
+   particular is read by name, and a query loaded under a different name is
    the failure those rows are looking for.
 3. For `sharepoint-feed-probe.pq`, edit the five values under CONFIGURE.
    Unedited, it reads nothing and returns one row saying so.

@@ -37,7 +37,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     dictionary_rows,
     metadata_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     TOLERANT_DATE_TYPES,
     DerivedStep,
@@ -45,7 +45,6 @@ from dbml_sharepoint.analysis.reporting.plan import (
     build_plans,
     grouped_record_expands,
     key_identity,
-    read_by_another,
     reads_zone,
     tables_for_role,
     tolerant_date_columns,
@@ -76,12 +75,12 @@ def _row_key_m(identity: str, id_expression: str) -> str:
     otherwise. Two lists on one site number their items from 1, so the key
     must name the list or appended queries collide.
 
-    ``SiteRoot`` rather than the raw ``SiteUrl``: two operators pasting the
-    same site in different shapes must produce the SAME key, or appending
-    their copies breaks the relationship rather than the URL.
+    ``SiteUrl`` is validated as the bare root, so two operators produce the
+    SAME key for one site, or appending their copies would break the
+    relationship.
     """
     return (
-        f'SiteRoot & "|" & {_m_string(identity)} & "|" '
+        f'SiteUrl & "|" & {_m_string(identity)} & "|" '
         f"& Number.ToText({id_expression})"
     )
 
@@ -100,7 +99,7 @@ def _site_url_binding_m(site_url: str | None) -> list[str]:
     literal and rewrite the rest of the query as M code.
 
     Indented for a top-level ``let`` binding (four spaces), matching
-    :data:`_SITE_ROOT_M`, which is emitted immediately after it.
+    :data:`_SITE_URL_CHECK_M`, which is emitted immediately after it.
     """
     if site_url is None:
         return []
@@ -133,66 +132,67 @@ _SITE_NAME_M: list[str] = [
     "    SiteName =",
     "        try",
     "            OData.Feed(",
-    '                SiteRoot & "/_api/web?$select=Title",',
+    '                SiteUrl & "/_api/web?$select=Title",',
     "                null,",
     '                [Implementation = "2.0"]',
     "            )[Title]",
-    "        otherwise SiteRoot,",
+    "        otherwise SiteUrl,",
 ]
 
-_SITE_ROOT_M: list[str] = [
-    "    // The site root, derived from SiteUrl rather than trusted as typed.",
-    "    //",
-    "    // Measured against a live tenant on 2026-08-11: an operator set",
-    "    // SiteUrl to what the browser address bar shows while VIEWING a list",
-    "    // (.../sites/<site>/Lists/<ListTitle>), so every endpoint below was",
-    "    // built as .../Lists/<ListTitle>/_api/... (_api hung off a list,",
-    "    // which is not a web) and SharePoint answered 404",
-    "    // DataSource.NotFound, naming neither the parameter at fault nor the",
-    "    // correction. The header above already said \"site URL\" and that did",
-    "    // not help, which is why this is done in code.",
-    "    //",
-    "    // Cutting at the first /_api/, /_layouts/, /lists/ or /sitepages/",
-    "    // segment turns a list, form, page or API URL back into the site",
-    "    // root, and leaves a correct site URL untouched. Deliberately no",
-    "    // error is raised: a root site collection is legitimately",
-    "    // https://tenant.sharepoint.com, with no /sites/ segment to check",
-    "    // for, so anything shaped like a validation would refuse valid input.",
-    "    SiteRoot = Text.TrimEnd(",
-    "        List.Accumulate(",
-    '            {"/_api/", "/_layouts/", "/lists/", "/sitepages/"},',
-    '            Text.TrimEnd(SiteUrl, "/"),',
-    "            (url, marker) =>",
-    "                let",
-    "                    at = Text.PositionOf(Text.Lower(url), marker)",
-    "                in",
-    "                    // Text.PositionOf answers -1 when the marker is",
-    "                    // absent, and a marker can never sit at position 0",
-    "                    // of an https:// URL, so > 0 covers both.",
-    "                    if at > 0 then Text.Start(url, at) else url",
-    "        ),",
-    '        "/"',
-    "    ),",
+# A data source must take `SiteUrl & "<literal>"` and nothing computed, or the
+# Service treats it as dynamic and refuses to schedule a refresh (see the
+# findings records). So SiteUrl is validated here rather than normalised: the
+# step is null for a bare site root and an error record otherwise, and every
+# query ends in `_checked_m`, which raises it before any row is read.
+_SITE_URL_CHECK_M: list[str] = [
+    "    // SiteUrl must be the bare site root. Validated, not rewritten, so",
+    "    // every data source below can take SiteUrl & a literal.",
+    "    SiteUrlProblem =",
+    "        if not Text.StartsWith(SiteUrl, \"https://\", Comparer.OrdinalIgnoreCase)",
+    "            or Text.EndsWith(SiteUrl, \"/\")",
+    "            or Text.EndsWith(SiteUrl, \"/lists\", Comparer.OrdinalIgnoreCase)",
+    "            or List.AnyTrue(",
+    "                List.Transform(",
+    '                    {"/_api/", "/_layouts/", "/lists/", "/sitepages/", "?"},',
+    "                    each Text.Contains(SiteUrl, _, Comparer.OrdinalIgnoreCase)",
+    "                )",
+    "            )",
+    "        then",
+    "            Error.Record(",
+    '                "SiteUrl.NotSiteRoot",',
+    '                "SiteUrl must be the bare site root, for example "',
+    '                    & "https://tenant.sharepoint.com/sites/name, with no "',
+    '                    & "trailing slash and no /Lists/, /_layouts/, "',
+    '                    & "/SitePages/ or /_api/ part.",',
+    "                SiteUrl",
+    "            )",
+    "        else null,",
 ]
 
-# The scheme and host of SiteRoot on their own, which is what turns a SERVER-
-# relative path (what SharePoint answers with) back into a URL a browser can
-# open. Bound after `_SITE_ROOT_M`, which it reads.
-#
-# A root site collection is legitimately https://tenant.sharepoint.com with no
-# path segment at all, so that shape falls through whole rather than being
-# treated as malformed.
+
+def _checked_m(result: str) -> list[str]:
+    """The closing `in` of a query: the SiteUrl error if there is one, else the result."""
+    return [
+        "in",
+        f"    if SiteUrlProblem <> null then error SiteUrlProblem else {result}",
+        "",
+    ]
+
+
+# The scheme and host of SiteUrl on their own, which turns a SERVER-relative
+# path (what SharePoint answers with) into a URL a browser can open. A root
+# site collection has no path segment, so that shape falls through whole.
 _SITE_ORIGIN_M: list[str] = [
     "    SiteOrigin =",
     "        let",
-    '            afterScheme = Text.PositionOf(SiteRoot, "//"),',
+    '            afterScheme = Text.PositionOf(SiteUrl, "//"),',
     "            rest =",
     '                if afterScheme < 0 then ""',
-    "                else Text.Range(SiteRoot, afterScheme + 2),",
+    "                else Text.Range(SiteUrl, afterScheme + 2),",
     '            slash = Text.PositionOf(rest, "/")',
     "        in",
-    "            if afterScheme < 0 or slash < 0 then SiteRoot",
-    "            else Text.Start(SiteRoot, afterScheme + 2 + slash),",
+    "            if afterScheme < 0 or slash < 0 then SiteUrl",
+    "            else Text.Start(SiteUrl, afterScheme + 2 + slash),",
 ]
 
 # MEASURED on a live tenant, 2026-09-07: a calculated column of output type
@@ -305,7 +305,7 @@ def _zone_m(zone: ZoneTable | None) -> list[str]:
         "        try",
         "            let",
         "                Info = OData.Feed(",
-        '                    SiteRoot & "/_api/web/RegionalSettings/TimeZone",',
+        '                    SiteUrl & "/_api/web/RegionalSettings/TimeZone",',
         "                    null,",
         '                    [Implementation = "2.0"]',
         "                )[Information],",
@@ -489,7 +489,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "                base =",
         "                    SiteOrigin",
         "                        & OData.Feed(",
-        f"                            SiteRoot & {_m_string(endpoint)},",
+        f"                            SiteUrl & {_m_string(endpoint)},",
         "                            null,",
         '                            [Implementation = "2.0"]',
         "                        )[ServerRelativeUrl]",
@@ -498,7 +498,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "        otherwise",
         "            [",
         "                resolved = false,",
-        f"                base = SiteRoot & {_m_string(plan.item_url_path)}",
+        f"                base = SiteUrl & {_m_string(plan.item_url_path)}",
         "            ],",
     ]
 
@@ -566,33 +566,43 @@ def _query_ref(name: str) -> str:
     return "#" + _m_string(name)
 
 
-def _base_call(name: str) -> str:
-    """One list's base function, called for THIS query's site.
+def _inline_rows_m(plan: ListPlan, step: str) -> list[str]:
+    """One list's rows as a step of the reading query, fetched and keyed as its
+    own query fetches them, without the reporting-only columns.
 
-    A read of another list calls that list's base function rather than
-    naming its query. The query carries reporting-only columns of its own,
-    so two queries whose reporting-only columns read each other would name
-    each other, which in M is a cyclic reference and fails only at refresh:
-    the text parses, the model loads and every name resolves. Reported
-    against 4.0.0 from a blueprint whose ten queries formed six mutual
-    pairs and twelve cycles, and nine could not refresh. A base function
-    reads no query, so no chain of reads can return to where it started.
-
-    Called with `SiteRoot`, this query's own site, rather than the raw
-    `SiteUrl`: the function normalises what it is given by the same steps,
-    a root passes through them unchanged, so both build identical keys,
-    and the raw value stays read at the normalisation seed alone. Calling
-    it for this site is also what makes a copy of this query pointed at
-    another site read that site's children: a reference to the child's
-    query would read the original copy, whose keys name the original
-    site, and match nothing.
+    A read of another list inlines its fetch rather than naming its query or a
+    function: the query carries reporting-only columns of its own, so two
+    queries that read each other would be a cyclic reference, which M refuses
+    only at refresh. A function taking the site URL is no alternative, because
+    a data source behind a function parameter is dynamic and cannot be
+    scheduled. The inner `let` reads this query's `SiteUrl`, so a copy pointed
+    at another site reads that site's rows.
     """
-    return f"{_query_ref(name)}(SiteRoot)"
+    fetch, prev = _fetch_m(plan, site_url=None, nested=True)
+    return [
+        f"    {step} =",
+        *[f"        {line}" for line in fetch],
+        "        in",
+        f"            {prev},",
+    ]
 
 
-def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
+def _inline_once(
+    name: str, bases: dict[str, ListPlan], inlined: dict[str, str], lines: list[str],
+) -> str:
+    """The step holding one list's rows, appended to `lines` on first use only."""
+    if name not in inlined:
+        inlined[name] = f"Rows{len(inlined) + 1}"
+        lines += _inline_rows_m(bases[name], inlined[name])
+    return inlined[name]
+
+
+def _derived_m(
+    plan: ListPlan, prev: str, bases: dict[str, ListPlan],
+) -> tuple[list[str], str]:
     """The derived-column steps for one list, and the step they end on."""
     lines: list[str] = []
+    inlined: dict[str, str] = {}
     index = 0
 
     def step_name() -> str:
@@ -652,16 +662,15 @@ def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
             ]
             child_ref = prev
         elif entry.reads_base:
-            # The list's base function rather than its query; see `_base_call`.
+            # The list's rows fetched inline rather than its query; see `_inline_rows_m`.
             lines += [
-                (f"    // Reads the {entry.source_query} rows through their "
-                 "base function,"),
-                "    // for this query's own site, so a copy of this query",
-                "    // pointed at another site reads that site's rows too.",
-                "    // The list's own query is not read, because its",
-                "    // reporting-only columns may read this list back.",
+                (f"    // Reads the {entry.source_query} rows, fetched inline "
+                 "for this query's own site,"),
+                "    // so a copy of this query pointed at another site reads that",
+                "    // site's rows too. The list's own query is not read, because",
+                "    // its reporting-only columns may read this list back.",
             ]
-            child_ref = _base_call(entry.reads)
+            child_ref = _inline_once(entry.reads, bases, inlined, lines)
         else:
             lines += [
                 (f"    // Reads the {entry.reads} query. Both are keyed "
@@ -748,7 +757,7 @@ def _aggregate_typed_m(entry: DerivedStep, prev: str, typed: str) -> list[str]:
 
     A blank count is a true zero. The child rows come from THIS query's
     site, whether they are its own rows at the step above or another
-    list's through its base function called with this site, so no child
+    list's fetched inline for this site, so no child
     row is out of the join's reach, and an empty child list has no rows to
     miss. Until 2026-09-18 a count read the child's QUERY, which a copy of
     this query pointed at another site still read from the original site,
@@ -776,17 +785,15 @@ def _aggregate_typed_m(entry: DerivedStep, prev: str, typed: str) -> list[str]:
 
 
 def _fetch_m(
-    plan: ListPlan, *, site_url: str | None, as_function: bool,
+    plan: ListPlan, *, site_url: str | None, nested: bool = False,
 ) -> tuple[list[str], str]:
-    """From `let` to the last key column: the text a list query and its base
-    function share, and the step it ends on.
+    """From `let` to the last key column, and the step it ends on.
 
-    ONE rendering for both, so the rows a query reads from another list
-    through its base function are the rows that list's own query carries,
-    step for step, up to the reporting-only columns. The function takes
-    `SiteUrl` as its parameter, so it binds nothing where the query bakes
-    the URL in or reads it as a parameter; everything from `SiteRoot` on
-    is the same text.
+    ONE rendering for a list's own query and for the rows another list's
+    query inlines (`nested`), so the rows read from another list are the
+    rows that list's own query carries, step for step, up to the
+    reporting-only columns. Nested, it binds neither `SiteUrl` nor its
+    check: both come from the enclosing query.
     """
     query_string = "?$select=" + ",".join(plan.selects)
     # Every column a step below names. `multi_value_joins` is the one output
@@ -801,8 +808,8 @@ def _fetch_m(
     zone_read = reads_zone(plan)
     lines = [
         "let",
-        *([] if as_function else _site_url_binding_m(site_url)),
-        *_SITE_ROOT_M,
+        *([] if nested else _site_url_binding_m(site_url)),
+        *([] if nested else _SITE_URL_CHECK_M),
         # Deliberately inline rather than a shared _SiteName query. A shared
         # query binds to ONE SiteUrl parameter, so every duplicate of this
         # list -- one per site, which is exactly how a multi-site report is
@@ -820,7 +827,7 @@ def _fetch_m(
         *(_AS_DATE_M if dates else []),
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = OData.Feed(",
-        "        SiteRoot & " + _m_string(
+        "        SiteUrl & " + _m_string(
             "/_api/web/lists/getbytitle('"
             + quote(plan.list_title.replace("'", "''"), safe="") + "')/items",
         ),
@@ -999,7 +1006,7 @@ def _fetch_m(
         # without these two columns there is nothing to slice by.
         "    WithSiteUrl = Table.AddColumn(",
         (f'        WithItemURLResolved, "{REPORT_FIXED_COLUMNS[0]}", '
-         "each SiteRoot, type text"),
+         "each SiteUrl, type text"),
         "    ),",
         "    WithSiteName = Table.AddColumn(",
         f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
@@ -1086,13 +1093,17 @@ def _fetch_m(
 
 
 def _render_m(
-    plan: ListPlan, *, site_url: str | None = None, application: str = APPLICATION_NAME,
+    plan: ListPlan,
+    bases: dict[str, ListPlan],
+    *,
+    site_url: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> str:
     header = [] if site_url is not None else [
         "// Requires a text parameter named SiteUrl holding the site URL,",
         "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
-        "// a list or a page. A list URL is trimmed back to the site for you;",
-        "// see the SiteRoot step below.",
+        "// a list or a page. Anything else fails the refresh with",
+        "// SiteUrl.NotSiteRoot; see the SiteUrlProblem step below.",
         "//",
         "// To report on several sites at once, duplicate this query per site",
         "// and point each copy at its own SiteUrl parameter. Everything",
@@ -1100,7 +1111,7 @@ def _render_m(
         "// column reads from another list, derives from whichever URL that",
         "// copy uses. Then append the copies.",
     ]
-    fetch, prev = _fetch_m(plan, site_url=site_url, as_function=False)
+    fetch, prev = _fetch_m(plan, site_url=site_url)
     lines = [
         (f"// {plan.list_title}: generated by {application}; regenerate "
          "rather than hand-edit."),
@@ -1116,7 +1127,7 @@ def _render_m(
             "    // because a join reads them; before the rename, so a",
             "    // derived column takes a display title like any other.",
         ]
-        derived_lines, prev = _derived_m(plan, prev)
+        derived_lines, prev = _derived_m(plan, prev, bases)
         lines += derived_lines
         # The steps above each close with their own comma; the chain has to
         # end without one for whatever follows to attach.
@@ -1138,49 +1149,11 @@ def _render_m(
             "        },",
             "        MissingField.Ignore",
             "    )",
-            "in",
-            "    RenamedForModel",
-            "",
+            *_checked_m("RenamedForModel"),
         ]
     else:
-        lines += [
-            "in",
-            f"    {prev}",
-            "",
-        ]
+        lines += _checked_m(prev)
     return "\n".join(lines)
-
-
-def _render_base_m(plan: ListPlan, *, application: str = APPLICATION_NAME) -> str:
-    """One list's base function: its rows for a site URL, fetched and keyed
-    as its query fetches them, under the internal names and with none of
-    the reporting-only columns. Why it exists: `_base_call`."""
-    fetch, prev = _fetch_m(plan, site_url=None, as_function=True)
-    return "\n".join([
-        (f"// {base_query_name(plan.list_title)}: generated by {application}; "
-         "regenerate rather than hand-edit."),
-        "//",
-        f"// The rows of {plan.list_title} for one site, fetched and keyed as",
-        f"// the {query_name(plan.list_title)} query fetches them, under the",
-        "// internal column names and with none of that query's reporting-only",
-        "// columns.",
-        "//",
-        "// A query whose reporting-only columns read this list calls this",
-        "// function with its own site URL instead of naming the list's",
-        "// query. The query carries reporting-only columns of its own, and",
-        "// two queries that read each other are a cyclic reference, which M",
-        "// refuses at refresh and nothing earlier can see. This function",
-        "// reads no query, so no chain of reads can return to where it",
-        "// started.",
-        "//",
-        "// Load it under the name of this file, which is how the queries",
-        "// call it. Power BI does not load a function to the model.",
-        "(SiteUrl as text) as table =>",
-        *fetch,
-        "in",
-        f"    {prev}",
-        "",
-    ])
 
 
 def generate_powerquery(
@@ -1217,18 +1190,13 @@ def generate_powerquery(
     for plan in plans:
         if names[plan.entity].casefold() in reserved:
             raise ValueError(f"Reporting query name {plan.list_title!r} is reserved")
+    bases = {query_name(plan.list_title): plan for plan in plans}
     queries = {
-        f"{names[plan.entity]}.pq": _render_m(plan, site_url=site_url, application=application)
+        f"{names[plan.entity]}.pq": _render_m(
+            plan, bases, site_url=site_url, application=application,
+        )
         for plan in plans
     }
-    taken = {name.casefold() for name in names.values()} | reserved
-    for plan in read_by_another(plans):
-        base = base_query_name(plan.list_title)
-        if base.casefold() in taken:
-            # A list titled like another list's base would be read in its
-            # place by every query that joins that list.
-            raise ValueError(f"Reporting query name {base!r} collides with a list query")
-        queries[f"{base}.pq"] = _render_base_m(plan, application=application)
     if bundle.mapping.reporting.users_table:
         queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(
             site_url=site_url, application=application,
@@ -1269,7 +1237,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         ] if site_url is None else []),
         "let",
         *_site_url_binding_m(site_url),
-        *_SITE_ROOT_M,
+        *_SITE_URL_CHECK_M,
         *_SITE_NAME_M,
         "    // MEASURED on a live tenant, 2026-09-02, by a site admin: these are",
         "    // the list's own internal names, a person column's ids resolve to",
@@ -1278,7 +1246,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "    // group. A reader-tier account was NOT measured: a 403 here means",
         "    // the reporting account needs read access to this list.",
         "    Source = OData.Feed(",
-        '        SiteRoot & "/_api/web/siteuserinfolist/items"',
+        '        SiteUrl & "/_api/web/siteuserinfolist/items"',
         f'            & "?$select={select}",',
         "        null,",
         '        [Implementation = "2.0"]',
@@ -1310,7 +1278,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         f'        {{{declared}, "Principal Kind"}}',
         "    ),",
         "    WithSiteUrl = Table.AddColumn(",
-        f'        Declared, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
+        f'        Declared, "{REPORT_FIXED_COLUMNS[0]}", each SiteUrl, type text',
         "    ),",
         "    WithSiteName = Table.AddColumn(",
         f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
@@ -1329,9 +1297,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "        WithUserKey,",
         f"        {{{renames}}}",
         "    )",
-        "in",
-        "    RenamedForModel",
-        "",
+        *_checked_m("RenamedForModel"),
     ]
     return "\n".join(lines)
 
@@ -1389,15 +1355,27 @@ def _render_user_added_columns_m(
             "    Source",
             "",
         ])
-    audit_calls = []
+    audit_calls: list[str] = []
     for plan in plans:
         expected = ", ".join(
             _m_string(name)
             for name in dict.fromkeys(plan.field_internal_names + plan.skipped)
         )
-        audit_calls.append(
-            f"        Audit({_m_string(plan.list_title)}, {{{expected}}}),",
+        # Each list's fields are read at the call, a literal URL beside the
+        # site, because a data source behind a function parameter is dynamic.
+        fields_path = (
+            "/_api/web/lists/getbytitle('"
+            + quote(plan.list_title.replace("'", "''"), safe="")
+            + "')/fields"
+            "?$select=InternalName,Title,TypeAsString,"
+            "Hidden,ReadOnlyField,CanBeDeleted,ClientValidationFormula,"
+            "ValidationFormula"
         )
+        audit_calls += [
+            f"        Audit({_m_string(plan.list_title)}, {{{expected}}},",
+            f"            OData.Feed(SiteUrl & {_m_string(fields_path)}, null,",
+            '                [Implementation = "2.0"])),',
+        ]
     audit_calls[-1] = audit_calls[-1].rstrip(",")
     lines = [
         (f"// _UserAddedColumns: generated by {application}; regenerate "
@@ -1407,35 +1385,20 @@ def _render_user_added_columns_m(
         "// is a column added outside this generation; investigate it.",
         *([
             "// Requires the same SiteUrl text parameter as the list queries,",
-            "// normalised here the same way; see the SiteRoot step.",
+            "// validated here the same way; see the SiteUrlProblem step.",
         ] if site_url is None else [
             "// Carries the same baked-in site URL as the list queries,",
-            "// normalised here the same way; see the SiteRoot step.",
+            "// validated here the same way; see the SiteUrlProblem step.",
         ]),
         "let",
         *_site_url_binding_m(site_url),
-        *_SITE_ROOT_M,
+        *_SITE_URL_CHECK_M,
         "    // Added by a tenant compliance feature outside operator",
         "    // control; a standing row here would erode the",
         "    // \"any row = investigate\" meaning of this table.",
         '    KnownTenantFields = {"ComplianceAssetId"},',
-        "    Audit = (listTitle as text, expected as list) as table =>",
+        "    Audit = (listTitle as text, expected as list, Fields as table) as table =>",
         "        let",
-        "            Fields = OData.Feed(",
-        (
-            "                SiteRoot & \"/_api/web/lists/getbytitle('\""
-            " & Uri.EscapeDataString(Text.Replace(listTitle, \"'\", \"''\")) & \"')/fields\""
-        ),
-        # The two formula properties ride along on a call this query already
-        # makes on every refresh, turning the drift audit into a refresh-time
-        # check that the DEPLOYED form contract still matches the dictionary
-        # beside it. The declarations are otherwise visible only at build time.
-        ("                    & \"?$select=InternalName,Title,TypeAsString,"
-         "Hidden,ReadOnlyField,CanBeDeleted,ClientValidationFormula,"
-         "ValidationFormula\","),
-        "                null,",
-        '                [Implementation = "2.0"]',
-        "            ),",
         "            UserAdded = Table.SelectRows(",
         "                Fields,",
         "                each not [Hidden] and not [ReadOnlyField] and [CanBeDeleted]",
@@ -1460,9 +1423,7 @@ def _render_user_added_columns_m(
          '{"InternalName", Order.Ascending}}),'),
         ('    Final = Table.ReorderColumns(Sorted, {"List", "InternalName", '
          '"DisplayName", "Type", "PopulatedWhenFormula", "SaveRuleFormula"})'),
-        "in",
-        "    Final",
-        "",
+        *_checked_m("Final"),
     ]
     return "\n".join(lines)
 
