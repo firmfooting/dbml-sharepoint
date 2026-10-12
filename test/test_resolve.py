@@ -26,6 +26,7 @@ from _paths import FIXTURES
 
 import dbml_sharepoint
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.enrolment import enrolment_plan
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
 from dbml_sharepoint.analysis.groups import UnknownGroupEnumError
 from dbml_sharepoint.analysis.permissions import (
@@ -708,3 +709,64 @@ def test_an_edit_after_resolution_is_refused_by_a_helper_taking_no_bundle() -> N
     assert excinfo.value.detail == "its groups changed after it was resolved"
     with pytest.raises(MismatchedResolutionError):
         lists_granting_group(resolved, "Late Arrivals", ["Risk"])
+
+
+def _bundle_of(resolved: ResolvedMapping) -> MappingBundle:
+    return MappingBundle(
+        mapping=resolved.mapping, enum_choices={}, retention_policies={},
+        retention_list_defaults={},
+    )
+
+
+def test_a_resolution_not_derived_from_its_mapping_is_refused() -> None:
+    """`replace` and a hand-built resolution re-snapshot the mapping (#675)."""
+    schema = make_schema(make_table("Risk", "Title"))
+    resolved = _resolved_with_a_folder_policy()
+    evil = ListPermissionPolicy(
+        break_inheritance=True,
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="group", name="Everyone"), level="Full Control",
+            ),
+        ),
+    )
+    extra_group = _group("Everyone")
+    require_matching_resolution(resolved, _bundle_of(resolved), schema)
+
+    cases = [
+        replace(resolved, folders={"Risk": ("Restricted",)}),
+        replace(resolved, folder_policies={"Risk": (("Shared", evil),)}),
+        replace(resolved, groups=(extra_group,)),
+        ResolvedMapping(
+            mapping=resolved.mapping, enum_members=resolved.enum_members,
+            folders=resolved.folders, folder_policies={"Risk": (("Shared", evil),)},
+            groups=resolved.groups,
+        ),
+    ]
+    for forged in cases:
+        with pytest.raises(MismatchedResolutionError, match="not what resolving"):
+            require_matching_resolution(forged, _bundle_of(forged), schema)
+
+
+def test_a_forged_resolution_is_refused_where_no_schema_is_passed() -> None:
+    """`enrolment_plan` takes no schema, so the re-derivation must not depend on one (#675)."""
+    resolved = _resolved_with_a_folder_policy()
+    bundle = _bundle_of(resolved)
+    forged = replace(resolved, groups=(_group("Everyone"),))
+
+    with pytest.raises(MismatchedResolutionError, match="groups are not what resolving"):
+        enrolment_plan(bundle, forged, {})
+    with pytest.raises(MismatchedResolutionError, match="folders are not what resolving"):
+        require_matching_resolution(
+            replace(resolved, folders={"Risk": ("Restricted",)}), bundle,
+        )
+
+
+def test_a_resolution_hiding_an_unresolved_enum_is_refused() -> None:
+    """`unresolved` drives require_resolved(), so emptying it must not pass (#675)."""
+    resolved = _resolved_with_a_folder_policy()
+    forged = replace(resolved, unresolved=(UnresolvedEnum(enum="ghost", entity="Risk"),))
+    schema = make_schema(make_table("Risk", "Title"))
+
+    with pytest.raises(MismatchedResolutionError, match="unresolved are not what resolving"):
+        require_matching_resolution(forged, _bundle_of(forged), schema)
