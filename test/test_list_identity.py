@@ -59,3 +59,15 @@ def test_a_list_url_collides_with_a_library_root(tmp_path: Path) -> None:
     with pytest.raises(MappingValueError, match="duplicate"):
         pack(tmp_path, dbml=table("Task", ID_PK, TITLE) + table("Doc", ID_PK, TITLE),
              mapping=mapping)
+
+
+@pytest.mark.parametrize("spelling", [
+    "/Lists/MailLedger/", "Lists\\\\MailLedger",
+    "Lists//Mail%4Cedger",
+])
+def test_a_list_url_is_stored_normalised(tmp_path: Path, spelling: str) -> None:
+    _, bundle = pack(
+        tmp_path, dbml=table("Task", ID_PK, TITLE),
+        mapping="entities:\n" + _list("Task", f"internal_name: '{spelling}'"),
+    )
+    assert bundle.mapping.entities["Task"].internal_name == "Lists/MailLedger"
