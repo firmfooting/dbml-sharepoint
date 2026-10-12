@@ -20,7 +20,7 @@ class SiteContext:
     site_role: str
     release: dbml_sharepoint.model.release.Release | None
     output_dir: Path
-    extension_args: dict[str, typing.Any] = field(default_factory=dict)
+    extension_args: dict[str, dbml_sharepoint.jsonvalue.JsonValue] = field(default_factory=dict)
 ```
 
 Per-build inputs hooks need: site URL, site role, release
@@ -53,7 +53,7 @@ def cli_subcommands(self, app: typer.Typer) -> None
 #### `DeploymentExtension.expand_column`
 
 ```python
-def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, Any]] | None
+def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, JsonValue]] | None
 ```
 
 #### `DeploymentExtension.extra_validators`
@@ -71,7 +71,7 @@ def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtr
 #### `DeploymentExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, Any]]
+def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, JsonValue]]
 ```
 
 ### `BaseExtension`
@@ -91,7 +91,7 @@ Must never alter core command signatures.
 #### `BaseExtension.expand_column`
 
 ```python
-def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, Any]] | None
+def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, JsonValue]] | None
 ```
 
 #### `BaseExtension.extra_validators`
@@ -109,7 +109,7 @@ def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtr
 #### `BaseExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, Any]]
+def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, JsonValue]]
 ```
 
 ### `NullExtension`

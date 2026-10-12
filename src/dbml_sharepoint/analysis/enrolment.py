@@ -7,9 +7,10 @@ string that may reach a persisted artefact.
 from collections.abc import Mapping as AbcMapping
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import (
     IdentityValue,
     MembershipMode,
@@ -60,7 +61,7 @@ def enrolment_plan(
     return tuple(plan)
 
 
-def as_json(plan: Sequence[GroupEnrolment]) -> list[dict[str, Any]]:
+def as_json(plan: Sequence[GroupEnrolment]) -> list[dict[str, JsonValue]]:
     return [
         {
             "group": g.group, "membership": g.membership, "during_run": list(g.during_run),

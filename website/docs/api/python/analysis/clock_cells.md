@@ -68,12 +68,12 @@ class ClockCell:
     column_kind: str
     target: str
     status: Status
-    renderings: Mapping[Any, str] = field(default_factory=dict)
+    renderings: Mapping[RenderingKey, str] = field(default_factory=dict)
     evidence: Evidence | None = None
     refusal: ConditionRefusalKind | None = None
 ```
 
-ClockCell(sentinel: 'Sentinel', column_kind: 'str', target: 'str', status: 'Status', renderings: 'Mapping[Any, str]' = &lt;factory>, evidence: 'Evidence | None' = None, refusal: 'ConditionRefusalKind | None' = None)
+ClockCell(sentinel: 'Sentinel', column_kind: 'str', target: 'str', status: 'Status', renderings: 'Mapping[RenderingKey, str]' = &lt;factory>, evidence: 'Evidence | None' = None, refusal: 'ConditionRefusalKind | None' = None)
 
 ### `sentinel_of`
 

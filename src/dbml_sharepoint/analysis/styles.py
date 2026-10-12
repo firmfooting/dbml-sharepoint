@@ -14,9 +14,9 @@ examples; the emitted structures mirror those samples).
 
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TypedDict
 
 # The finding codes the registry names; `findings` imports only the standard
 # library, so there is no cycle.
@@ -35,6 +35,21 @@ from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.reading import optional_value
 
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
+
+
+# The column-formatting JSON a style expands to. Functional form because `$schema` is not a name.
+ColumnFormatter = TypedDict(
+    "ColumnFormatter",
+    {
+        "$schema": str,
+        "elmType": str,
+        "txtContent": str,
+        "style": dict[str, str],
+        "attributes": dict[str, str],
+        "children": list["ColumnFormatter"],
+    },
+    total=False,
+)
 
 
 @dataclass(frozen=True)
@@ -101,7 +116,7 @@ def _internal_name(value: object, context: str, message: str) -> str:
         raise _fail(context, message)
     return value
 
-def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> bool:
+def _bool(spec: Mapping[str, object], key: str, context: str, *, default: bool) -> bool:
     """Read a style-spec boolean without truthiness-coercing bad YAML.
 
     `bool("false")` is True, so the cautious spelling meant its opposite:
@@ -134,7 +149,7 @@ def _if_chain(pairs: list[tuple[str, str]], fallback: str) -> str:
         expr = f"if({condition}, {quoted(value)}, {expr})"
     return "=" + expr
 
-def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
+def _validated_map(spec: Mapping[str, object], context: str) -> dict[str, str]:
     """The `map` of column value to token name.
 
     Each key must be text. The emitted formatter compares the cell against the
@@ -171,8 +186,8 @@ _COLOR_BY_KEYS = frozenset({"field", "map", "calculated"})
 _GUARD_KEYS = frozenset({"field", "not"})
 
 def _severity(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     value_map = _validated_map(spec, context)
     calculated = _bool(spec, "calculated", context, default=False)
     icons = _bool(spec, "icons", context, default=True)
@@ -187,9 +202,9 @@ def _severity(
 def _severity_cell(
     pairs: list[tuple[str, StyleToken]], fallback: StyleToken,
     label: str, text: str, *, icons: bool,
-) -> dict[str, Any]:
+) -> ColumnFormatter:
     """One layout and token-to-icon mapping for categorical and numeric severity."""
-    children: list[dict[str, Any]] = []
+    children: list[ColumnFormatter] = []
     if icons:
         children.append({
             "elmType": "span",
@@ -222,8 +237,8 @@ def _finite_number(value: object, context: str) -> int | float:
     return value
 
 def _numeric_severity(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     bands = spec.get("bands")
     if not isinstance(bands, list) or not bands:
         raise _fail(context, "numeric-severity requires non-empty bands")
@@ -255,8 +270,8 @@ def _numeric_severity(
 
 
 def _pill(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     value_map = _validated_map(spec, context)
     for token_name in value_map.values():
         if theme and token_name in theme:
@@ -285,8 +300,8 @@ def _pill(
     }
 
 def _data_bar(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     maximum = spec.get("max")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
@@ -352,8 +367,8 @@ def _data_bar(
     }
 
 def _trend(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     against = spec.get("against")
     wanted = "trend requires 'against' (a column internal name or a number)"
     calculated_against = _bool(spec, "against_calculated", context, default=False)
@@ -384,8 +399,8 @@ def _trend(
 
 
 def _overdue_date(
-    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
-) -> dict[str, Any]:
+    spec: Mapping[str, object], context: str, theme: dict[str, StyleToken] | None,
+) -> ColumnFormatter:
     calculated = _bool(spec, "calculated", context, default=False)
     scalar = ScalarValue("Date", calculated=calculated)
     value = scalar.value
@@ -447,7 +462,7 @@ def _overdue_date(
 
 
 type Expander = Callable[
-    [dict[str, Any], str, dict[str, StyleToken] | None], dict[str, Any],
+    [Mapping[str, object], str, dict[str, StyleToken] | None], ColumnFormatter,
 ]
 
 
@@ -553,10 +568,10 @@ STYLES: dict[str, StyleSpec] = {
 }
 
 def expand_style(
-    spec: dict[str, Any],
+    spec: Mapping[str, object],
     context: str,
     theme: dict[str, StyleToken] | None = None,
-) -> dict[str, Any]:
+) -> ColumnFormatter:
     """Expand a declared style spec into plain SP column-formatting JSON."""
     style = spec.get("style")
     # The shape before the word, the split the loader draws everywhere else:

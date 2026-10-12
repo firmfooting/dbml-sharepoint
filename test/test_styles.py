@@ -415,7 +415,7 @@ _INTERNAL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FIELD_REF = re.compile(r"\[\$([^\]]*)\]")
 
 
-def _field_refs(formatter: dict[str, Any]) -> list[str]:
+def _field_refs(formatter: object) -> list[str]:
     """Every column this formatter references, as it appears in the JSON."""
     refs: list[str] = _FIELD_REF.findall(json.dumps(formatter))
     return refs

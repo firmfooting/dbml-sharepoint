@@ -32,7 +32,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             cf_ctx = f"column_formatting.{cf_entity}.{cf_col}"
             if isinstance(cf_value, dict) and "style" in cf_value:
                 column_style_specs.setdefault(cf_entity, {})[cf_col] = dict(cf_value)
-                expanded = styles.expand_style(cf_value, cf_ctx, theme=style_theme)
+                expanded = dict(styles.expand_style(cf_value, cf_ctx, theme=style_theme))
             else:
                 expanded = load_json_value(sc.base_dir, cf_value, cf_ctx)
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded

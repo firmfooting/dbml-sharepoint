@@ -20,12 +20,14 @@ is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 
 import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, PackageNotFoundError, entry_points, metadata
 from pathlib import Path, PureWindowsPath
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from dbml_sharepoint import DISTRIBUTION
+from dbml_sharepoint.jsonvalue import is_text_keyed
 from dbml_sharepoint.model import _yaml
 
 #: One directory per list family. Not `templates/`, which is Jinja.
@@ -335,7 +337,7 @@ def _fold(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _manifest_string(raw: dict[str, Any], key: str, path: Path) -> str:
+def _manifest_string(raw: Mapping[str, object], key: str, path: Path) -> str:
     """One required string value of a blueprint.toml, stripped."""
     if key not in raw:
         raise BlueprintManifestError(f"{path}: declares no '{key}'")
@@ -397,7 +399,7 @@ def _terminal_text(value: str, key: str, path: Path) -> str:
     return folded
 
 
-def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, Any]:
+def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, object]:
     """The parsed blueprint.toml, or `BlueprintManifestError` saying why it could not be read."""
     if not path.is_file():
         raise BlueprintManifestError(
@@ -509,7 +511,7 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     accepted here that would be refused there.
     """
     try:
-        raw: Any = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
+        raw: object = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, *_yaml.PARSE_ERRORS):
         return (), ""
     if not isinstance(raw, dict):
@@ -629,7 +631,7 @@ def available_solutions() -> list[Solution]:
 _FRONT_MATTER_FENCE = "---"
 
 
-def _front_matter(text: str, path: Path) -> dict[str, Any]:
+def _front_matter(text: str, path: Path) -> dict[str, object]:
     """The YAML block a journey file opens with.
 
     Declared rather than parsed out of prose. The whole reason this file
@@ -653,8 +655,8 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
         raise ValueError(f"{path}: front matter is refused: {exc}") from exc
     except _yaml.PARSE_ERRORS as exc:
         raise ValueError(f"{path}: front matter is not valid YAML: {exc}") from exc
-    if not isinstance(loaded, dict):
-        raise ValueError(f"{path}: front matter must be a mapping")
+    if not is_text_keyed(loaded):
+        raise ValueError(f"{path}: front matter must be a mapping with text keys")
     return loaded
 
 
@@ -670,10 +672,12 @@ def _build_journey(path: Path, distribution: str) -> Journey:
         raise ValueError(f"{path}: 'solutions' must be a list of family ids")
     if len(set(solutions)) != len(solutions):
         raise ValueError(f"{path}: 'solutions' names the same family twice")
+    shown: dict[str, str] = {}
     for key in ("title", "summary"):
-        if not isinstance(raw.get(key), str) or not raw[key].strip():
+        value = raw.get(key)
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
-    shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
+        shown[key] = _clean(value)
     # Rendered into the same terminal as a blueprint's title, so held to the same rule.
     for key, text in {"id": path.stem, **shown, "solutions": "".join(solutions)}.items():
         if found := _unprintable(text):

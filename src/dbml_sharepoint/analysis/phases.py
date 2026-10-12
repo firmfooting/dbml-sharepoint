@@ -10,7 +10,7 @@ in prose and docs; numbers belong to generated artifacts.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TypedDict
 
 
 @dataclass(frozen=True)
@@ -75,11 +75,31 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
 )
 
 
-def phases_context() -> list[dict[str, Any]]:
+class StepContext(TypedDict):
+    """One step as deploy.js.j2 reads it."""
+
+    key: str
+    name: str
+    number: str
+    template: str
+    group_number: str
+    group_name: str
+    first_in_group: bool
+
+
+class GroupContext(TypedDict):
+    """One group of steps as deploy.js.j2 reads it."""
+
+    number: str
+    name: str
+    steps: list[StepContext]
+
+
+def phases_context() -> list[GroupContext]:
     """Render-ready structure for deploy.js.j2 (numbers derived)."""
-    groups: list[dict[str, Any]] = []
+    groups: list[GroupContext] = []
     for g_index, (group_name, steps) in enumerate(DEPLOY_GROUPS, start=1):
-        step_dicts = [
+        step_dicts: list[StepContext] = [
             {
                 "key": step.key,
                 "name": step.name,

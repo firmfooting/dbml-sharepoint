@@ -5,11 +5,12 @@ Validation issues are reported with `analysis.findings.Finding`."""
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 import typer
 
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
 from dbml_sharepoint.model.release import Release
@@ -24,7 +25,7 @@ class SiteContext:
     site_role: str
     release: Release | None
     output_dir: Path
-    extension_args: dict[str, Any] = field(default_factory=dict)
+    extension_args: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass
@@ -54,11 +55,11 @@ class DeploymentExtension(Protocol):
 
     def expand_column(
         self, table: Table, column: Column, bundle: MappingBundle,
-    ) -> list[dict[str, Any]] | None: ...
+    ) -> list[dict[str, JsonValue]] | None: ...
 
     def seed_lists(
         self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
-    ) -> dict[str, dict[str, Any]]: ...
+    ) -> dict[str, dict[str, JsonValue]]: ...
 
     def manifest_extras(
         self, bundle: MappingBundle, schema: Schema,
@@ -85,12 +86,12 @@ class BaseExtension:
 
     def expand_column(
         self, table: Table, column: Column, bundle: MappingBundle,
-    ) -> list[dict[str, Any]] | None:
+    ) -> list[dict[str, JsonValue]] | None:
         return None                       # None = defer to core's default field emission
 
     def seed_lists(
         self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, dict[str, JsonValue]]:
         # SP list title -> field dict, embedded in the deploy script seed
         return {}
 
