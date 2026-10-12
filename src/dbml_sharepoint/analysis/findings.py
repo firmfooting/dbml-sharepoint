@@ -12,7 +12,7 @@ substrings of it, so it could not be.
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Self
 
 type Severity = Literal["error", "warning"]
 
@@ -118,7 +118,7 @@ class FindingCode(StrEnum):
     it meant this time.
     """
 
-    def __new__(cls, value: str, severity: Severity) -> "FindingCode":
+    def __new__(cls, value: str, severity: Severity) -> Self:
         member = str.__new__(cls, value)
         member._value_ = value
         member._severity = severity  # noqa: SLF001 -- `member` is this class's own instance, built in __new__

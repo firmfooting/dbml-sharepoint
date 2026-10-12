@@ -21,7 +21,7 @@ properties alone could not catch a dropped null arm.
 """
 
 from typing import Any
-from xml.etree import ElementTree
+from xml.etree import ElementTree as ET
 
 import pytest
 from _conditions import kinds
@@ -448,7 +448,7 @@ def test_caml_renders_well_formed_xml(condition: Condition) -> None:
     # S314: the input is CAML this repository just generated from a closed
     # strategy, not untrusted data. defusedxml would be a dependency added to
     # parse our own output.
-    ElementTree.fromstring(  # noqa: S314
+    ET.fromstring(  # noqa: S314
         f"<Where>{to_caml(condition, COLUMN_TYPES)}</Where>",
     )
 
