@@ -1049,16 +1049,14 @@ def _any_member(
     return False
 
 
-# The formula clock sits 16 to 20 hours behind the site (MEASURED 2026-09-02, recorded in the
-# module docstring of analysis/save_rules.py), so a validation `today±N` can read one day early.
+# The formula clock lags the site by 16 to 20 hours (see analysis/save_rules.py).
 _FORMULA_LAG_DAYS = (0, 1)
 
 
 def _compare_instants(
     field: str, op: str, raw: Any, value: Any, *, lagging: bool = False,
 ) -> bool:
-    """`lagging` is a save-rule check, whose `today±N` literal is read off the lagging
-    formula clock: the verdict must hold for the literal's day and the day before it."""
+    """`lagging` marks a save rule, whose `today±N` must hold for its day and the day before."""
     # `now` renders against [Modified], the save instant, so only `today±N` reads the lagging clock.
     offset_today = isinstance(value, str) and _TODAY.match(value.strip()) is not None
     lags = _FORMULA_LAG_DAYS if lagging and offset_today else (0,)
@@ -1066,6 +1064,16 @@ def _compare_instants(
     if len(verdicts) > 1:
         raise _UnevaluableError(f"{field}: {op} {value!r} turns on the validation clock lag")
     return verdicts.pop()
+
+
+def _has_offset(value: object) -> bool:
+    """True for an ISO instant carrying an explicit UTC offset."""
+    if isinstance(value, str) and len(value.strip()) > 10:
+        try:
+            return dt.datetime.fromisoformat(value.strip()).tzinfo is not None
+        except ValueError:
+            return False
+    return False
 
 
 def _instant_day(value: object) -> dt.date | None:
@@ -1100,6 +1108,9 @@ def _compare_instants_at(field: str, op: str, raw: object, value: object, lag: i
     if seeded is None or literal is None:
         raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r}")
     literal -= dt.timedelta(days=lag)
+    if not is_now and _has_offset(raw) != _has_offset(value) and abs((seeded - literal).days) < 2:
+        # A bare date or `today` is site-local, so it is within a day of a UTC day only by guess.
+        raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r} mixes local and offset")
     if _is_seeded_instant(raw) != (is_now or _is_seeded_instant(value)):
         # REFERENCE_DATE stands in for the deploy date, which a fixed date is not relative to.
         raise _UnevaluableError(
@@ -1331,8 +1342,8 @@ def test_a_decisive_branch_settles_a_rule_over_an_unknown_default() -> None:
 
 
 @pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
-    ("2026-06-30", "2026-07-01T12:00:00Z", "lt", True),
-    ("2026-07-02", "2026-07-01T12:00:00Z", "geq", True),
+    ("2026-06-29", "2026-07-01T12:00:00Z", "lt", True),
+    ("2026-07-03", "2026-07-01T12:00:00Z", "geq", True),
 ])
 def test_datetimes_on_different_days_are_decided_by_the_day(
     seeded: str, literal: str, op: str, expected: bool,
@@ -1399,6 +1410,13 @@ def test_an_explicit_offset_is_ordered_as_an_instant() -> None:
         _evaluate(leaf, {"StampAt": "2026-07-01T23:00:00-10:00"}, _CLOCK_TYPES)
     later = Leaf(field="StampAt", op="gt", value="2026-07-01T12:00:00Z")
     assert _evaluate(later, {"StampAt": "2026-07-01T23:00:00-10:00"}, _CLOCK_TYPES) is True
+
+
+def test_an_offset_instant_against_a_site_local_day_is_unevaluable() -> None:
+    """03:00+10:00 on 2 July is 1 July in UTC, but after local midnight on a UTC+10 site."""
+    leaf = Leaf(field="StampAt", op="lt", value="2026-07-02")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "2026-07-02T03:00:00+10:00"}, _CLOCK_TYPES)
 
 
 def test_a_validation_today_offset_is_unevaluable_across_the_clock_lag() -> None:
