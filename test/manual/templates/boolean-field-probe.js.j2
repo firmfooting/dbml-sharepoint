@@ -29,10 +29,10 @@
  * field MERGE `deploy/_indexes.js.j2` uses, so it is not a candidate cause
  * of the 400 and is asked here as its own question instead.
  *
- * WHY THE ANSWER MATTERS BEYOND ONE COLUMN. IsCurrent is indexed because the
- * type-2 close reads `$filter=ChangeKey eq '...' and IsCurrent eq true`, and
- * both sides of an AND have to be indexed for that filter to survive the
- * 5,000-item list view threshold. A change log gains a row per change
+ * WHY THE ANSWER MATTERS BEYOND ONE COLUMN. IsCurrent is indexed as a
+ * precaution: the type-2 close reads
+ * `$filter=ChangeKey eq '...' and IsCurrent eq 1`, and Learn does not say
+ * every clause of an AND needs an index. A change log gains a row per change
  * forever, so an unindexable Boolean there is not a cosmetic loss.
  *
  * WHAT THIS PROBE MUST NOT ASSERT. This repository already spells the type

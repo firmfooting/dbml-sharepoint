@@ -616,7 +616,7 @@ PINNED: dict[str, list[str]] = {
         "cc77f68dbb7f",
     ],
     "test/manual/templates/boolean-field-probe.js.j2": [
-        "b8871a480710",
+        "bcc5255aa2ce",
     ],
     "test/manual/templates/built-in-levels-probe.js.j2": [
         "8f212723ed65",
