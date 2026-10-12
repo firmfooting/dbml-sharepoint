@@ -5,21 +5,24 @@ Shared for the reason joins.py is: the report generator builds the key in M and
 pro builds the same key in a flow expression, and a rule written twice drifts.
 The input is the mapping's declared web-relative root folder URL.
 """
+from unicodedata import category
 from urllib.parse import unquote
+
+from dbml_sharepoint.model.errors import MappingValueError
 
 
 def list_url_path(declared: str) -> str:
     """The declared URL decoded, with slashes normalised, in its declared case."""
     text = unquote(declared.strip().replace("\\", "/"))
     if "|" in text:
-        raise ValueError(f"list URL {declared!r} holds '|', which the key splits on")
-    if any(ord(c) < 32 or c == "\x7f" for c in text):
-        raise ValueError(f"list URL {declared!r} holds a control character")
+        raise MappingValueError(f"list URL {declared!r} holds '|', which the key splits on")
+    if any(category(c) == "Cc" for c in text):
+        raise MappingValueError(f"list URL {declared!r} holds a control character")
     parts = [p for p in text.split("/") if p]
     if not parts:
-        raise ValueError("a list URL is empty")
+        raise MappingValueError("a list URL is empty")
     if any(p in {".", ".."} for p in parts):
-        raise ValueError(f"list URL {declared!r} holds a traversal segment")
+        raise MappingValueError(f"list URL {declared!r} holds a traversal segment")
     return "/".join(parts)
 
 
