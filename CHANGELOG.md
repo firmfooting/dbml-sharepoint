@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.16.0...v0.16.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **deploy:** never send a validation formula to a Yes/No column ([#833](https://github.com/firmfooting/dbml-sharepoint/issues/833)) ([11ded64](https://github.com/firmfooting/dbml-sharepoint/commit/11ded645e196083ce15538bef09f158f0b1f34ca))
+
 ## [0.16.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.15.0...v0.16.0) (2026-10-12)
 
 
