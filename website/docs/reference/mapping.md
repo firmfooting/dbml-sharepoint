@@ -1195,6 +1195,11 @@ the reproducible one.
   hidden everywhere, so the condition can never be reached.
 - A **required column with no default hidden from the New form** (`hidden`,
   or `new: false`). Every save would fail, and the build can prove it.
+- `column_validation` on a **Yes/No** column. SharePoint refuses a validation
+  formula on that field type, so the build refuses the declaration
+  (`column_validation_on_a_boolean_column`). Hidden or conditional visibility
+  on a Yes/No column is accepted, and the deploy leaves that column's
+  validation formula unmanaged.
 - A quoted boolean: `new: "false"` is a load error, not `True`.
 - An operator the expression target cannot render: `measure: length`, and
   the `today`, `now` and `me` sentinels. All four text operators

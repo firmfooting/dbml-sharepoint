@@ -152,6 +152,7 @@ def test_column_validation_cannot_reference_another_column() -> None:
     )
     assert "['Owner']" in f.message
 
+
 def test_column_validation_on_a_yes_no_column_is_refused() -> None:
     """SharePoint refuses a ValidationFormula on a Yes/No field
     (field.client-validation.boolean-server-only); the rule belongs in

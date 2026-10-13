@@ -579,6 +579,45 @@ def test_exact_clears_undeclared_columns_but_declared_wins() -> None:
     assert _field(schema, "Other")["client_validation_formula"] == ""
 
 
+def test_hidden_and_conditional_yes_no_columns_leave_validation_unmanaged() -> None:
+    """A Yes/No field cannot carry a ValidationFormula, so exact
+    reconciliation must not send one (not even an empty one)."""
+    from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json
+
+    schema = make_schema(make_table(
+        "Escalation",
+        make_column("Title", required=True),
+        make_column("Status"),
+        make_column("Hidden", "boolean"),
+        make_column("Gated", "boolean"),
+    ))
+    bundle = make_bundle(
+        entities=["Escalation"],
+        form_visibility=_visibility({
+            "Hidden": HIDDEN,
+            "Gated": FormVisibility(new=False, when=WHEN),
+        }),
+        # An exact section is what makes a supported column get "" (cleared).
+        column_validation={"Escalation": EntitySection(columns={
+            "Status": ColumnValidation(
+                when=parse_condition(
+                    [{"field": "Status", "op": "is_not_null"}], "column_validation",
+                ),
+                message="Say something.",
+            ),
+        })},
+    )
+    out = build_schema_json(
+        schema, bundle, "default",
+        site_url="https://example.sharepoint.com/sites/t", resolved=resolve(schema, bundle.mapping),
+    )
+    for name in ("Hidden", "Gated"):
+        field = _field(out, name)
+        assert field["client_validation_formula"] not in ("", UNMANAGED), name
+        assert field["validation_formula"] == UNMANAGED, name
+        assert field["validation_message"] == UNMANAGED, name
+
+
 def test_declared_mode_leaves_undeclared_columns_alone() -> None:
     from dbml_sharepoint.generators.jsgen import UNMANAGED
 

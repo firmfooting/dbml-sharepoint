@@ -199,9 +199,9 @@ views:
 # live deploy on 2026-09-04 aborted on this field: SharePoint refuses a
 # validation formula on a Yes/No column ("This field type does not support
 # validation formulas", HTTP 500), and conditional visibility is carried by
-# exactly that property. The build now refuses the declaration
-# (form_visibility_condition_on_a_boolean_column). Who is expected to tick
-# it is carried by the column note, which renders as the field description
+# exactly that property. The build now accepts a visibility condition on a
+# Yes/No column but the deploy does not carry it (issue #834 tracks
+# restoring the `when`). Who is expected to tick it is carried by the column note, which renders as the field description
 # on the New form; nothing is lost from the record, because an unticked box
 # already means for a visitor what an absent field meant.
 #
