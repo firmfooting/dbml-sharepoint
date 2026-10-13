@@ -6,7 +6,7 @@ reach, never deleted by this tool. A run whose central log answers goes
 there and nowhere else: one sink per run, decided once, because a record
 split across two places is worse than either place alone.
 
-- ``dbml_Deployments`` records THIS run: a deployment start stamp, a
+- ``Managed Local Deployments`` records THIS run: a deployment start stamp, a
   deployment stop stamp, and provenance documentation naming what built
   the bundle, from which release, read at which time, by whom. Title
   carries the human-readable line, and ``RUN_LOG_STAMP_COLUMNS`` carries
@@ -14,7 +14,7 @@ split across two places is worse than either place alone.
   those columns existed is REUSED, so the deploy creates the ones it
   finds missing and degrades to a Title-only stamp if it cannot.
 
-- ``dbml_Changes`` records CHANGES as type-2 slowly-changing-dimension rows:
+- ``Managed Local Changes`` records CHANGES as type-2 slowly-changing-dimension rows:
   one row per change with the old value and the new value side by side,
   keyed by ``ChangeKey``. Hidden and insert-only from the deploy's point of
   view. The enterprise reader group holds Read on it so a Power Automate
@@ -28,10 +28,11 @@ of the same title that is not this tool's.
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 
-#: The per-site deployment log. `prefix_Entity` like every family list, so the
-#: URL carries no escape: MEASURED 2026-09-06, a space in a title reaches the
-#: slug and is frozen there at creation.
-RUN_LOG_TITLE = "dbml_Deployments"
+#: The per-site deployment log. The title has spaces for the people who see it
+#: in Site contents; the deploy creates it at `Lists/` plus the title with its
+#: spaces removed (`Lists/ManagedLocalDeployments`), because MEASURED
+#: 2026-09-06 a space in a title reaches the slug and is frozen there.
+RUN_LOG_TITLE = "Managed Local Deployments"
 
 #: What `RUN_LOG_TITLE` declared before this convention landed. A site
 #: deployed under an older build still carries its run log under this name,
@@ -39,27 +40,29 @@ RUN_LOG_TITLE = "dbml_Deployments"
 #: only, so `sidecarFor` does not report years of deployments as absent. This
 #: tool never renames the old list, and a redeploy still creates
 #: `RUN_LOG_TITLE` fresh rather than adopting it.
-RUN_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml Local Log",)
+RUN_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Deployments", "dbml Local Log")
 
 #: The per-site change log. Named for what a row is, not for what it is not.
-CHANGE_LOG_TITLE = "dbml_Changes"
+CHANGE_LOG_TITLE = "Managed Local Changes"
 
 #: What `CHANGE_LOG_TITLE` declared before this convention landed. Same
 #: reasoning and same READING-only recognition as `RUN_LOG_PREVIOUS_TITLES`.
-CHANGE_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Logs",)
+CHANGE_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Changes", "dbml_Logs")
 
-#: The CENTRAL deployment log, on the org's logging site. `firmfooting` rather
-#: than `dbml` because it holds rows from every firmfooting application, of
-#: which this tool is one. Probed, never created by a deploy.
-EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
+#: The CENTRAL deployment log's TITLE, on the org's logging site. The probes
+#: address it with getbytitle, so this is the spaced display title; its URL is
+#: `Lists/ManagedDeployments`. `Managed` rather than `dbml` because it holds
+#: rows from every firmfooting application, of which this tool is one. Probed,
+#: never created by a deploy.
+EXTERNAL_LOG_DEFAULT = "Managed Deployments"
 
 #: The CENTRAL change log, its type-2 half. Split from the deployments list so
 #: that each name is true of every row in it.
-EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
+EXTERNAL_CHANGE_LOG_DEFAULT = "Managed Changes"
 
 #: The CENTRAL document library that takes each run's full console log, one
 #: file per run, beside the two lists above. Probed, never created by a deploy.
-EXTERNAL_LOG_LIBRARY_DEFAULT = "firmfooting_DeploymentLogs"
+EXTERNAL_LOG_LIBRARY_DEFAULT = "Managed Deployment Logs"
 
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
@@ -92,14 +95,14 @@ SIDECAR_HIDDEN = True
 
 
 def run_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml_Deployments`` by."""
+    """The exact Description the deploy owns ``Managed Local Deployments`` by."""
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=RUN_LOG_TITLE, family=None,
     )
 
 
 def change_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml_Changes`` by."""
+    """The exact Description the deploy owns ``Managed Local Changes`` by."""
     return scratch_marker_for(CHANGE_LOG_TITLE)
 
 

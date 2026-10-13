@@ -69,9 +69,9 @@ def _tables() -> dict[str, Table]:
 
 
 def _family_list_titles() -> list[str]:
-    """Every list title this family declares, `prefix + entity`."""
+    """Every list title this family declares."""
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
-    return [mapping.prefix + entity for entity in mapping.entities]
+    return [mapping.list_title(entity) for entity in mapping.entities]
 
 
 def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
@@ -92,10 +92,10 @@ def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
 def test_the_family_deploys_the_library_each_run_uploads_its_log_to() -> None:
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
     assert EXTERNAL_LOG_LIBRARY_DEFAULT in _family_list_titles()
-    entity = mapping.entities[EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)]
+    entity = mapping.entities["DeploymentLogs"]
     assert entity.is_library
     # The same drop-box policy as the two lists, so the file is only ever added.
-    library = EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)
+    library = "DeploymentLogs"
     policy = mapping.permissions_for_entity("Changes")
     assert mapping.permissions_for_entity(library) == policy
 
@@ -238,7 +238,7 @@ def test_the_submit_only_level_grants_adding_and_no_changing() -> None:
 
 def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
     """`{prefix}` is mandatory on a declared level, and this family's prefix
-    is `firmfooting_`, the org token every other firmfooting application
+    is `Managed`, the neutral token every other firmfooting application
     shares.
 
     So the placeholder expands to that stem, and the level ships as a name no
@@ -254,8 +254,8 @@ def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
 
     (level,) = _permissions().levels
     assert level.name == expand_prefix(
-        "{prefix} Deployments Submit Only", "firmfooting_", "permission_levels")
-    assert level.name == "firmfooting Deployments Submit Only"
+        "{prefix} Deployments Submit Only", "Managed", "permission_levels")
+    assert level.name == "Managed Deployments Submit Only"
     assert level.name not in BUILT_IN_LEVELS
 
 

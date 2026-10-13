@@ -87,6 +87,7 @@ _HARNESS = textwrap.dedent(r"""
     // read-back mismatch branch.
     const STORE_WRONG_LIST_ID = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
+    const IGNORE_HIDDEN_MERGE = false;
     const REFUSE_CHANGE_FIELD = '';
     const SEED_ITEMS = {};
     const SEED_LISTS = [];
@@ -142,7 +143,7 @@ _HARNESS = textwrap.dedent(r"""
     // provisions them: Deployments takes stamps, Changes takes the type-2
     // feed. One routing table, so the fetch handler below asks "which list"
     // once instead of duplicating every branch per list.
-    const CENTRAL_LISTS = {
+    const CENTRAL_TABLE = {
       'CENTRAL_LIST': {
         items: () => state.central, fields: CENTRAL_FIELDS,
         itemType: CENTRAL_ITEM_TYPE, probeGuid: 'dddddddd',
@@ -293,7 +294,7 @@ _HARNESS = textwrap.dedent(r"""
               ListItemEntityTypeFullName: 'SP.Data.LibraryItem' } });
           }
           if (/\/rootfolder\?/.test(u)) {
-            return reply(200, { d: { ServerRelativeUrl: '/sites/CENTRAL_SITE/LIBRARY_TITLE' } });
+            return reply(200, { d: { ServerRelativeUrl: '/sites/CENTRAL_SITE/LIBRARY_ROOT' } });
           }
           const added = /files\/add\(url='([^']*)',overwrite=(true|false)\)/.exec(u);
           if (added) {
@@ -301,7 +302,7 @@ _HARNESS = textwrap.dedent(r"""
               return reply(403, { error: { message: { value: 'Access denied.' } } });
             }
             if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
-            const path = `/sites/CENTRAL_SITE/LIBRARY_TITLE/${added[1]}`;
+            const path = `/sites/CENTRAL_SITE/LIBRARY_ROOT/${added[1]}`;
             if (state.files[path] !== undefined) {
               return reply(403, { error: { message: { value: 'Access denied.' } } });
             }
@@ -326,7 +327,7 @@ _HARNESS = textwrap.dedent(r"""
         }
         // Which of the two central lists this request addresses, by title.
         // Neither request naming the other list's title reaches here.
-        const centralEntry = Object.entries(CENTRAL_LISTS).find(
+        const centralEntry = Object.entries(CENTRAL_TABLE).find(
           ([title]) => u.includes(`getbytitle('${title}')`));
         if (!centralEntry) return reply(200, { d: { results: [] } });
         const [centralTitle, centralList] = centralEntry;
@@ -398,6 +399,18 @@ _HARNESS = textwrap.dedent(r"""
         const rows = Object.values(state.lists)
           .map((l) => ({ Title: l.Title, ItemCount: 0, Hidden: false }));
         return reply(200, { d: { results: rows } });
+      }
+      if (method === 'POST' && /\/_api\/web\/lists\/add$/.test(u) && body && body.parameters) {
+        const { __metadata, Url, TemplateType, ...settings } = body.parameters;
+        const created = { ...SHAPE_DEFAULTS, ...settings,
+          Id: guid('bbbbbbbb', state.nextList++) };
+        state.listUrls = state.listUrls || {};
+        state.listUrls[created.Title] = Url;
+        state.lists[created.Title] = created;
+        state.fields[created.Title] = BUILT_INS.map(
+          (name) => newField({ Title: name, ReadOnlyField: name !== 'Title' }));
+        state.items[created.Title] = state.items[created.Title] || [];
+        return reply(201, { d: shapeOf(created) });
       }
       if (method === 'POST' && /\/_api\/web\/lists$/.test(u) && body && body.Title) {
         const { __metadata, ...settings } = body;
@@ -510,6 +523,7 @@ _HARNESS = textwrap.dedent(r"""
         }
         if (verb === 'MERGE') {
           const { __metadata, ...settings } = body || {};
+          if (IGNORE_HIDDEN_MERGE) delete settings.Hidden;
           Object.assign(list, settings);
           return reply(204, {});
         }
@@ -587,6 +601,7 @@ def _run_deploy(
     fail_change_writes: bool = False,
     bare_run_log: bool = False,
     fail_run_log_field_creates: bool = False,
+    ignore_hidden_merge: bool = False,
     refuse_change_field: str = "",
     central_columns: bool = True,
     central_change_columns: bool = True,
@@ -693,20 +708,21 @@ def _run_deploy(
             harness, "const SEED_CENTRAL_CHANGES = [];",
             f"const SEED_CENTRAL_CHANGES = {json.dumps(seeded_central_changes)};",
         )
-    # Each item type now names its list ONCE, in the CENTRAL_LISTS table the
+    # Each item type now names its list ONCE, in the CENTRAL_TABLE table the
     # routing above reads from, rather than once per branch as it did before
     # the routing was shared.
     assert harness.count("CENTRAL_ITEM_TYPE") == 1
     harness = harness.replace(
         "CENTRAL_ITEM_TYPE",
-        json.dumps(f"SP.Data.{EXTERNAL_LOG_DEFAULT.replace('-', '')}ListItem"),
+        json.dumps(f"SP.Data.{EXTERNAL_LOG_DEFAULT.replace(' ', '')}ListItem"),
     )
     assert harness.count("CENTRAL_CHANGE_ITEM_TYPE") == 1
     harness = harness.replace(
         "CENTRAL_CHANGE_ITEM_TYPE",
-        json.dumps(f"SP.Data.{EXTERNAL_CHANGE_LOG_DEFAULT.replace('-', '')}ListItem"),
+        json.dumps(f"SP.Data.{EXTERNAL_CHANGE_LOG_DEFAULT.replace(' ', '')}ListItem"),
     )
     for placeholder, actual in (
+        ("LIBRARY_ROOT", EXTERNAL_LOG_LIBRARY_DEFAULT.replace(" ", "")),
         ("LIBRARY_TITLE", EXTERNAL_LOG_LIBRARY_DEFAULT),
         ("CENTRAL_SITE", CENTRAL_LOG_SITE_DEFAULT),
         ("CENTRAL_CHANGES_LIST", EXTERNAL_CHANGE_LOG_DEFAULT),
@@ -725,6 +741,11 @@ def _run_deploy(
         harness = _substitute(
             harness, "const REFUSE_CHANGE_FIELD = '';",
             f"const REFUSE_CHANGE_FIELD = '{refuse_change_field}';",
+        )
+    if ignore_hidden_merge:
+        harness = _substitute(
+            harness, "const IGNORE_HIDDEN_MERGE = false;",
+            "const IGNORE_HIDDEN_MERGE = true;",
         )
     if fail_run_log_field_creates:
         harness = _substitute(
@@ -836,6 +857,12 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
         "the logging writer rejected out of an un-awaited call:\n"
         + "\n".join(run["unhandled"].strings)
     )
+
+    # Spaced titles, spaceless URLs, hidden after create.
+    for title, slug in ((RUN_LOG_TITLE, "Lists/ManagedLocalDeployments"),
+                        (CHANGE_LOG_TITLE, "Lists/ManagedLocalChanges")):
+        assert state["listUrls"][title].text == slug
+        assert state["lists"][title]["Hidden"].value is True
 
     # The change log's own columns, including the one the close query filters
     # on. Absent, every close read is an HTTP 400 and the insert after it
@@ -1885,7 +1912,7 @@ def test_a_clean_run_uploads_its_whole_log_and_names_the_file_in_the_stop_stamp(
     assert len(files) == 1, files
     path, text = files[0]
     assert re.fullmatch(
-        rf"/sites/{CENTRAL_LOG_SITE_DEFAULT}/{EXTERNAL_LOG_LIBRARY_DEFAULT}/"
+        rf"/sites/{CENTRAL_LOG_SITE_DEFAULT}/{EXTERNAL_LOG_LIBRARY_DEFAULT.replace(" ", "")}/"
         r"\d{8}T\d{6}Z-test-[a-z0-9]{1,6}\.log",
         path,
     ), path
@@ -2020,3 +2047,9 @@ def test_a_second_deploy_leaves_one_current_row_per_key() -> None:
     ]
     assert len(current) == 1, f"{len(current)} current rows for one key"
     assert any(r["Id"].number == 900 and r["IsCurrent"].value is False for r in rows)
+
+
+def test_a_sidecar_whose_hidden_flag_does_not_read_back_is_a_named_failure() -> None:
+    run = _run_deploy(central_absent=True, ignore_hidden_merge=True)
+    assert "flags did not read back" in run["output"].text
+    assert run["state"]["lists"][RUN_LOG_TITLE]["Hidden"].value is False

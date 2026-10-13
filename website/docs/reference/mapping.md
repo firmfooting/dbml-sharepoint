@@ -2440,8 +2440,8 @@ written to any log.
 
 ### The site-wide groups
 
-`dbml Enterprise Readers`, `dbml List Administrators` and
-`dbml Automation Accounts` are
+`Managed Enterprise Readers`, `Managed List Administrators` and
+`Managed Automation Accounts` are
 **one group per site**, not one per family. Every shipped family
 declares the first two identically, and a fleet
 test enforces that, because two families deployed to the same site reconcile
@@ -2456,7 +2456,7 @@ Two consequences worth knowing before you deploy a second family to a site:
   enterprise reader account. Passing a different `--enterprise-reader` address
   on a later deploy makes the exclusivity guard find an unexpected member and
   abort, which is correct rather than a bug.
-- **`dbml List Administrators` holds Full Control for every register on the site.**
+- **`Managed List Administrators` holds Full Control for every register on the site.**
   Anyone who can redeploy one register can redeploy and reschema all of them.
   Rename the group in your mapping if a site needs that authority fenced per
   family.
@@ -2464,13 +2464,13 @@ Two consequences worth knowing before you deploy a second family to a site:
 **Known limitation: two tabs, one operator.** Two simultaneous deploys naming
 different `--enterprise-reader` addresses no longer both leave their account
 enrolled: a run that does not reach its end now removes exactly the reader
-membership it added (#213). A second form of the same issue is not fixed. `dbml
+membership it added (#213). A second form of the same issue is not fixed. `Managed
 List Administrators` uses run-scoped operator self-enrolment: the first paste to
 reach that phase adds the operator and removes them again on the way out,
 whether it succeeds or aborts. A second paste of the same script, running at
 nearly the same time, finds the operator already a member, leaves that
 membership alone, and so never learns it needs protecting. If the first run
-exits before the second run's later phases finish, the operator loses `dbml List
+exits before the second run's later phases finish, the operator loses `Managed List
 Administrators`' authority mid-run, removed by a cleanup the second run never
 asked for. Fixing this needs an advisory claim on the membership, something that
 tells the other run not to remove it yet, and nothing has measured whether two
@@ -2478,7 +2478,7 @@ near-simultaneous MERGE calls to the same group description even serialise on a
 live tenant. Until that is measured, no guard is built on it: avoid pasting the
 same mapping's deploy script into two tabs at once.
 
-**`dbml Automation Accounts` is reserved, not shipped.** It is the name for
+**`Managed Automation Accounts` is reserved, not shipped.** It is the name for
 the identity an automation connects as, such as a Power Automate flow. No
 shipped family declares it, because it carries no site-wide grant, and a
 family declaring it while granting it nothing would create a group with no
@@ -2501,14 +2501,15 @@ Leave `require_empty_at_deploy` off on it, or the next deploy aborts on
 finding the identity you just added. **The level is yours to choose**, with
 one refusal: the
 validator rejects `Full Control` on this group
-(`automation_group_granted_full_control`). That is what `dbml List
+(`automation_group_granted_full_control`). That is what `Managed List
 Administrators` already carries on every list, so granting it here hands the
 automation the breadth this group exists to avoid. Which narrower level a flow
 needs, `Contribute`, `Edit` or a level of your own, depends on what it writes,
 and nothing here decides that for you.
 
-**Why the `dbml` prefix.** These are the only groups the tool names for
-itself rather than for your organisation, so they carry the tool's name. That
+**Why the `Managed` prefix.** These are the only groups the tool names for
+itself rather than for your organisation, so they carry a neutral
+shared prefix. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
 administrator may already have used. The prefix makes that collision
 unlikely, and the group-adoption gate described below narrows the remaining
@@ -2519,10 +2520,10 @@ members, is refused rather than handed Full Control.
 **Upgrading from a family-prefixed deployment.** If you deployed an earlier
 version, the site holds a per-family pair such as `RR Enterprise Readers` and
 `RR List Administrators`, one of each per family you deployed. Redeploying
-creates the two `dbml`-prefixed groups, and the ACL phase removes the old
+creates the two `Managed`-prefixed groups, and the ACL phase removes the old
 groups' grants from the managed lists, but the empty group objects remain.
 Delete them by hand once you have re-enrolled the reader account into
-`dbml Enterprise Readers`.
+`Managed Enterprise Readers`.
 
 **The group-adoption gate.** Every group this tool writes now carries
 `Provisioned by dbml-sharepoint` in its description: the site-wide groups
@@ -2563,10 +2564,10 @@ permission-level section above for the decision table this
 phase logs before it applies anything, and for the same atomicity-of-decision
 limit.
 
-Whether an existing site hits that refusal depends on the group. `dbml List
+Whether an existing site hits that refusal depends on the group. `Managed List
 Administrators` is normally empty between runs, since the deploy enrols the
 operator only for the run's duration and removes them again on the way out,
-so a redeploy normally adopts and stamps it without incident. `dbml
+so a redeploy normally adopts and stamps it without incident. `Managed
 Enterprise Readers` behaves differently: once a reader account is enrolled,
 that membership is permanent, so a site that has already enrolled one is
 refused on its first redeploy under this release, exactly as a populated
@@ -2574,12 +2575,12 @@ per-family group is. A site that has never deployed either group is
 unaffected, because both are created fresh and stamped.
 
 A per-family group on a site deployed before this release is in the same
-position as an already-enrolled `dbml Enterprise Readers`: it is populated
+position as an already-enrolled `Managed Enterprise Readers`: it is populated
 and carries no marker, so the first redeploy after upgrading stops on it.
 The remedy is to empty the group before redeploying, or to rename the
 pre-existing group so the deploy creates its own under the declared name.
 
-For `dbml Enterprise Readers` specifically, emptying it removes the reader
+For `Managed Enterprise Readers` specifically, emptying it removes the reader
 account's access, and renaming it leaves that account enrolled in a group
 whose grants the next `reconcile: exact` ACL pass strips. Neither remedy is
 reversible by an ordinary redeploy, because the reader-enrolment phase that

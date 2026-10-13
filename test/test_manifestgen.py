@@ -1380,14 +1380,14 @@ def test_manifest_describes_the_central_change_list_when_one_is_configured() -> 
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        sidecar_run_log_title="dbml_Deployments",
-        sidecar_change_log_title="dbml_Changes",
+        sidecar_run_log_title="Managed Local Deployments",
+        sidecar_change_log_title="Managed Local Changes",
         deployment_log_site="firmfooting-logging",
-        deployment_log_list="firmfooting_Deployments",
-        deployment_log_change_list="firmfooting_Changes",
+        deployment_log_list="Managed Deployments",
+        deployment_log_change_list="Managed Changes",
     )
-    assert "the Deployments list `firmfooting_Deployments`" in md
-    assert "Change rows go to the Changes list `firmfooting_Changes`" in md
+    assert "the Deployments list `Managed Deployments`" in md
+    assert "Change rows go to the Changes list `Managed Changes`" in md
     assert "DBMLSP_DEPLOY_CHANGES" in md
 
 
@@ -1409,10 +1409,10 @@ def test_manifest_omits_the_change_list_paragraph_without_one() -> None:
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        sidecar_run_log_title="dbml_Deployments",
-        sidecar_change_log_title="dbml_Changes",
+        sidecar_run_log_title="Managed Local Deployments",
+        sidecar_change_log_title="Managed Local Changes",
         deployment_log_site="firmfooting-logging",
-        deployment_log_list="firmfooting_Deployments",
+        deployment_log_list="Managed Deployments",
     )
     assert "central deployment log" in md
     assert "Change rows go to the Changes list" not in md

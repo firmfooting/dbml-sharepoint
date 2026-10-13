@@ -1,7 +1,20 @@
-release: "2.2.0"
+release: "2.3.0"
 date: "2026-10-13"
-schema_version: "2.2.0"
+schema_version: "2.3.0"
 notes: |
+  2.3.0 renames everything to a neutral `Managed` name. The lists are now
+  titled `Managed Deployments` and `Managed Changes` and the library
+  `Managed Deployment Logs`, each served at a URL without spaces
+  (`Lists/ManagedDeployments`, `Lists/ManagedChanges`, `ManagedDeploymentLogs`).
+  The groups are `Managed List Administrators` and `Managed Enterprise
+  Readers`, and the permission level is `Managed Deployments Submit Only`.
+  This is breaking: a site holding the earlier `firmfooting_` lists and
+  `dbml` groups gets new, empty ones beside them, and its members must be
+  re-added. This tool never renames or deletes the old objects. The per-site
+  sidecars are renamed too (`Managed Local Deployments`, `Managed Local
+  Changes`); the old ones keep their history, are read by the identify
+  script, and are no longer written.
+
   2.2.0 adds `firmfooting_DeploymentLogs`, a document library that takes the
   full console log of every deploy run as one new text file per run, on the
   same drop-box posture as the two lists: a contributor can add a file and

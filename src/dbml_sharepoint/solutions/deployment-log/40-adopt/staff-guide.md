@@ -31,7 +31,7 @@ for different lists.
 
 ## The run log files
 
-`firmfooting_DeploymentLogs` holds one text file per run: everything the
+`Managed Deployment Logs` holds one text file per run: everything the
 deploy printed in the browser console. The closing row of a run on
 `Deployments` names its file in Details (`run log <server-relative URL>`).
 A run that could not upload its log says so in its own console output and in

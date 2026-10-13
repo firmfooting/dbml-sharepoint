@@ -11,7 +11,7 @@ is the same pattern for lists).
 
 WHY A MARKER AT ALL. `templates/deploy/_security_principals.js.j2` adopts any
 existing site group whose name matches a declared one and grants it whatever
-the mapping declares, which for `dbml List Administrators` is Full Control on
+the mapping declares, which for `Managed List Administrators` is Full Control on
 every list in the family. Deciding whether that is safe needs an answer to
 "did this tool create this group", and nothing on a group recorded that. The
 Description is the one group-level string this tool already writes, and a
@@ -51,7 +51,11 @@ FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {n
 #: Power Automate flow. Named here as a constant because a rule keys off the
 #: NAME; an identity reaches it through the `enroll` key on a group, and
 #: nothing about this group happens at build time (#331).
-AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
+AUTOMATION_GROUP_NAME = "Managed Automation Accounts"
+
+#: The spelling before the Managed rename. A mapping that still declares it
+#: stays under the Full Control guard, though nothing is provisioned for it.
+LEGACY_AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
 
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.
@@ -76,9 +80,17 @@ AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
 #: importing them, because a test that imports the value it is checking
 #: verifies nothing.
 TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
+    "Managed Enterprise Readers",
+    "Managed List Administrators",
+    AUTOMATION_GROUP_NAME,
+})
+
+#: The spellings before the Managed rename. A group the previous release made
+#: keeps its shared marker, or the redeploy adoption gate would abort on it.
+LEGACY_TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
     "dbml Enterprise Readers",
     "dbml List Administrators",
-    AUTOMATION_GROUP_NAME,
+    LEGACY_AUTOMATION_GROUP_NAME,
 })
 
 #: Characters held back from every description's budget, on top of the marker.
@@ -103,7 +115,7 @@ GROUP_MARKER_GROWTH_RESERVE = 21
 
 def marker_for_group(group_name: str, family: str) -> str:
     """The exact marker for one group. The single spelling authority."""
-    if group_name in TOOL_OWNED_GROUP_NAMES:
+    if group_name in TOOL_OWNED_GROUP_NAMES | LEGACY_TOOL_OWNED_GROUP_NAMES:
         return shared_marker_for(group_name)
     return provenance.marker_for_object(
         kind=provenance.GROUP_KIND, name=group_name, family=family,

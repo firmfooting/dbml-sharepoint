@@ -26,7 +26,7 @@ watched_lists: []
 # and Owners hold Contribute; Full Control confined to the empty-by-default
 # admin group.
 groups:
-  - name: "dbml List Administrators"
+  - name: "Managed List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -34,7 +34,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll_during_run: [operator]
-  - name: "dbml Enterprise Readers"
+  - name: "Managed Enterprise Readers"
     description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -52,13 +52,13 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "dbml List Administrators" }
+      - principal: { kind: group, name: "Managed List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
         level: "Contribute"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
-      - principal: { kind: group, name: "dbml Enterprise Readers" }
+      - principal: { kind: group, name: "Managed Enterprise Readers" }
         level: "Read"
 
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,

@@ -2,8 +2,8 @@
 
 *Theme: process digitisation & improvement.*
 
-The fleet's own record of itself: two lists, `firmfooting_Deployments` and
-`firmfooting_Changes`, and a library, `firmfooting_DeploymentLogs`, holding a
+The fleet's own record of itself: two lists, `Managed Deployments` and
+`Managed Changes`, and a library, `Managed Deployment Logs`, holding a
 row for every deploy run any firmfooting application performs anywhere in the
 tenant, saying what was deployed, to which site, by whom, from which release,
 whether the run finished, and what it changed. The library holds each run's
@@ -33,7 +33,7 @@ has something in it before the first real deploy lands.
 | Step | Folder | You |
 | --- | --- | --- |
 | 1 | `10-design/` | Read the stamp kinds; they are a contract, not a preference |
-| 2 | `20-configure/` | Set the org prefix if `firmfooting` is not your organisation's token; decide who is in Members and who administers |
+| 2 | `20-configure/` | Edit the explicit `title` and `internal_name` of the two lists if `Managed` is not your organisation's token (the `prefix` key does not rename them), and set the matching environment settings; leave the `DeploymentLogs` library as it is, because deploys always look for its fixed title; decide who is in Members and who administers |
 | 3 | `30-deploy/` | Administrator: create the logging site, build, paste |
 | 4 | `40-adopt/` | Who reads it, and what each stamp kind means |
 | 5 | `50-govern/` | Retention, the rules no save rule can carry, permissions |
@@ -41,10 +41,11 @@ has something in it before the first real deploy lands.
 **Customisation points:** almost none, and that is deliberate. The two list
 titles, the column internal names and the `StampKind` members are the
 addresses every other family's deploy writes to, so renaming an entity or a
-column stops the stamps arriving rather than changing how they look. `prefix`
-is the one part of the address you are meant to change: it is your
-organisation's own token in place of the `firmfooting` placeholder, and every
-other firmfooting application's deploy needs to agree on it. What else you do
+column stops the stamps arriving rather than changing how they look. The
+exception is the explicit `title` and `internal_name` of each entity, which
+carry your organisation's own token in place of the `Managed` placeholder
+(`prefix` does not rename them), and every other firmfooting application's
+deploy needs to agree on them. What else you do
 choose is the site the lists live on, who is in their shared Members group
 (they get submit-only: add a row, read back only their own, edit and delete
 nothing), and how long stamps are kept.

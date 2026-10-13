@@ -23,17 +23,10 @@ Enum stamp_kind {
   "provenance"
 }
 
-// The table name IS the SharePoint list title, and `firmfooting_` is the
-// mapping's prefix: this list is `firmfooting_Deployments` on every site it
-// reaches, because it holds rows from every firmfooting application, of
-// which dbml-sharepoint is one. That exact spelling is what every other
-// family's deploy probes (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT) and
-// what DBMLSP_DEPLOY_LOG_LIST defaults to. Renaming the table renames the
-// address; change both or neither. The org token is the mapping's `prefix`,
-// so an org taking this family edits that one line rather than this file.
-// Every column below but `Title` and `Id` comes straight from
-// `CENTRAL_LOG_COLUMNS` (analysis/sidecars.py), the same anti-drift
-// principle `Changes` uses below.
+// This table is the central list titled `Managed Deployments` (the mapping
+// declares the title and its URL), which every other family probes
+// (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT). Columns other than `Title` and
+// `Id` come from `CENTRAL_LOG_COLUMNS`, the same anti-drift rule `Changes` uses.
 Table Deployments {
   Id       int        [pk, increment]
   // The human-readable stamp, the one column a generic list is guaranteed
@@ -66,15 +59,10 @@ Table Deployments {
   Note: 'Deployment stamps from every firmfooting application and every site this tool provisions: what was deployed, where, by whom, and whether it finished.'
 }
 
-// The central change log's type-2 half, split from `Deployments` so that
-// each list's name is true of every row in it (the split mirrors the
-// per-site pair this tool already keeps: `dbml_Deployments` never carries a
-// change row and `dbml_Changes` never carries a stamp). `firmfooting_Changes`
-// is what a deploy with a reachable central log probes for change rows
-// (analysis/sidecars.py, EXTERNAL_CHANGE_LOG_DEFAULT). Every column below
-// but `Title` and `Id` comes straight from `CENTRAL_CHANGE_COLUMNS`
-// (analysis/sidecars.py, derived from `CHANGE_FIELDS`), which is what a
-// central change row actually POSTs; the set is not hand-picked here, so it
+// The central change log's type-2 half, split from `Deployments` so each
+// list's name is true of every row in it. Its title `Managed Changes` is what a
+// deploy probes (analysis/sidecars.py, EXTERNAL_CHANGE_LOG_DEFAULT). Columns
+// other than `Title` and `Id` come from `CENTRAL_CHANGE_COLUMNS`, so they
 // cannot drift from what the fleet writes.
 Table Changes {
   Id       int        [pk, increment]

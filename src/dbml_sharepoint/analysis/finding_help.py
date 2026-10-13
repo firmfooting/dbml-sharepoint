@@ -149,15 +149,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "silently, and this refusal turns that into a build message."
     ),
     FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
-        "A group enrolling `automation`, or named `dbml Automation Accounts`, "
+        "A group enrolling `automation`, or named `Managed Automation Accounts`, "
         "is granted Full Control, on the default policy or on an override. "
-        "`dbml Automation Accounts` exists so the identity a flow connects as "
+        "`Managed Automation Accounts` exists so the identity a flow connects as "
         "can hold a narrow declared write on the lists it stamps: under "
         "`reconcile: exact` a redeploy "
         "removes undeclared direct grants, so access handed to a flow by hand "
         "does not survive one and the identity has to sit in a group the "
         "mapping declares, holding a level it declares. Full Control is "
-        "what `dbml List Administrators` already carries on every list, so "
+        "what `Managed List Administrators` already carries on every list, so "
         "granting it here gives the automation the breadth the group was "
         "declared to avoid, and the name goes on saying otherwise. Grant the "
         "narrowest level that lets the flow write. Only `Full Control` is "

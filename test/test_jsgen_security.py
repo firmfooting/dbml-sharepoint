@@ -222,9 +222,9 @@ def test_every_emitted_group_description_carries_the_marker() -> None:
 
 def test_the_shared_group_marker_names_no_family() -> None:
     schema_json = _schema_json_for_contract_register()
-    shared = next(g for g in schema_json["groups"] if g["name"] == "dbml Enterprise Readers")
+    shared = next(g for g in schema_json["groups"] if g["name"] == "Managed Enterprise Readers")
     assert shared["description"].endswith(
-        "Provisioned by dbml-sharepoint for group dbml Enterprise Readers."
+        "Provisioned by dbml-sharepoint for group Managed Enterprise Readers."
     )
 
 
@@ -820,7 +820,7 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
         break_inheritance=True, reconcile_mode="exact",
         assignments=(
             RoleAssignment(
-                principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                principal=Principal(kind="group", name="Managed Enterprise Readers"),
                 level="Read",
             ),
         ),
@@ -845,7 +845,7 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
     )
 
     reach = lists_granting_group(
-        resolve(make_schema(), patched), "dbml Enterprise Readers", [entity],
+        resolve(make_schema(), patched), "Managed Enterprise Readers", [entity],
     )
 
     assert reach.folder_only == [entity], reach
@@ -856,7 +856,7 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
 def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
     """A `{member}` principal is not necessarily a per-member group.
 
-    `dbml Enterprise {member}` over a folder named Automation resolves to a
+    `Managed Enterprise {member}` over a folder named Automation resolves to a
     literal group, and the deploy binds it. Compared unexpanded, the CLI
     refused the enrolment and the manifest called the list excluded while the
     emitted script granted the reader on every folder of it.
@@ -888,7 +888,7 @@ def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
                 break_inheritance=True, reconcile_mode="exact",
                 assignments=(
                     RoleAssignment(
-                        principal=Principal(kind="group", name="dbml Enterprise {member}"),
+                        principal=Principal(kind="group", name="Managed Enterprise {member}"),
                         level="Read",
                     ),
                 ),
@@ -898,7 +898,7 @@ def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
 
     area_schema = make_schema(enums=[make_enum("area", "Readers")])
     reach = lists_granting_group(
-        resolve(area_schema, patched), "dbml Enterprise Readers", [entity],
+        resolve(area_schema, patched), "Managed Enterprise Readers", [entity],
     )
 
     assert (reach.granted, reach.folder_only, reach.excluded) == ([], [entity], [])
@@ -927,7 +927,7 @@ def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None
                 break_inheritance=True, reconcile_mode="exact",
                 assignments=(
                     RoleAssignment(
-                        principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                        principal=Principal(kind="group", name="Managed Enterprise Readers"),
                         level="Read",
                     ),
                 ),
@@ -936,7 +936,7 @@ def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None
     )
 
     reach = lists_granting_group(
-        resolve(make_schema(), patched), "dbml Enterprise Readers", [entity],
+        resolve(make_schema(), patched), "Managed Enterprise Readers", [entity],
     )
 
     assert (reach.granted, reach.folder_only, reach.excluded) == ([], [], [entity])

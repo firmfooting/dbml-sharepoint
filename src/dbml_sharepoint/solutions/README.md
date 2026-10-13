@@ -261,10 +261,10 @@ number into a committee pack.
 Unless a template says otherwise: ordinary **site Members work with items
 and cannot break the lists** (no schema or permission rights), working
 groups carry the process-specific access, and an **empty-by-default
-`dbml List Administrators` group holds Full Control**: the deploy script
+`Managed List Administrators` group holds Full Control**: the deploy script
 enrols the running operator into it for the duration of the run and removes
 them afterwards, so schema changes and redeploys are deliberate acts, not
-accidents. `dbml List Administrators` and `dbml Enterprise Readers` are site-wide:
+accidents. `Managed List Administrators` and `Managed Enterprise Readers` are site-wide:
 every shipped family declares them identically and reconciles the same
 group object, not one per family. Every list uses `reconcile: exact`:
 undeclared permission grants are removed on deploy and redeploy.
@@ -272,7 +272,7 @@ undeclared permission grants are removed on deploy and redeploy.
 Every group the deploy writes now carries a provenance marker in its
 Description, and a same-named group without that marker is refused unless it
 holds no members. That guards a hand-made group the tool never touched; it
-does not enforce emptiness on the groups it does adopt. Once stamped, `dbml
+does not enforce emptiness on the groups it does adopt. Once stamped, `Managed
 List Administrators` is adopted and granted Full Control with any membership
 at all. See [the group-adoption gate](../../../website/docs/reference/mapping.md#the-site-wide-groups)
 for what that means when redeploying to a site provisioned before this was

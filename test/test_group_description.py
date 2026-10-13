@@ -7,6 +7,7 @@ from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
     FAMILY_MARKER_TEMPLATE,
     GROUP_MARKER_GROWTH_RESERVE,
+    LEGACY_TOOL_OWNED_GROUP_NAMES,
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
     group_description,
@@ -23,13 +24,13 @@ def test_a_tool_owned_group_gets_a_family_less_marker_naming_itself() -> None:
     They still name the group, or a description copied between the two would
     satisfy the other's adoption gate.
     """
-    reader = marker_for_group("dbml Enterprise Readers", "risk-register")
-    admin = marker_for_group("dbml List Administrators", "asset-register")
-    automation = marker_for_group("dbml Automation Accounts", "risk-register")
+    reader = marker_for_group("Managed Enterprise Readers", "risk-register")
+    admin = marker_for_group("Managed List Administrators", "asset-register")
+    automation = marker_for_group("Managed Automation Accounts", "risk-register")
 
-    assert reader == shared_marker_for("dbml Enterprise Readers")
-    assert admin == shared_marker_for("dbml List Administrators")
-    assert automation == shared_marker_for("dbml Automation Accounts")
+    assert reader == shared_marker_for("Managed Enterprise Readers")
+    assert admin == shared_marker_for("Managed List Administrators")
+    assert automation == shared_marker_for("Managed Automation Accounts")
     assert "risk-register" not in reader
     assert "asset-register" not in admin
     assert "risk-register" not in automation
@@ -44,7 +45,7 @@ def test_a_family_group_gets_the_family_marker() -> None:
 
 def test_both_shapes_start_with_the_detection_prefix() -> None:
     """The deploy tests one prefix; it never learns which shape to expect."""
-    assert shared_marker_for("dbml Enterprise Readers").startswith(MARKER_PREFIX)
+    assert shared_marker_for("Managed Enterprise Readers").startswith(MARKER_PREFIX)
     assert FAMILY_MARKER_TEMPLATE.startswith(MARKER_PREFIX)
     assert marker_for_group("RR Risk Managers", "risk-register").startswith(MARKER_PREFIX)
 
@@ -61,8 +62,8 @@ def test_the_composed_description_is_note_then_marker() -> None:
 
 def test_an_empty_declaration_returns_the_marker_alone() -> None:
     """Not a leading space. ' Provisioned by...' is not what 'no note' looks like."""
-    composed = group_description("", group_name="dbml Enterprise Readers", family="x")
-    assert composed == shared_marker_for("dbml Enterprise Readers")
+    composed = group_description("", group_name="Managed Enterprise Readers", family="x")
+    assert composed == shared_marker_for("Managed Enterprise Readers")
 
 
 def test_the_note_is_clamped_before_the_marker_is_appended() -> None:
@@ -105,7 +106,7 @@ def test_a_description_the_budget_accepts_survives_the_marker_growing() -> None:
     """
     for group_name, family in (
         ("RR Risk Managers", "risk-register"),
-        ("dbml Enterprise Readers", "risk-register"),
+        ("Managed Enterprise Readers", "risk-register"),
     ):
         marker = marker_for_group(group_name, family)
         accepted = "z" * description_budget(group_name, family)
@@ -135,7 +136,7 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 #: A ratchet of the same shape as `_reachability.NOT_YET_REACHED`: an entry
 #: comes out when a family declares the name, and one goes in with a reason.
 #:
-#: `dbml Automation Accounts` carries no site-wide grant, so a family
+#: `Managed Automation Accounts` carries no site-wide grant, so a family
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is reserved so the first family that
 #: does need it gets the family-less marker rather than a name of its own.
@@ -143,7 +144,7 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 #: A RESERVATION, NOT A DEBT. Reviewed 2026-09-12 with the rest of the
 #: suite's ratchets: this one is empty of work by design and draining it would
 #: mean shipping a group nothing needs, so it stays until a family needs it.
-_NOT_YET_SHIPPED: frozenset[str] = frozenset({"dbml Automation Accounts"})
+_NOT_YET_SHIPPED: frozenset[str] = frozenset({"Managed Automation Accounts"})
 
 
 def test_the_not_yet_shipped_ratchet_names_only_tool_owned_groups() -> None:
@@ -188,6 +189,12 @@ def test_every_tool_owned_name_is_actually_shipped(name: str) -> None:
 
 
 def test_the_automation_group_is_named_for_the_accounts_it_holds() -> None:
-    assert AUTOMATION_GROUP_NAME == "dbml Automation Accounts"
-    assert "dbml Enterprise Automation" not in TOOL_OWNED_GROUP_NAMES
+    assert AUTOMATION_GROUP_NAME == "Managed Automation Accounts"
+    assert "Managed Enterprise Automation" not in TOOL_OWNED_GROUP_NAMES
     assert AUTOMATION_GROUP_NAME in TOOL_OWNED_GROUP_NAMES
+
+
+@pytest.mark.parametrize("name", sorted(LEGACY_TOOL_OWNED_GROUP_NAMES))
+def test_a_legacy_tool_owned_name_still_gets_the_shared_marker(name: str) -> None:
+    """A group the previous release made must keep its marker on redeploy."""
+    assert marker_for_group(name, "risk-register") == shared_marker_for(name)

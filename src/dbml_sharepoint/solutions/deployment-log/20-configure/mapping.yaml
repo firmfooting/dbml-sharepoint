@@ -1,22 +1,22 @@
 # Central deployment log: physical mapping.
 #
-# The org token is the family's PREFIX, so an org taking this family edits
-# one line. `firmfooting` rather than `dbml` because these lists hold rows
-# from every firmfooting application, of which dbml-sharepoint is one. The
-# list titles are `prefix + entity`, giving `firmfooting_Deployments` and
-# `firmfooting_Changes`, and every other family's deploy probes those exact
-# literals (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT and
-# EXTERNAL_CHANGE_LOG_DEFAULT). DBMLSP_DEPLOY_LOG_LIST and
-# DBMLSP_DEPLOY_CHANGES default to the same strings. Renaming an entity here
-# renames the address the whole fleet is pointed at; change both sides or
-# neither.
-prefix: "firmfooting_"
+# `Managed` because these lists hold rows from every firmfooting application.
+# Each has a spaced `title` (what people see and every family probes, see
+# analysis/sidecars.py EXTERNAL_*_DEFAULT) and a spaceless `internal_name` (its
+# URL). No `previous_prefixes`: an `internal_name` cannot combine with one.
+prefix: "Managed"
 
 entities:
-  Deployments: { kind: List, base_template: 100, site_role: default }
-  Changes: { kind: List, base_template: 100, site_role: default }
+  Deployments:
+    { kind: List, base_template: 100, site_role: default,
+      title: "Managed Deployments", internal_name: "Lists/ManagedDeployments" }
+  Changes:
+    { kind: List, base_template: 100, site_role: default,
+      title: "Managed Changes", internal_name: "Lists/ManagedChanges" }
   # The library is EXTERNAL_LOG_LIBRARY_DEFAULT (analysis/sidecars.py).
-  DeploymentLogs: { kind: DocumentLibrary, base_template: 101, site_role: default }
+  DeploymentLogs:
+    { kind: DocumentLibrary, base_template: 101, site_role: default,
+      title: "Managed Deployment Logs", internal_name: "ManagedDeploymentLogs" }
 
 cross_site_reference_columns: []
 
@@ -43,7 +43,7 @@ watched_lists: []
 # delete anything, including what they wrote themselves. Full Control stays
 # with the empty-by-default admin group and the site owners.
 groups:
-  - name: "dbml List Administrators"
+  - name: "Managed List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -51,7 +51,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll_during_run: [operator]
-  - name: "dbml Enterprise Readers"
+  - name: "Managed Enterprise Readers"
     description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -118,13 +118,13 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "dbml List Administrators" }
+      - principal: { kind: group, name: "Managed List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
         level: "{prefix} Deployments Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
-      - principal: { kind: group, name: "dbml Enterprise Readers" }
+      - principal: { kind: group, name: "Managed Enterprise Readers" }
         level: "Full Control"
 
 # The other half of the drop box, and the half a role assignment cannot

@@ -295,15 +295,12 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/solutions/deployment-log/10-design/schema.dbml": [
         "0e6d8e5d1585",
-        "101cb3559933",
-        "70f3b7a091ca",
         "92ef766e3994",
     ],
     "src/dbml_sharepoint/solutions/deployment-log/20-configure/mapping.yaml": [
         "1b2cd091c6a1",
         "566fbb0efffa",
         "6906decc5f4b",
-        "8a1a7ff7c931",
         "8b59edcace5c",
         "cde0fd8b1c1d",
         "de25b620376c",
@@ -449,7 +446,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/templates/deploy/_logging.js.j2": [
         "1643590a47da",
-        "568853874937",
         "bc185d0a28b3",
     ],
     "src/dbml_sharepoint/templates/deploy/_lookups.js.j2": [

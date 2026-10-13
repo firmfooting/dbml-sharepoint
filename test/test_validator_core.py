@@ -2424,7 +2424,7 @@ def _automation_findings(
 
 
 def test_the_automation_group_granted_full_control_is_refused() -> None:
-    """The group exists to be narrower than `dbml List Administrators`.
+    """The group exists to be narrower than `Managed List Administrators`.
 
     Granting it Full Control hands the identity a flow connects as the schema
     and the ACL of the list it was declared to stamp one column on, which is
@@ -2438,6 +2438,14 @@ def test_the_automation_group_granted_full_control_is_refused() -> None:
     )
     assert finding.severity == "error"
     assert AUTOMATION_GROUP_NAME in finding.message
+
+
+def test_the_legacy_automation_group_name_stays_under_the_guard() -> None:
+    finding = only(
+        _automation_findings(level="Full Control", name="dbml Automation Accounts"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert "dbml Automation Accounts" in finding.message
 
 
 def test_a_group_enrolling_automation_granted_full_control_is_refused() -> None:
