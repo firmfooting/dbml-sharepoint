@@ -69,9 +69,9 @@ def _tables() -> dict[str, Table]:
 
 
 def _family_list_titles() -> list[str]:
-    """Every list title this family declares, `prefix + entity`."""
+    """Every list title this family declares."""
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
-    return [mapping.prefix + entity for entity in mapping.entities]
+    return [mapping.list_title(entity) for entity in mapping.entities]
 
 
 def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
@@ -92,10 +92,10 @@ def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
 def test_the_family_deploys_the_library_each_run_uploads_its_log_to() -> None:
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
     assert EXTERNAL_LOG_LIBRARY_DEFAULT in _family_list_titles()
-    entity = mapping.entities[EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)]
+    entity = mapping.entities["DeploymentLogs"]
     assert entity.is_library
     # The same drop-box policy as the two lists, so the file is only ever added.
-    library = EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)
+    library = "DeploymentLogs"
     policy = mapping.permissions_for_entity("Changes")
     assert mapping.permissions_for_entity(library) == policy
 

@@ -136,14 +136,14 @@ has them for the runs that could not reach the central lists. Its run log
 is created with its own stamp columns, not Title alone; Title-only is the
 fallback for a run whose account cannot create them.
 
-`ManagedDeploymentLogs` also grows forever, one file per run. Each file
+`Managed Deployment Logs` also grows forever, one file per run. Each file
 is plain text and may name lists, groups and accounts the run touched. The
 closing `Deployments` row of a run names its file in Details. Nobody who
 deploys can edit or delete a file, so removal is the log owner's call.
 
 ## Retiring the old lists
 
-This rename retires three lists across the estate. This tool never renames,
+This rename retires these lists across the estate. This tool never renames,
 deletes or writes to any of them again; disposal is by hand, entirely on
 the log owner's schedule.
 
@@ -151,14 +151,17 @@ the log owner's schedule.
 | --- | --- | --- |
 | `dbml-deployment-log` | this site, the central log | Site Contents |
 | `dbml Local Log` | every site that deployed anything before this rename | hidden; not in Site Contents |
+| `dbml_Deployments` | every site that deployed anything before the Managed rename | hidden; not in Site Contents |
+| `dbml_Changes` | every site that deployed anything before the Managed rename | hidden; not in Site Contents |
 | `dbml_Logs` | every site that deployed anything before this rename | hidden; not in Site Contents |
 
-`ManagedDeployments` and `ManagedChanges` are created beside
+`Managed Deployments` and `Managed Changes` are created beside
 `dbml-deployment-log`, empty, the next time this family is redeployed here.
-`dbml Local Log` and `dbml_Logs` are per-site sidecars that any family's
+`dbml Local Log`, `dbml_Deployments`, `dbml_Changes` and `dbml_Logs` are
+per-site sidecars that any family's
 deploy creates when it cannot reach the central log; being hidden, they will
 not show up while browsing Site Contents on a site that has one.
 
-All three still hold their history and are still readable, and all three
-are safe to delete once their rows are no longer wanted: nothing reads or
+All of them still hold their history and are still readable, and all are
+safe to delete once their rows are no longer wanted: nothing reads or
 writes any of them after this rename. Chosen approach: ______.

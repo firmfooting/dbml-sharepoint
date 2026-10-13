@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 from dbml_sharepoint.analysis.folders import policy_for_folder
 from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
+    LEGACY_AUTOMATION_GROUP_NAME,
     description_budget,
     marker_for_group,
 )
@@ -818,7 +819,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # `Managed List Administrators` already holds. English built-in names only,
         # as for the reader tier.
         automation_groups = sorted(
-            {AUTOMATION_GROUP_NAME}
+            {AUTOMATION_GROUP_NAME, LEGACY_AUTOMATION_GROUP_NAME}
             | {g.name for g in vc.site_groups if "automation" in g.enroll},
         )
         full_control_grants = sorted(

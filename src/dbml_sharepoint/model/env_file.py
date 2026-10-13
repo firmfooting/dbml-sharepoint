@@ -123,7 +123,7 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         parameter=CHANGE_LOG_LIST_PARAMETER,
         help=(
             "Title of the hidden change log the deploy writes type-2 rows "
-            "into. Default: the tool's own dbml_Changes sidecar."
+            "into. Default: the tool's own Managed Local Changes sidecar."
         ),
     ),
     EnvSetting(

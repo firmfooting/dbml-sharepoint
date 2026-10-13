@@ -53,6 +53,10 @@ FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {n
 #: nothing about this group happens at build time (#331).
 AUTOMATION_GROUP_NAME = "Managed Automation Accounts"
 
+#: The spelling before the Managed rename. A mapping that still declares it
+#: stays under the Full Control guard, though nothing is provisioned for it.
+LEGACY_AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
+
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.
 #:

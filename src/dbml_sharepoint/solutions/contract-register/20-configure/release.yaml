@@ -1,7 +1,9 @@
 release: "1.0.0"
 date: "2026-07-22"
-schema_version: "1.0.2"
+schema_version: "1.0.3"
 notes: |
+  The groups are renamed to `Managed ...`; a site holding the `dbml` groups
+  gets new empty ones and must re-add its members.
   Contract register template. Bump schema_version when you change the DBML
   or mapping and redeploy. The stamp is how a live site is traced back to
   the exact schema that provisioned it.

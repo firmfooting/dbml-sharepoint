@@ -2440,6 +2440,14 @@ def test_the_automation_group_granted_full_control_is_refused() -> None:
     assert AUTOMATION_GROUP_NAME in finding.message
 
 
+def test_the_legacy_automation_group_name_stays_under_the_guard() -> None:
+    finding = only(
+        _automation_findings(level="Full Control", name="dbml Automation Accounts"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert "dbml Automation Accounts" in finding.message
+
+
 def test_a_group_enrolling_automation_granted_full_control_is_refused() -> None:
     """Keyed on the identity, not the group's name (the spec's validator table)."""
     finding = only(

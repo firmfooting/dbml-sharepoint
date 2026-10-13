@@ -2507,8 +2507,9 @@ automation the breadth this group exists to avoid. Which narrower level a flow
 needs, `Contribute`, `Edit` or a level of your own, depends on what it writes,
 and nothing here decides that for you.
 
-**Why the `dbml` prefix.** These are the only groups the tool names for
-itself rather than for your organisation, so they carry the tool's name. That
+**Why the `Managed` prefix.** These are the only groups the tool names for
+itself rather than for your organisation, so they carry a neutral
+shared prefix. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
 administrator may already have used. The prefix makes that collision
 unlikely, and the group-adoption gate described below narrows the remaining
@@ -2519,7 +2520,7 @@ members, is refused rather than handed Full Control.
 **Upgrading from a family-prefixed deployment.** If you deployed an earlier
 version, the site holds a per-family pair such as `RR Enterprise Readers` and
 `RR List Administrators`, one of each per family you deployed. Redeploying
-creates the two `dbml`-prefixed groups, and the ACL phase removes the old
+creates the two `Managed`-prefixed groups, and the ACL phase removes the old
 groups' grants from the managed lists, but the empty group objects remain.
 Delete them by hand once you have re-enrolled the reader account into
 `Managed Enterprise Readers`.

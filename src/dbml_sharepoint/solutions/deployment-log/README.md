@@ -2,8 +2,8 @@
 
 *Theme: process digitisation & improvement.*
 
-The fleet's own record of itself: two lists, `ManagedDeployments` and
-`ManagedChanges`, and a library, `ManagedDeploymentLogs`, holding a
+The fleet's own record of itself: two lists, `Managed Deployments` and
+`Managed Changes`, and a library, `Managed Deployment Logs`, holding a
 row for every deploy run any firmfooting application performs anywhere in the
 tenant, saying what was deployed, to which site, by whom, from which release,
 whether the run finished, and what it changed. The library holds each run's

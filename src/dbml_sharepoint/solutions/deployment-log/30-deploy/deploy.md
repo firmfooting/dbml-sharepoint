@@ -23,14 +23,14 @@ them creates the site either.
 - [ ] The site is one you are content to leave in place. Every deploy in
       the fleet writes to it, so moving it later means re-pointing every
       project that stamps it.
-- [ ] `prefix` names your organisation, and every firmfooting application
-      writing to this log needs to agree on it. Shipped as `Managed`,
-      giving list titles `ManagedDeployments` and `ManagedChanges`,
-      which is what other families' deploys probe for by default. Changing
-      it moves the target; if you do, set `DBMLSP_DEPLOY_LOG_LIST` and
+- [ ] Each list declares an explicit `title` (with spaces) and an
+      `internal_name` (its URL, without): `Managed Deployments`,
+      `Managed Changes` and `Managed Deployment Logs`. The titles are what
+      other families' deploys probe for by default. Changing one moves the
+      target; if you do, set `DBMLSP_DEPLOY_LOG_LIST` and
       `DBMLSP_DEPLOY_CHANGES` to the new titles in every project that stamps
       this log, and `DBMLSP_DEPLOY_LOG_SITE` to the site title.
-- [ ] `ManagedDeploymentLogs` is a document library that takes one new
+- [ ] `Managed Deployment Logs` is a document library that takes one new
       log file per run. Members hold the same submit-only level on it, so
       they can add a file and cannot replace or delete one. A deploy that
       cannot find it, or is refused, records a logging failure and carries
@@ -79,7 +79,7 @@ requires per-list confirmation before every delete.
 
 ## After the paste: verification checklist
 
-- [ ] `ManagedDeployments` and `ManagedChanges` both exist, spelled
+- [ ] `Managed Deployments` and `Managed Changes` both exist, spelled
       exactly that way (or with your chosen prefix, if you changed it).
       Anything else and the fleet's stamps will not find them.
 - [ ] `Deployments` shows its four declared views: **Latest first** (the
@@ -217,14 +217,14 @@ the finding code `enterprise_reader_on_trimmed_list`.
 
 The stamps are on by default and address these lists by their defaults, so a
 project deploying to the site titled `firmfooting-logging` with the lists
-titled `ManagedDeployments` and `ManagedChanges` needs no
+titled `Managed Deployments` and `Managed Changes` needs no
 configuration at all. If any title differs, put the relevant ones in that
 project's `dbml-sharepoint.env`:
 
 ```text
 DBMLSP_DEPLOY_LOG_SITE=your-logging-site
-DBMLSP_DEPLOY_LOG_LIST=ManagedDeployments
-DBMLSP_DEPLOY_CHANGES=ManagedChanges
+DBMLSP_DEPLOY_LOG_LIST=Managed Deployments
+DBMLSP_DEPLOY_CHANGES=Managed Changes
 ```
 
 Setting any of them to empty disables the corresponding writes for that
@@ -252,7 +252,8 @@ deploy, which is why a silent absence has to be checked for rather than
 waited for.
 
 A deploy that reaches `Deployments` writes its stamps here and creates no
-per-site sidecar lists at all: no `dbml_Deployments`, no `dbml_Changes`. The
+per-site sidecar lists at all: no `Managed Local Deployments`, no
+`Managed Local Changes`. The
 mode is chosen once, before any list is provisioned, from whether
 `Deployments` answers its probe, and it never changes mid-run. A deploy that
 cannot reach it falls back to the two site-local lists, which is the old
@@ -266,7 +267,7 @@ Bump `schema_version`, rebuild, re-paste. Re-pasting does not touch the rows
 already in the log.
 
 A site that ran an earlier version of this family keeps `dbml-deployment-log`
-beside the new `ManagedDeployments` and `ManagedChanges`: this tool
+beside the new `Managed Deployments` and `Managed Changes`: this tool
 never renames, deletes or writes to it again. It is safe to delete by hand
 once its rows are no longer wanted. `50-govern/governance.md` has the full
 disposal note, including the two hidden per-site lists this rename also

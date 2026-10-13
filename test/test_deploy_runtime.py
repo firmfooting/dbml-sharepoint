@@ -1091,6 +1091,7 @@ def _acl_state_rows(script: str) -> list[tuple[int, list[int]]]:
     ]
 
 
+ENCODED_CHANGE_LOG = "Managed%20Local%20Changes"
 _ADD_42 = "/roleassignments/addroleassignment(principalid=42,roleDefId=1073741826)"
 _REMOVE_42 = "/roleassignments/removeroleassignment(principalid=42,roleDefId=1073741826)"
 
@@ -5750,7 +5751,7 @@ def _reader_harness(
           // static state shared by every list and answers the collection
           // shape, not the by-principal one this read asks for.
           const changeLogScope = `getbytitle('${CHANGE_LOG_LIST}')/roleassignments`;
-          const granted = u.includes(`${changeLogScope}/addroleassignment(`)
+          const granted = decodeURIComponent(u).includes(`${changeLogScope}/addroleassignment(`)
             ? /addroleassignment\(principalid=(\d+),roleDefId=(\d+)\)/.exec(u)
             : null;
           if (granted && method === 'POST') {
@@ -5760,7 +5761,7 @@ def _reader_harness(
             }
             return respond({ d: null });
           }
-          const heldBy = u.includes(`${changeLogScope}/getbyprincipalid(`)
+          const heldBy = decodeURIComponent(u).includes(`${changeLogScope}/getbyprincipalid(`)
             ? /getbyprincipalid\((\d+)\)/.exec(u)
             : null;
           if (heldBy && method === 'GET') {
@@ -6524,12 +6525,12 @@ def test_the_change_logs_reader_grant_resolves_the_level_the_enrolment_phase_did
     granted = [
         c for c in calls
         if c["method"] == "POST"
-        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and f"getbytitle('{ENCODED_CHANGE_LOG}')" in c["url"]
         and "roleassignments/addroleassignment" in c["url"]
     ]
     assert granted, (
         f"the reader was never granted on {CHANGE_LOG_TITLE}: "
-        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}"
+        f"{[c['url'] for c in calls if ENCODED_CHANGE_LOG in c['url']]}"
     )
     # Group Id 9 is what the adopted harness resolves every group name to.
     assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], granted[0]
@@ -6537,7 +6538,7 @@ def test_the_change_logs_reader_grant_resolves_the_level_the_enrolment_phase_did
     posted = calls.index(granted[0])
     assert any(
         c["method"] == "GET"
-        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and f"getbytitle('{ENCODED_CHANGE_LOG}')" in c["url"]
         and "roleassignments/getbyprincipalid(9)" in c["url"]
         for c in calls[posted + 1:]
     ), f"the grant was never read back: {[c['url'] for c in calls[posted + 1:]][:10]}"
@@ -6767,12 +6768,12 @@ def test_the_change_logs_reader_grant_prefers_a_list_scope_over_a_folder_scope(
     granted = [
         c for c in calls
         if c["method"] == "POST"
-        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and f"getbytitle('{ENCODED_CHANGE_LOG}')" in c["url"]
         and "roleassignments/addroleassignment" in c["url"]
     ]
     assert granted, (
         f"the reader was never granted on {CHANGE_LOG_TITLE}: "
-        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}\n{output[-3000:]}"
+        f"{[c['url'] for c in calls if ENCODED_CHANGE_LOG in c['url']]}\n{output[-3000:]}"
     )
     assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], (
         f"the change log was granted something other than the list-scope Read: "
@@ -6789,7 +6790,6 @@ def test_the_change_logs_reader_grant_still_mirrors_a_folder_only_grant(
     down to list scopes before searching -- the mutation Fix 1 warns against
     -- would find nothing here and leave the change log with no role
     assignments, which is the round-8 regression this pins."""
-    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
 
     summary, calls, output = _run_folder_and_list_reader_deploy(
         tmp_path, _FOLDER_ONLY_READER_MAPPING,
@@ -6799,12 +6799,12 @@ def test_the_change_logs_reader_grant_still_mirrors_a_folder_only_grant(
     granted = [
         c for c in calls
         if c["method"] == "POST"
-        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and f"getbytitle('{ENCODED_CHANGE_LOG}')" in c["url"]
         and "roleassignments/addroleassignment" in c["url"]
     ]
     assert granted, (
         f"the folder-only grant was never mirrored onto the change log: "
-        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}\n{output[-3000:]}"
+        f"{[c['url'] for c in calls if ENCODED_CHANGE_LOG in c['url']]}\n{output[-3000:]}"
     )
 
 
