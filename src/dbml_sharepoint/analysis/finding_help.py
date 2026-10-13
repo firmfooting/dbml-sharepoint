@@ -1319,6 +1319,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "back true), which is why the rule reads the entity's `kind`; "
         "libraries are refused for unrelated reasons."
     ),
+    FindingCode.DEFAULT_VIEW_HIDDEN: (
+        "A view is both `default: true` and `hidden: true`. SharePoint will "
+        "not reliably hide the current default view, so declare one or the other."
+    ),
     FindingCode.MULTIPLE_DEFAULT_VIEWS: (
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."

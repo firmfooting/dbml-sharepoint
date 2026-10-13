@@ -5680,8 +5680,8 @@ _YAML_1_2_REFUSED_CASES = [
         _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], On: true }"),
         UnknownMappingKeyError,
         "views.Project[0]: unknown key(s) ['On'] (known: ['default', 'fields', 'formatting', "
-        "'group_by', 'renamed_from', 'row_limit', 'scope', 'sort', 'title', 'totals', 'where', "
-        "'widths'])",
+        "'group_by', 'hidden', 'renamed_from', 'row_limit', 'scope', 'sort', 'title', "
+        "'totals', 'where', 'widths'])",
         id="known-keys-bool",
     ),
     pytest.param(

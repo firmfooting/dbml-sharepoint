@@ -44,7 +44,7 @@ from dbml_sharepoint.analysis.typemap import (
     unsupported_index_reason,
 )
 from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Leaf
-from dbml_sharepoint.model.mapping_types import view_url_slug
+from dbml_sharepoint.model.mapping_types import ViewDef, view_url_slug
 
 # What SharePoint can add up. A calculated_number is included deliberately:
 # three of the five columns declared totals exist for in this library are
@@ -528,6 +528,22 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
     return findings
 
 
+def _default_and_hidden(
+    entity_name: str, views: list[ViewDef], at_entity: Location,
+) -> list[Finding]:
+    # SharePoint will not reliably hide the current default view.
+    return [
+        Finding(
+            FindingCode.DEFAULT_VIEW_HIDDEN,
+            f"views[{entity_name}].{view.title}: a view cannot be both "
+            f"default and hidden.",
+            location=at_entity,
+        )
+        for view in views
+        if view.default and view.hidden
+    ]
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
@@ -646,6 +662,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"claimed by more than one view ({', '.join(claimants)}).",
                     location=at_entity,
                 ))
+        findings.extend(_default_and_hidden(entity_name, views, at_entity))
         defaults = [v.title for v in views if v.default]
         if len(defaults) > 1:
             findings.append(Finding(

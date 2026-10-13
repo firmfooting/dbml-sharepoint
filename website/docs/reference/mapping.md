@@ -858,6 +858,13 @@ inside SharePoint, so the obligation is invisible at the call site.
   render. It is the default view only when no authored view declares
   `default: true`; otherwise it is hidden from the modern view bar. The
   title is reserved and cannot be overridden in `views:`.
+- `hidden: true` deploys the view but keeps it out of the modern view bar;
+  it stays reachable by its URL, which suits an administrator's working
+  view. It uses the same `SP.View.Hidden` write and read-back as the
+  managed All Items view, so a redeploy hides it again if it was made
+  visible, and `hidden: false` shows a previously hidden view. A view
+  cannot be both `default: true` and `hidden: true`
+  (`default_view_hidden`).
 - Other undeclared views are user content and are never touched.
 
 ## `display_names`

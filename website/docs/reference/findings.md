@@ -116,6 +116,7 @@ dbml-sharepoint explain unknown_column_type
 | `default_formula_type_unsupported` | error | A default formula is declared on a column type it is not supported on. Supported: `date`, `datetime`, `int`, `number`, `nvarchar` and a single-value enum, each measured on a live site (date through `field.date.dynamic-default-rest-fill`; the rest through library-guards-probe.js c445a55c on 2026-09-13). |
 | `default_formula_unknown_column` | error | A default formula names a column the deploy does not create on that entity. |
 | `default_not_an_enum_member` | error | A column's default is not a member of the enum it is typed as. |
+| `default_view_hidden` | error | A view is both `default: true` and `hidden: true`. SharePoint will not reliably hide the current default view, so declare one or the other. |
 | `demo_boolean_value_invalid` | error | A demo row's value for a Yes/No column is not a YAML boolean. An unquoted `no` is the text "no" under YAML 1.2. |
 | `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
 | `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |

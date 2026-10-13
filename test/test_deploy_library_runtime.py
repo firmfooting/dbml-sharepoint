@@ -211,6 +211,19 @@ views:
       scope: recursive
 """
 
+def _working_view(hidden: bool) -> str:
+    return _LIBRARY_ENTITY + f"""
+views:
+  Escalation:
+    - title: "Flat"
+      default: true
+      fields: [FileLeafRef, Note]
+    - title: "Mine"
+      hidden: {str(hidden).lower()}
+      fields: [FileLeafRef, Note]
+"""
+
+
 _BROKEN_INHERITANCE = _LIBRARY_ENTITY + """
 permission_levels:
   - name: "Schema Manager"
@@ -1017,6 +1030,42 @@ def test_a_builtin_view_another_declaration_claims_is_not_adopted(
         and "(default: true)" in line
         for line in output.splitlines()
     ), output[-3000:]
+
+
+def _hidden_writes(calls: list[Json], title: str) -> list[object]:
+    encoded = quote(title)
+    return [
+        Json.loads(call["body"].text).get("Hidden")
+        for call in calls
+        if call["method"] == "POST" and call["body"]
+        and f"views/getbytitle('{encoded}')" in call["url"]
+        and "viewfields" not in call["url"]
+        and Json.loads(call["body"].text).get("Hidden") is not None
+    ]
+
+
+def test_an_authored_view_found_visible_is_hidden_again_and_reads_back(
+    tmp_path: Path,
+) -> None:
+    """The authored `hidden` flag rides the same Hidden MERGE and read-back as
+    the managed All Items view (`library.view.builtin-hidden-once-not-default`)."""
+    summary, calls, _reads = _run(
+        _library_harness(extra_views={"Mine": "Mine.aspx"}),
+        _library_deploy_js(tmp_path, _working_view(True)),
+    )
+    assert _hidden_writes(calls, "Mine") == [True]
+    assert summary["errors"] == []
+
+
+def test_hidden_false_shows_a_previously_hidden_authored_view(tmp_path: Path) -> None:
+    harness = _library_harness(extra_views={"Mine": "Mine.aspx"}).replace(
+        "      seeded.DefaultView = false;\n",
+        "      seeded.DefaultView = false; seeded.Hidden = true;\n",
+    )
+    assert "seeded.Hidden = true" in harness
+    summary, calls, _reads = _run(harness, _library_deploy_js(tmp_path, _working_view(False)))
+    assert _hidden_writes(calls, "Mine") == [False]
+    assert summary["errors"] == []
 
 
 def _declare_previous_title(deploy_js: str, title: str, previous: str) -> str:

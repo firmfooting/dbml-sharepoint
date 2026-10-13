@@ -1192,6 +1192,12 @@ def test_view_titles_unique_and_single_default() -> None:
     assert "'Same'" in only(errors, FindingCode.DUPLICATE_VIEW_TITLE).message
     only(errors, FindingCode.MULTIPLE_DEFAULT_VIEWS)
 
+def test_a_view_cannot_be_both_default_and_hidden() -> None:
+    errors = _project_errors(
+        views={"Project": [ViewDef(title="Mine", fields=["Title"], default=True, hidden=True)]},
+    )
+    only(errors, FindingCode.DEFAULT_VIEW_HIDDEN)
+
 def test_all_items_title_is_reserved_for_the_generated_unfiltered_view() -> None:
     errors = _project_errors(
         views={
