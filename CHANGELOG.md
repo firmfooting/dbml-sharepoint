@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.16.1...v0.17.0) (2026-10-13)
+
+
+### Features
+
+* **views:** declare an authored view hidden from the view bar ([#836](https://github.com/firmfooting/dbml-sharepoint/issues/836)) ([4196005](https://github.com/firmfooting/dbml-sharepoint/commit/41960054809cd9862c05e54caeb9c902be08c144))
+
 ## [0.16.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.16.0...v0.16.1) (2026-10-13)
 
 
