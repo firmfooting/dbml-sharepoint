@@ -2424,7 +2424,7 @@ def _automation_findings(
 
 
 def test_the_automation_group_granted_full_control_is_refused() -> None:
-    """The group exists to be narrower than `dbml List Administrators`.
+    """The group exists to be narrower than `Managed List Administrators`.
 
     Granting it Full Control hands the identity a flow connects as the schema
     and the ACL of the list it was declared to stamp one column on, which is

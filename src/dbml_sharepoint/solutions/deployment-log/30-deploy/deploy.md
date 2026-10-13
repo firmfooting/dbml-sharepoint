@@ -24,13 +24,13 @@ them creates the site either.
       the fleet writes to it, so moving it later means re-pointing every
       project that stamps it.
 - [ ] `prefix` names your organisation, and every firmfooting application
-      writing to this log needs to agree on it. Shipped as `firmfooting_`,
-      giving list titles `firmfooting_Deployments` and `firmfooting_Changes`,
+      writing to this log needs to agree on it. Shipped as `Managed`,
+      giving list titles `ManagedDeployments` and `ManagedChanges`,
       which is what other families' deploys probe for by default. Changing
       it moves the target; if you do, set `DBMLSP_DEPLOY_LOG_LIST` and
       `DBMLSP_DEPLOY_CHANGES` to the new titles in every project that stamps
       this log, and `DBMLSP_DEPLOY_LOG_SITE` to the site title.
-- [ ] `firmfooting_DeploymentLogs` is a document library that takes one new
+- [ ] `ManagedDeploymentLogs` is a document library that takes one new
       log file per run. Members hold the same submit-only level on it, so
       they can add a file and cannot replace or delete one. A deploy that
       cannot find it, or is refused, records a logging failure and carries
@@ -79,7 +79,7 @@ requires per-list confirmation before every delete.
 
 ## After the paste: verification checklist
 
-- [ ] `firmfooting_Deployments` and `firmfooting_Changes` both exist, spelled
+- [ ] `ManagedDeployments` and `ManagedChanges` both exist, spelled
       exactly that way (or with your chosen prefix, if you changed it).
       Anything else and the fleet's stamps will not find them.
 - [ ] `Deployments` shows its four declared views: **Latest first** (the
@@ -124,9 +124,9 @@ requires per-list confirmation before every delete.
       `deployment stop` green, `deployment start` grey, `provenance` muted.
 - [ ] Inheritance is broken on both lists, and List Settings -> Permissions
       for each shows exactly four entries: Site Members on
-      **firmfooting Deployments Submit Only**, `dbml List
+      **Managed Deployments Submit Only**, `Managed List
       Administrators` on Full Control, Site Owners on Full Control, and
-      `dbml Enterprise Readers` on Full Control. The Edit that Members
+      `Managed Enterprise Readers` on Full Control. The Edit that Members
       inherit from the site must **not** be among them on either list; if it
       is, the reconcile did not run and that list is not a drop box.
 - [ ] Advanced settings shows, on both lists, **Read access: Read items that
@@ -149,7 +149,7 @@ sites that are not this one, and the record of what a deploy did is only
 worth keeping if the person it describes cannot rewrite it. So both lists are
 a drop box, in three parts that only work together.
 
-**The level.** `firmfooting Deployments Submit Only` carries
+**The level.** `Managed Deployments Submit Only` carries
 eight permissions: AddListItems, ViewListItems, ViewVersions, ViewFormPages,
 Open, ViewPages, BrowseUserInfo, UseRemoteAPIs. It does **not** carry
 EditListItems or DeleteListItems, and those two absences are the posture. A
@@ -177,7 +177,7 @@ site is an owner or an administrator of it, so they keep Full Control
 through Site Owners and are unaffected by everything above. Operators
 deploying *other* families to *other* sites are ordinary Members here, and
 submit-only is exactly the right of theirs their deploy uses. If your
-deploying account is neither, add it to `dbml List Administrators` before
+deploying account is neither, add it to `Managed List Administrators` before
 you rely on the log.
 
 **One consequence, and it is visible in the data.** A central change row is a
@@ -192,7 +192,7 @@ trusting `IsCurrent`, unless the writing account holds Full Control here.
 
 ### TODO: probe the reader posture before trusting anything narrower
 
-`dbml Enterprise Readers` is granted **Full Control** on both lists. That is
+`Managed Enterprise Readers` is granted **Full Control** on both lists. That is
 a decision, not a default, and it is more than reading needs: it carries
 DeleteListItems and ManagePermissions on the two lists this whole posture
 exists to protect. It is shipped on the argument that a deployment log's
@@ -217,14 +217,14 @@ the finding code `enterprise_reader_on_trimmed_list`.
 
 The stamps are on by default and address these lists by their defaults, so a
 project deploying to the site titled `firmfooting-logging` with the lists
-titled `firmfooting_Deployments` and `firmfooting_Changes` needs no
+titled `ManagedDeployments` and `ManagedChanges` needs no
 configuration at all. If any title differs, put the relevant ones in that
 project's `dbml-sharepoint.env`:
 
 ```text
 DBMLSP_DEPLOY_LOG_SITE=your-logging-site
-DBMLSP_DEPLOY_LOG_LIST=firmfooting_Deployments
-DBMLSP_DEPLOY_CHANGES=firmfooting_Changes
+DBMLSP_DEPLOY_LOG_LIST=ManagedDeployments
+DBMLSP_DEPLOY_CHANGES=ManagedChanges
 ```
 
 Setting any of them to empty disables the corresponding writes for that
@@ -266,7 +266,7 @@ Bump `schema_version`, rebuild, re-paste. Re-pasting does not touch the rows
 already in the log.
 
 A site that ran an earlier version of this family keeps `dbml-deployment-log`
-beside the new `firmfooting_Deployments` and `firmfooting_Changes`: this tool
+beside the new `ManagedDeployments` and `ManagedChanges`: this tool
 never renames, deletes or writes to it again. It is safe to delete by hand
 once its rows are no longer wanted. `50-govern/governance.md` has the full
 disposal note, including the two hidden per-site lists this rename also
@@ -274,7 +274,7 @@ retires.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group, shared with
+The deploy declares the `Managed Enterprise Readers` site group, shared with
 every other family deployed to the site, and grants it `Full Control` on
 every list in this family, not the plain `Read` other families in the
 collection grant it: see the TODO above for why. The group starts empty

@@ -26,7 +26,7 @@ _BODY = """
         description: "r"
         enroll: [enterprise_reader]
         membership: exclusive
-      - name: "dbml List Administrators"
+      - name: "Managed List Administrators"
         description: "a"
         enroll_during_run: [operator]
 """

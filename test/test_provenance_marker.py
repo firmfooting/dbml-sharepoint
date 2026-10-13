@@ -114,8 +114,8 @@ def test_each_surface_builds_from_the_one_authority() -> None:
 def test_a_tool_owned_group_marker_carries_no_family_but_names_itself() -> None:
     """Any family may adopt these, so they carry no family. They still name
     the group, or a description copied between two of them would adopt."""
-    reader = marker_for_group("dbml Enterprise Readers", "risk")
-    admin = marker_for_group("dbml List Administrators", "other-family")
+    reader = marker_for_group("Managed Enterprise Readers", "risk")
+    admin = marker_for_group("Managed List Administrators", "other-family")
     assert "from risk" not in reader
     assert reader != admin
     assert admin not in reader and reader not in admin

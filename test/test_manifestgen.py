@@ -1383,11 +1383,11 @@ def test_manifest_describes_the_central_change_list_when_one_is_configured() -> 
         sidecar_run_log_title="dbml_Deployments",
         sidecar_change_log_title="dbml_Changes",
         deployment_log_site="firmfooting-logging",
-        deployment_log_list="firmfooting_Deployments",
-        deployment_log_change_list="firmfooting_Changes",
+        deployment_log_list="ManagedDeployments",
+        deployment_log_change_list="ManagedChanges",
     )
-    assert "the Deployments list `firmfooting_Deployments`" in md
-    assert "Change rows go to the Changes list `firmfooting_Changes`" in md
+    assert "the Deployments list `ManagedDeployments`" in md
+    assert "Change rows go to the Changes list `ManagedChanges`" in md
     assert "DBMLSP_DEPLOY_CHANGES" in md
 
 
@@ -1412,7 +1412,7 @@ def test_manifest_omits_the_change_list_paragraph_without_one() -> None:
         sidecar_run_log_title="dbml_Deployments",
         sidecar_change_log_title="dbml_Changes",
         deployment_log_site="firmfooting-logging",
-        deployment_log_list="firmfooting_Deployments",
+        deployment_log_list="ManagedDeployments",
     )
     assert "central deployment log" in md
     assert "Change rows go to the Changes list" not in md

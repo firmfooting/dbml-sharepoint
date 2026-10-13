@@ -55,7 +55,7 @@ const fetch = async (url, options) => {
   else if (url.includes('currentuser/groups?')) {
     body = { value: [{ Id: scenario === 'owner' ? 7 : 8 }] };
     if (scenario === 'extra-administrator') {
-      body.value.push({ Id: 9, Title: 'dbml List Administrators' });
+      body.value.push({ Id: 9, Title: 'Managed List Administrators' });
     }
     if (scenario === 'extra-division') body.value.push({ Id: 10, Title: 'Division B' });
     if (scenario === 'wrong-division') body = { value: [{ Id: 10 }] };

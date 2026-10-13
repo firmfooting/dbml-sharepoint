@@ -1,16 +1,16 @@
 # Central deployment log: physical mapping.
 #
 # The org token is the family's PREFIX, so an org taking this family edits
-# one line. `firmfooting` rather than `dbml` because these lists hold rows
+# one line. `Managed` rather than `dbml` because these lists hold rows
 # from every firmfooting application, of which dbml-sharepoint is one. The
-# list titles are `prefix + entity`, giving `firmfooting_Deployments` and
-# `firmfooting_Changes`, and every other family's deploy probes those exact
+# list titles are `prefix + entity`, giving `ManagedDeployments` and
+# `ManagedChanges`, and every other family's deploy probes those exact
 # literals (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT and
 # EXTERNAL_CHANGE_LOG_DEFAULT). DBMLSP_DEPLOY_LOG_LIST and
 # DBMLSP_DEPLOY_CHANGES default to the same strings. Renaming an entity here
 # renames the address the whole fleet is pointed at; change both sides or
 # neither.
-prefix: "firmfooting_"
+prefix: "Managed"
 
 entities:
   Deployments: { kind: List, base_template: 100, site_role: default }
@@ -43,7 +43,7 @@ watched_lists: []
 # delete anything, including what they wrote themselves. Full Control stays
 # with the empty-by-default admin group and the site owners.
 groups:
-  - name: "dbml List Administrators"
+  - name: "Managed List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -51,7 +51,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll_during_run: [operator]
-  - name: "dbml Enterprise Readers"
+  - name: "Managed Enterprise Readers"
     description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -118,13 +118,13 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "dbml List Administrators" }
+      - principal: { kind: group, name: "Managed List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
         level: "{prefix} Deployments Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
-      - principal: { kind: group, name: "dbml Enterprise Readers" }
+      - principal: { kind: group, name: "Managed Enterprise Readers" }
         level: "Full Control"
 
 # The other half of the drop box, and the half a role assignment cannot

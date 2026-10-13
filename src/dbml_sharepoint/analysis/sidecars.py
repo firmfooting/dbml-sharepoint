@@ -48,18 +48,18 @@ CHANGE_LOG_TITLE = "dbml_Changes"
 #: reasoning and same READING-only recognition as `RUN_LOG_PREVIOUS_TITLES`.
 CHANGE_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Logs",)
 
-#: The CENTRAL deployment log, on the org's logging site. `firmfooting` rather
+#: The CENTRAL deployment log, on the org's logging site. `Managed` rather
 #: than `dbml` because it holds rows from every firmfooting application, of
 #: which this tool is one. Probed, never created by a deploy.
-EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
+EXTERNAL_LOG_DEFAULT = "ManagedDeployments"
 
 #: The CENTRAL change log, its type-2 half. Split from the deployments list so
 #: that each name is true of every row in it.
-EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
+EXTERNAL_CHANGE_LOG_DEFAULT = "ManagedChanges"
 
 #: The CENTRAL document library that takes each run's full console log, one
 #: file per run, beside the two lists above. Probed, never created by a deploy.
-EXTERNAL_LOG_LIBRARY_DEFAULT = "firmfooting_DeploymentLogs"
+EXTERNAL_LOG_LIBRARY_DEFAULT = "ManagedDeploymentLogs"
 
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site

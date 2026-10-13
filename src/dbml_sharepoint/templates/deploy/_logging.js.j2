@@ -46,11 +46,11 @@
      per key. ChangeKey and IsCurrent are indexed because the close reads
      them both in one $filter, and both sides of an AND have to be indexed
      to survive the 5,000-item threshold on a log that grows forever.
-   - The CENTRAL Deployments list (default `firmfooting_Deployments`) is
+   - The CENTRAL Deployments list (default `ManagedDeployments`) is
      NEVER created by a deploy. It carries only stamp rows now: `deployment
      start`, `deployment stop`, `abort` and `provenance`. Absent, this phase
      says so once and drops the whole run to LOCAL.
-   - The CENTRAL Changes list (default `firmfooting_Changes`), beside it on
+   - The CENTRAL Changes list (default `ManagedChanges`), beside it on
      the same site, is also NEVER created by a deploy. It carries the type-2
      change feed that used to share the Deployments list under
      `StampKind: 'change'`; that member is retired now that a change row has

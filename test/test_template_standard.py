@@ -1827,7 +1827,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
     )
-    assert readers[0].name == "dbml Enterprise Readers"
+    assert readers[0].name == "Managed Enterprise Readers"
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -1908,10 +1908,10 @@ def test_the_administrators_group_holds_full_control_everywhere(
         granted = {
             a.level for a in policy.assignments
             if a.principal.kind == "group"
-            and a.principal.name == "dbml List Administrators"
+            and a.principal.name == "Managed List Administrators"
         }
         assert granted == {"Full Control"}, (
-            f"{template}: policy block {block_name!r} grants dbml List Administrators "
+            f"{template}: policy block {block_name!r} grants Managed List Administrators "
             f"{granted or 'nothing'}, not Full Control"
         )
 
@@ -1943,7 +1943,7 @@ SHARED_GROUP_SUFFIXES: tuple[str, ...] = (
 )
 
 SHARED_GROUPS: dict[str, dict[str, object]] = {
-    "dbml Enterprise Readers": {
+    "Managed Enterprise Readers": {
         "description": (
             "Read-only accounts for aggregated cross-site reporting. "
             "Empty by default; membership is operator-owned."
@@ -1960,7 +1960,7 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "renamed_from": (),
         "previous_names": (),
     },
-    "dbml List Administrators": {
+    "Managed List Administrators": {
         "description": (
             "Full Control for schema changes and redeploys. Empty by "
             "default; the deploy script enrols the running operator per run."
@@ -1992,7 +1992,7 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 #: automation connects as, and hiding it is the narrower of the two
 #: directions. Widening it later needs an argument; this way round does not.
 OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
-    "dbml Automation Accounts": {
+    "Managed Automation Accounts": {
         "description": (
             "Automation identities that write to declared lists. Empty by "
             "default; membership is operator-owned."
@@ -2116,7 +2116,7 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
 ) -> None:
     """The same guard as the sweep above, minus the presence half.
 
-    `dbml Automation Accounts` is one object per site exactly as the other
+    `Managed Automation Accounts` is one object per site exactly as the other
     two are, so two families declaring it differently overwrite each other's
     settings on the last paste. It differs only in that a family with no
     automation to grant declares nothing, which is why presence is not
@@ -2146,13 +2146,13 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
     """The complement, so the rule above cannot pass while the old names survive.
 
-    Without this, a family that declared BOTH `dbml Enterprise Readers` and a
+    Without this, a family that declared BOTH `Managed Enterprise Readers` and a
     left-over `RR Enterprise Readers` would satisfy the sweep above while
     still creating two groups on the site -- which is the exact failure this
     change exists to remove.
 
     Matched on the ROLE SUFFIX, not on the full shared name. `RR Enterprise
-    Readers` does not end with `dbml Enterprise Readers`, so testing against
+    Readers` does not end with `Managed Enterprise Readers`, so testing against
     the full name would let precisely the straggler this test exists to catch
     walk past it.
     """

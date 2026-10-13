@@ -58,7 +58,7 @@ So the absence has to be swept for rather than waited for:
 
 Both lists are a **drop box**, and this is the one family in the collection
 whose permissions are a control rather than a convenience. Site Members hold
-`firmfooting Deployments Submit Only` on each: they may add a
+`Managed Deployments Submit Only` on each: they may add a
 row, read back only the rows they created, and edit or delete nothing,
 including what they wrote themselves. That is exactly what an operator
 deploying any family anywhere needs and no more. The mechanism is in
@@ -66,15 +66,15 @@ deploying any family anywhere needs and no more. The mechanism is in
 record of what somebody's deploy did cannot be rewritten by the person it
 describes.
 
-Full Control stays with `dbml List Administrators`, which is empty by default
+Full Control stays with `Managed List Administrators`, which is empty by default
 and gains the running operator per deploy of *this* family, with the site
-owners, and with `dbml Enterprise Readers`.
+owners, and with `Managed Enterprise Readers`.
 
 Three decisions the log owner makes and records here:
 
 1. **Who is in this site's Members group.** It is the set of people whose
    deploys will be recorded. Anyone outside it deploys silently.
-2. **Who is in `dbml List Administrators`.** They are the only accounts that
+2. **Who is in `Managed List Administrators`.** They are the only accounts that
    can correct or remove a row, and the only ones whose deploys can close a
    superseded change row rather than appending beside it. Keep it small and
    review it when it changes.
@@ -82,7 +82,7 @@ Three decisions the log owner makes and records here:
    not sensitive in itself, but it names operators and site URLs, so it is a
    map of what exists and who touches it. Read access: ______.
 
-`dbml Enterprise Readers` holds Full Control here rather than Read, because
+`Managed Enterprise Readers` holds Full Control here rather than Read, because
 a read-trimmed list gives a Read holder only its own rows and a fleet
 reporting account has none. That is a deliberate elevation on the two lists
 this posture protects, the build warns about it
@@ -136,7 +136,7 @@ has them for the runs that could not reach the central lists. Its run log
 is created with its own stamp columns, not Title alone; Title-only is the
 fallback for a run whose account cannot create them.
 
-`firmfooting_DeploymentLogs` also grows forever, one file per run. Each file
+`ManagedDeploymentLogs` also grows forever, one file per run. Each file
 is plain text and may name lists, groups and accounts the run touched. The
 closing `Deployments` row of a run names its file in Details. Nobody who
 deploys can edit or delete a file, so removal is the log owner's call.
@@ -153,7 +153,7 @@ the log owner's schedule.
 | `dbml Local Log` | every site that deployed anything before this rename | hidden; not in Site Contents |
 | `dbml_Logs` | every site that deployed anything before this rename | hidden; not in Site Contents |
 
-`firmfooting_Deployments` and `firmfooting_Changes` are created beside
+`ManagedDeployments` and `ManagedChanges` are created beside
 `dbml-deployment-log`, empty, the next time this family is redeployed here.
 `dbml Local Log` and `dbml_Logs` are per-site sidecars that any family's
 deploy creates when it cannot reach the central log; being hidden, they will

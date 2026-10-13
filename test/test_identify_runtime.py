@@ -221,8 +221,8 @@ def _config() -> _Config:
         "groups": [
             {"Id": 11, "Title": "PT Project Leads", "Description": marker_for_object(
                 kind="group", name="PT Project Leads", family=FAMILY)},
-            {"Id": 12, "Title": "dbml Enterprise Readers", "Description": marker_for_object(
-                kind="group", name="dbml Enterprise Readers", family=None)},
+            {"Id": 12, "Title": "Managed Enterprise Readers", "Description": marker_for_object(
+                kind="group", name="Managed Enterprise Readers", family=None)},
             {"Id": 13, "Title": "Site Owners", "Description": "Built in."},
         ],
         "levels": [

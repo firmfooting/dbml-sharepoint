@@ -238,7 +238,7 @@ def test_the_submit_only_level_grants_adding_and_no_changing() -> None:
 
 def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
     """`{prefix}` is mandatory on a declared level, and this family's prefix
-    is `firmfooting_`, the org token every other firmfooting application
+    is `Managed`, the neutral token every other firmfooting application
     shares.
 
     So the placeholder expands to that stem, and the level ships as a name no
@@ -254,8 +254,8 @@ def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
 
     (level,) = _permissions().levels
     assert level.name == expand_prefix(
-        "{prefix} Deployments Submit Only", "firmfooting_", "permission_levels")
-    assert level.name == "firmfooting Deployments Submit Only"
+        "{prefix} Deployments Submit Only", "Managed", "permission_levels")
+    assert level.name == "Managed Deployments Submit Only"
     assert level.name not in BUILT_IN_LEVELS
 
 

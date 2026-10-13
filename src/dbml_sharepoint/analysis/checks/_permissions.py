@@ -97,7 +97,7 @@ def _levels_granted_to_group(
         # A folder policy is a policy block like any other. Left out, a
         # reader granted Read on the folders alone would read as granted
         # nothing anywhere. EXPANDED, because a `{member}` principal is not
-        # necessarily a per-member group: `dbml Enterprise {member}` over a
+        # necessarily a per-member group: `Managed Enterprise {member}` over a
         # folder named Readers resolves to a protected group these rules are
         # about, and the template spelling would never match it.
         *(
@@ -815,7 +815,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Keyed on the automation identity (a group enrolling it) and on the
         # reserved group name, which carries no enroll key. A denylist of one
         # level: only Full Control is knowably wrong, since it is what
-        # `dbml List Administrators` already holds. English built-in names only,
+        # `Managed List Administrators` already holds. English built-in names only,
         # as for the reader tier.
         automation_groups = sorted(
             {AUTOMATION_GROUP_NAME}
@@ -834,7 +834,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
                 f"list_permissions: {name!r} holds automation accounts and is granted "
-                f"'Full Control', the breadth 'dbml List Administrators' already "
+                f"'Full Control', the breadth 'Managed List Administrators' already "
                 f"carries on every list. Grant the narrowest level that lets the flow "
                 f"write.",
                 location=origin,

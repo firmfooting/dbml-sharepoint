@@ -404,7 +404,7 @@ def lists_granting_group(
         policy = mapping.permissions_for_entity(name)
         at_list = holds(policy.assignments if policy is not None else ())
         # Expanded per folder, because a `{member}` principal is not
-        # necessarily a per-member group: `dbml Automation {member}` over a
+        # necessarily a per-member group: `Managed Automation {member}` over a
         # folder named Accounts resolves to a literal group somebody may be
         # asking about.
         entity = mapping.entities.get(name)
