@@ -1058,7 +1058,7 @@ def test_an_authored_view_found_visible_is_hidden_again_and_reads_back(
         i for i, call in enumerate(calls)
         if call["method"] == "POST" and "views/getbytitle('Mine')" in call["url"]
         and "viewfields" not in call["url"] and call["body"]
-        and Json.loads(call["body"].text).get("Hidden") == True  # noqa: E712
+        and bool(Json.loads(call["body"].text).get("Hidden"))
     )
     assert any(
         call["method"] == "GET" and "/views" in call["url"] for call in calls[write + 1:]
