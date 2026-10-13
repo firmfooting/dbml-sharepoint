@@ -33,7 +33,7 @@ has something in it before the first real deploy lands.
 | Step | Folder | You |
 | --- | --- | --- |
 | 1 | `10-design/` | Read the stamp kinds; they are a contract, not a preference |
-| 2 | `20-configure/` | Edit the explicit `title` and `internal_name` of each entity if `Managed` is not your organisation's token (the `prefix` key does not rename them); decide who is in Members and who administers |
+| 2 | `20-configure/` | Edit the explicit `title` and `internal_name` of the two lists if `Managed` is not your organisation's token (the `prefix` key does not rename them), and set the matching environment settings; leave the `DeploymentLogs` library as it is, because deploys always look for its fixed title; decide who is in Members and who administers |
 | 3 | `30-deploy/` | Administrator: create the logging site, build, paste |
 | 4 | `40-adopt/` | Who reads it, and what each stamp kind means |
 | 5 | `50-govern/` | Retention, the rules no save rule can carry, permissions |
