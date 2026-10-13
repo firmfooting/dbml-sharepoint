@@ -150,13 +150,17 @@ the log owner's schedule.
 | Old list | Where | Found in |
 | --- | --- | --- |
 | `dbml-deployment-log` | this site, the central log | Site Contents |
+| `firmfooting_Deployments` | this site, the central log | Site Contents |
+| `firmfooting_Changes` | this site, the central log | Site Contents |
+| `firmfooting_DeploymentLogs` | this site, the central log (a library) | Site Contents |
 | `dbml Local Log` | every site that deployed anything before this rename | hidden; not in Site Contents |
 | `dbml_Deployments` | every site that deployed anything before the Managed rename | hidden; not in Site Contents |
 | `dbml_Changes` | every site that deployed anything before the Managed rename | hidden; not in Site Contents |
 | `dbml_Logs` | every site that deployed anything before this rename | hidden; not in Site Contents |
 
-`Managed Deployments` and `Managed Changes` are created beside
-`dbml-deployment-log`, empty, the next time this family is redeployed here.
+`Managed Deployments`, `Managed Changes` and `Managed Deployment Logs` are
+created beside the old central objects, empty, the next time this family
+is redeployed here.
 `dbml Local Log`, `dbml_Deployments`, `dbml_Changes` and `dbml_Logs` are
 per-site sidecars that any family's
 deploy creates when it cannot reach the central log; being hidden, they will
