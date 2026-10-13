@@ -373,6 +373,7 @@ class ViewDef:
     fields: list[str]
     renamed_from: list[str] = field(default_factory=list)
     default: bool = False
+    hidden: bool = False
     where: dbml_sharepoint.model.conditions.Condition | None = None
     sort: list[dbml_sharepoint.model.mapping_types.ViewSort] = field(default_factory=list)
     group_by: dbml_sharepoint.model.mapping_types.ViewGroupBy | None = None

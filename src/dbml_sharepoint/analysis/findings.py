@@ -258,6 +258,7 @@ class FindingCode(StrEnum):
         "minor_versions_without_versioning", "error",
     )
     MULTIPLE_DEFAULT_VIEWS = "multiple_default_views", "error"
+    DEFAULT_VIEW_HIDDEN = "default_view_hidden", "error"
     # Both specialise a rule that already fires, and both exist because the
     # generic REMEDY is wrong here rather than because the generic diagnosis
     # is. An index is the answer to an unindexed filter and a different

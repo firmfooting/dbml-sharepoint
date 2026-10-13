@@ -34,7 +34,7 @@ from dbml_sharepoint.model.reading import (
 from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _VIEW_KEYS = frozenset({
-    "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
+    "title", "renamed_from", "fields", "default", "hidden", "where", "sort", "group_by",
     "row_limit", "formatting", "widths", "totals", "scope",
 })
 
@@ -206,6 +206,7 @@ def _parse_view(raw_view: object, context: str, base_dir: Path) -> ViewDef:
         fields=list(field_names),
         renamed_from=list(previous_titles),
         default=optional_bool(view, "default", context),
+        hidden=optional_bool(view, "hidden", context),
         where=where,
         sort=sort,
         group_by=group_by,
