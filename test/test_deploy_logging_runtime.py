@@ -87,6 +87,7 @@ _HARNESS = textwrap.dedent(r"""
     // read-back mismatch branch.
     const STORE_WRONG_LIST_ID = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
+    const IGNORE_HIDDEN_MERGE = false;
     const REFUSE_CHANGE_FIELD = '';
     const SEED_ITEMS = {};
     const SEED_LISTS = [];
@@ -522,6 +523,7 @@ _HARNESS = textwrap.dedent(r"""
         }
         if (verb === 'MERGE') {
           const { __metadata, ...settings } = body || {};
+          if (IGNORE_HIDDEN_MERGE) delete settings.Hidden;
           Object.assign(list, settings);
           return reply(204, {});
         }
@@ -599,6 +601,7 @@ def _run_deploy(
     fail_change_writes: bool = False,
     bare_run_log: bool = False,
     fail_run_log_field_creates: bool = False,
+    ignore_hidden_merge: bool = False,
     refuse_change_field: str = "",
     central_columns: bool = True,
     central_change_columns: bool = True,
@@ -738,6 +741,11 @@ def _run_deploy(
         harness = _substitute(
             harness, "const REFUSE_CHANGE_FIELD = '';",
             f"const REFUSE_CHANGE_FIELD = '{refuse_change_field}';",
+        )
+    if ignore_hidden_merge:
+        harness = _substitute(
+            harness, "const IGNORE_HIDDEN_MERGE = false;",
+            "const IGNORE_HIDDEN_MERGE = true;",
         )
     if fail_run_log_field_creates:
         harness = _substitute(
@@ -2039,3 +2047,9 @@ def test_a_second_deploy_leaves_one_current_row_per_key() -> None:
     ]
     assert len(current) == 1, f"{len(current)} current rows for one key"
     assert any(r["Id"].number == 900 and r["IsCurrent"].value is False for r in rows)
+
+
+def test_a_sidecar_whose_hidden_flag_does_not_read_back_is_a_named_failure() -> None:
+    run = _run_deploy(central_absent=True, ignore_hidden_merge=True)
+    assert "flags did not read back" in run["output"].text
+    assert run["state"]["lists"][RUN_LOG_TITLE]["Hidden"].value is False

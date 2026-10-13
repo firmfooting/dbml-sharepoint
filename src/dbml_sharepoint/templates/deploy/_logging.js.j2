@@ -398,6 +398,14 @@
       if (!flagsResp.ok) {
         throw new Error(`Sidecar '${title}' could not be hidden: HTTP ${flagsResp.status}`);
       }
+      const back = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(title)}')?$select=Hidden,ContentTypesEnabled,EnableVersioning`
+      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+      const flags = back.ok ? ((await back.json()).d || {}) : {};
+      if (flags.Hidden !== true || flags.ContentTypesEnabled !== false
+          || flags.EnableVersioning !== false) {
+        throw new Error(`Sidecar '${title}' flags did not read back as hidden, without content types and unversioned`);
+      }
     };
 
     const ensureSidecar = async (title, marker) => {
