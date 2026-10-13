@@ -196,14 +196,14 @@ views:
 #
 # Induction sighted is shown on every form, including a courier's. It was
 # declared `when VisitorType in [Contractor, Student / placement]` until a
-# live deploy on 2026-09-04 aborted on this field: SharePoint refuses a
-# validation formula on a Yes/No column ("This field type does not support
-# validation formulas", HTTP 500), and conditional visibility is carried by
-# exactly that property. The build now accepts a visibility condition on a
-# Yes/No column but the deploy does not carry it (issue #834 tracks
-# restoring the `when`). Who is expected to tick it is carried by the column note, which renders as the field description
-# on the New form; nothing is lost from the record, because an unticked box
-# already means for a visitor what an absent field meant.
+# live deploy on 2026-09-04 aborted on this field with HTTP 500 ("This field
+# type does not support validation formulas"). The refused property was the
+# empty validation formula the deploy sent beside the visibility formula;
+# the deploy no longer sends one to a Yes/No column, so the `when` could
+# return (issue #834). Who is expected to tick it is carried by the column
+# note, which renders as the field description on the New form; nothing is
+# lost from the record, because an unticked box already means for a visitor
+# what an absent field meant.
 #
 # reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy. Read

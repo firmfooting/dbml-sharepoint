@@ -328,7 +328,7 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/solutions/visitor-log/20-configure/mapping.yaml": [
         "0edc66cdc3b7",
         "1bd26c967bdd",
-        "85bd0d1263fb",
+        "46585db97a5f",
         "96316775d4b3",
         "a674e180d8cb",
         "c4a120a38f3c",
