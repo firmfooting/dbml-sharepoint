@@ -429,7 +429,7 @@ class ViewDef:
     # never created and must remain declared so old sites can still upgrade.
     renamed_from: list[str] = field(default_factory=list)
     default: bool = False
-    # SP.View.Hidden: deployed and reachable by URL, absent from the view bar.
+    # SP.View.Hidden: deployed, absent from the modern view bar.
     hidden: bool = False
     # A condition tree from the shared grammar; None when undeclared.
     where: Condition | None = None

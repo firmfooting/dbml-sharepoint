@@ -531,7 +531,7 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
 def _default_and_hidden(
     entity_name: str, views: list[ViewDef], at_entity: Location,
 ) -> list[Finding]:
-    # SharePoint will not reliably hide the current default view.
+    # Hiding the current default view is not measured to work.
     return [
         Finding(
             FindingCode.DEFAULT_VIEW_HIDDEN,

@@ -1083,7 +1083,7 @@ def build_schema_json(
             scope="recursive" if entity.is_library else None,
         )
         # A live list's built-in All Items may still hold DefaultView.
-        # SharePoint will not reliably hide the current default, so an
+        # Hiding the current default is not measured to work, so an
         # authored default must be reconciled first. A recovery view that
         # is itself the default stays first and visible.
         if all_items.default:
