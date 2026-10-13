@@ -850,6 +850,12 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
         + "\n".join(run["unhandled"].strings)
     )
 
+    # Spaced titles, spaceless URLs, hidden after create.
+    for title, slug in ((RUN_LOG_TITLE, "Lists/ManagedLocalDeployments"),
+                        (CHANGE_LOG_TITLE, "Lists/ManagedLocalChanges")):
+        assert state["listUrls"][title].text == slug
+        assert state["lists"][title]["Hidden"].value is True
+
     # The change log's own columns, including the one the close query filters
     # on. Absent, every close read is an HTTP 400 and the insert after it
     # never runs, which is how a change log came to be created and stay empty.

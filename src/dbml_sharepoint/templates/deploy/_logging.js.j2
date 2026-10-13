@@ -383,6 +383,23 @@
     // ---- Sidecar creation, marker-guarded ------------------------------
     // Same contract as verify.js's scratch list: exact-Description
     // ownership or abort. Returns the list Id.
+    // ListCreationInformation has no Hidden, so the flags go on after create,
+    // and again on reuse so a create that died before this stays repaired.
+    const hideSidecar = async (title) => {
+      const flagsResp = await fetchWithRetry(
+        apiUrl(`web/lists/getbytitle('${odataName(title)}')`), {
+          method: 'POST',
+          headers: spHeaders(await getDigest(), { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
+            __metadata: { type: 'SP.List' },
+            Hidden: true, ContentTypesEnabled: false, EnableVersioning: false,
+          }),
+        });
+      if (!flagsResp.ok) {
+        throw new Error(`Sidecar '${title}' could not be hidden: HTTP ${flagsResp.status}`);
+      }
+    };
+
     const ensureSidecar = async (title, marker) => {
       let shape = null;
       try {
@@ -397,6 +414,7 @@
             + `tool's marker. It is not touched; rename or remove it and paste again.`,
           );
         }
+        await hideSidecar(title);
         log('INFO', `Sidecar '${title}' exists (marker matched); reusing it.`);
         return shape.Id;
       }
@@ -406,26 +424,14 @@
       const created = await postJson(apiUrl('web/lists/add'), { parameters: {
         __metadata: { type: 'SP.ListCreationInformation' },
         Title: title,
-        Url: `Lists/${title.replace(/\s+/g, '')}`,
+        Url: `Lists/${title.replace(/[^A-Za-z0-9_-]+/g, '')}`,
         TemplateType: 100,
         Description: marker,
       } }, digestS);
       if (!created.d || typeof created.d.Id !== 'string') {
         throw new Error(`Sidecar '${title}' create returned an invalid response`);
       }
-      // ListCreationInformation has no Hidden, so the flags go on after.
-      const flagsResp = await fetchWithRetry(
-        apiUrl(`web/lists/getbytitle('${odataName(title)}')`), {
-          method: 'POST',
-          headers: spHeaders(await getDigest(), { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-          body: JSON.stringify({
-            __metadata: { type: 'SP.List' },
-            Hidden: true, ContentTypesEnabled: false, EnableVersioning: false,
-          }),
-        });
-      if (!flagsResp.ok) {
-        throw new Error(`Sidecar '${title}' was created but could not be hidden: HTTP ${flagsResp.status}`);
-      }
+      await hideSidecar(title);
       invalidateListShapes();
       log('INFO', `Created hidden sidecar list '${title}'.`);
       return created.d.Id;
