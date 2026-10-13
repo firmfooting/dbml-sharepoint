@@ -753,6 +753,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         }
         return { d: { HasUniqueRoleAssignments: UNIQUE_ROLE_LISTS.has(listTitle) } };
       }
+      // The sidecar flags read-back: every sidecar this mock makes is hidden.
+      if (url.includes('getbytitle') && url.includes('$select=Hidden,ContentTypesEnabled')) {
+        return { d: { Hidden: true, ContentTypesEnabled: false, EnableVersioning: false } };
+      }
       // The attachments probe reads one property and nothing else, so it
       // must answer before the shape branch rather than through it.
       if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
