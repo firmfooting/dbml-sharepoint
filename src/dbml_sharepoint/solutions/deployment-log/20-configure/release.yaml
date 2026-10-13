@@ -2,7 +2,7 @@ release: "2.2.0"
 date: "2026-10-13"
 schema_version: "2.2.0"
 notes: |
-  2.2.0 adds `firmfooting_DeploymentLogs`, a document library that takes the
+  2.2.0 adds `ManagedDeploymentLogs`, a document library that takes the
   full console log of every deploy run as one new text file per run, on the
   same drop-box posture as the two lists: a contributor can add a file and
   cannot edit or delete one. The file is named from the run's UTC stamp, the
@@ -13,10 +13,10 @@ notes: |
   older release of this family keeps working until it is redeployed here.
 
   2.1.0 finishes what 2.0.0 started. The deploy writer previously declared
-  two lists but still posted every change row to `firmfooting_Deployments`
+  two lists but still posted every change row to `ManagedDeployments`
   with `StampKind: 'change'`, which made the split cosmetic: `Changes`
   existed and was reachable, and nothing ever wrote to it. The writer now
-  posts change rows to `firmfooting_Changes` instead, probed and written
+  posts change rows to `ManagedChanges` instead, probed and written
   independently of the stamps, so a Changes list that is absent,
   unreachable or short a column costs only the change feed and a fleet's
   stamps are unaffected either way.
@@ -29,22 +29,22 @@ notes: |
   at one before assuming it still renders.
 
   Every other deploy in the fleet already probes both new titles by default:
-  `DBMLSP_DEPLOY_LOG_LIST` for `firmfooting_Deployments` and the new
-  `DBMLSP_DEPLOY_CHANGES` for `firmfooting_Changes`, both deriving from the
+  `DBMLSP_DEPLOY_LOG_LIST` for `ManagedDeployments` and the new
+  `DBMLSP_DEPLOY_CHANGES` for `ManagedChanges`, both deriving from the
   same constants this family's entities are named for. A fleet operator
   needs no configuration change once this family is redeployed to the
   logging site.
 
   2.0.0 is a breaking rename: the single `dbml-deployment-log` list splits
-  into `firmfooting_Deployments` and `firmfooting_Changes`, one per row
+  into `ManagedDeployments` and `ManagedChanges`, one per row
   shape, under the family's own prefix rather than a bare title. Every other
   firmfooting application, dbml-sharepoint included, can now write to this
   log without one closing another's rows; both new lists gain a required
   Application column, indexed, that says which application wrote each row.
 
   READ THIS IF A SITE ALREADY RUNS THIS FAMILY. This tool never renames or
-  deletes a list. Redeploying creates `firmfooting_Deployments` and
-  `firmfooting_Changes` beside the existing `dbml-deployment-log`, which
+  deletes a list. Redeploying creates `ManagedDeployments` and
+  `ManagedChanges` beside the existing `dbml-deployment-log`, which
   stays exactly where it was: still there, still holding its history, still
   readable. Nothing reads or writes it after the redeploy, and this tool
   never deletes it either. `dbml-deployment-log` is safe to delete by hand
@@ -57,14 +57,13 @@ notes: |
   every stamp degrades to Title alone. StampKind, StampUtc, SourceSite,
   ReleaseTag, SchemaVersion, DeployerVersion, Operator and Details all stop
   being written. The override also only redirects `Deployments`; change
-  rows still go to the default `firmfooting_Changes` regardless.
+  rows still go to the default `ManagedChanges` regardless.
 
   The permission level is renamed to `{prefix} Deployments Submit Only`
   and both new lists take the same drop-box posture the single list had.
-  Groups are unchanged: `dbml List Administrators` and `dbml
-  Enterprise Readers` already conform to the fleet's naming convention and
-  membership is never reconciled, so renaming a group would recreate it
-  empty and orphan whoever already held access through the old one.
+  The groups are renamed to `Managed List Administrators` and `Managed
+  Enterprise Readers`. Membership is never reconciled, so a site that held
+  the old groups gets new empty ones and must re-add its members.
 
   1.1.0 carried the change feed as well as the stamps, on the single list
   2.0.0 split. `Changes` carries the eleven CENTRAL_CHANGE_COLUMNS columns
