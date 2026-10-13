@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.17.0...v0.18.0) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* name the central deployment lists and admin group with a neutral Managed prefix ([#838](https://github.com/firmfooting/dbml-sharepoint/issues/838))
+
+### Features
+
+* name the central deployment lists and admin group with a neutral Managed prefix ([#838](https://github.com/firmfooting/dbml-sharepoint/issues/838)) ([3245da7](https://github.com/firmfooting/dbml-sharepoint/commit/3245da7dd81ae80991be4fe7ee465ae622f3c893))
+
 ## [0.17.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.16.1...v0.17.0) (2026-10-13)
 
 
