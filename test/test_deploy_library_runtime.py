@@ -1061,8 +1061,10 @@ def test_an_authored_view_found_visible_is_hidden_again_and_reads_back(
         and bool(Json.loads(call["body"].text).get("Hidden"))
     )
     assert any(
-        call["method"] == "GET" and "/views" in call["url"] for call in calls[write + 1:]
-    ), "no view read-back after the Hidden write"
+        call["method"] == "GET" and "views/getbytitle('Mine')" in call["url"]
+        and "Hidden" in call["url"].split("$select=", 1)[-1]
+        for call in calls[write + 1:]
+    ), "no read-back of Mine's Hidden after the Hidden write"
     assert summary["errors"] == []
 
 
