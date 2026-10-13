@@ -85,6 +85,14 @@ TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
     AUTOMATION_GROUP_NAME,
 })
 
+#: The spellings before the Managed rename. A group the previous release made
+#: keeps its shared marker, or the redeploy adoption gate would abort on it.
+LEGACY_TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
+    "dbml Enterprise Readers",
+    "dbml List Administrators",
+    LEGACY_AUTOMATION_GROUP_NAME,
+})
+
 #: Characters held back from every description's budget, on top of the marker.
 #:
 #: THE INVARIANT: the marker may grow by up to this many characters and every
@@ -107,7 +115,7 @@ GROUP_MARKER_GROWTH_RESERVE = 21
 
 def marker_for_group(group_name: str, family: str) -> str:
     """The exact marker for one group. The single spelling authority."""
-    if group_name in TOOL_OWNED_GROUP_NAMES:
+    if group_name in TOOL_OWNED_GROUP_NAMES | LEGACY_TOOL_OWNED_GROUP_NAMES:
         return shared_marker_for(group_name)
     return provenance.marker_for_object(
         kind=provenance.GROUP_KIND, name=group_name, family=family,

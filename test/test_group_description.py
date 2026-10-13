@@ -7,6 +7,7 @@ from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
     FAMILY_MARKER_TEMPLATE,
     GROUP_MARKER_GROWTH_RESERVE,
+    LEGACY_TOOL_OWNED_GROUP_NAMES,
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
     group_description,
@@ -191,3 +192,9 @@ def test_the_automation_group_is_named_for_the_accounts_it_holds() -> None:
     assert AUTOMATION_GROUP_NAME == "Managed Automation Accounts"
     assert "Managed Enterprise Automation" not in TOOL_OWNED_GROUP_NAMES
     assert AUTOMATION_GROUP_NAME in TOOL_OWNED_GROUP_NAMES
+
+
+@pytest.mark.parametrize("name", sorted(LEGACY_TOOL_OWNED_GROUP_NAMES))
+def test_a_legacy_tool_owned_name_still_gets_the_shared_marker(name: str) -> None:
+    """A group the previous release made must keep its marker on redeploy."""
+    assert marker_for_group(name, "risk-register") == shared_marker_for(name)
