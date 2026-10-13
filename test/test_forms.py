@@ -158,31 +158,15 @@ def test_calculated_columns_cannot_declare_visibility() -> None:
     assert "calculated" in found.message
 
 
-def test_a_condition_on_a_yes_no_column_is_refused() -> None:
-    """Measured live on 2026-09-04, and the shape is the one the shipped
-    `visitor-log` family carried: a boolean column with a `when`.
-
-    The deploy aborted in phase 2.1 on `VI_Visit.InductionSighted` with
-    HTTP 500 "This field type does not support validation formulas", so
-    the composed formula never reached the field and the paste stopped
-    part-way through a fresh provision. Refusing it at build time is the
-    difference between an unbuildable mapping and a half-deployed site.
-    """
+def test_a_required_yes_no_column_declared_hidden_is_refused() -> None:
+    """A required Yes/No stays visible on the New form whatever the hide
+    formula says (field.client-validation.boolean-form-ignores-required),
+    so the declaration cannot do what it says."""
     found = only(
-        _visibility_findings(column="Sighted", when=WHEN),
-        FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
+        _visibility_findings(column="Sighted", new=False, required=True),
+        FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM,
     )
-
-    assert "Yes/No" in found.message
     assert found.severity == "error"
-
-
-def test_a_yes_no_column_may_still_be_gated_per_form() -> None:
-    """Only the composed formula is measured. A gate is carried by the same
-    property, so this is not obviously safe, but nothing has established
-    that it fails, and a guard wider than the measurement refuses a
-    declaration the platform may well accept."""
-    assert _visibility_findings(column="Sighted", new=False) == []
 
 
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
@@ -209,14 +193,13 @@ def test_statically_provable_cases_stay_errors() -> None:
 
 def test_each_rule_here_has_its_own_code() -> None:
     """The reason this function returns Findings rather than
-    (severity, message) pairs. The caller cannot know which of the six
+    (severity, message) pairs. The caller cannot know which of the five
     rules fired, so one code assigned there would collapse all of them,
     and a rule with no code of its own can never be asserted on, or
     suppressed, or looked up in the catalogue.
     """
     codes = [
         _visibility_findings(is_calculated=True)[0].code,
-        _visibility_findings(column="Sighted", when=WHEN)[0].code,
         _visibility_findings(new=False, existing=False, when=WHEN)[0].code,
         _visibility_findings(new=False, required=True)[0].code,
         _visibility_findings(when=WHEN, required=True)[0].code,
@@ -594,6 +577,45 @@ def test_exact_clears_undeclared_columns_but_declared_wins() -> None:
     schema = _schema_json(form_visibility=_visibility({"Note": HIDDEN}))
     assert _field(schema, "Note")["client_validation_formula"] == "=if(false, 'true', 'false')"
     assert _field(schema, "Other")["client_validation_formula"] == ""
+
+
+def test_hidden_and_conditional_yes_no_columns_leave_validation_unmanaged() -> None:
+    """A Yes/No field cannot carry a ValidationFormula, so exact
+    reconciliation must not send one (not even an empty one)."""
+    from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json
+
+    schema = make_schema(make_table(
+        "Escalation",
+        make_column("Title", required=True),
+        make_column("Status"),
+        make_column("Hidden", "boolean"),
+        make_column("Gated", "boolean"),
+    ))
+    bundle = make_bundle(
+        entities=["Escalation"],
+        form_visibility=_visibility({
+            "Hidden": HIDDEN,
+            "Gated": FormVisibility(new=False, when=WHEN),
+        }),
+        # An exact section is what makes a supported column get "" (cleared).
+        column_validation={"Escalation": EntitySection(columns={
+            "Status": ColumnValidation(
+                when=parse_condition(
+                    [{"field": "Status", "op": "is_not_null"}], "column_validation",
+                ),
+                message="Say something.",
+            ),
+        })},
+    )
+    out = build_schema_json(
+        schema, bundle, "default",
+        site_url="https://example.sharepoint.com/sites/t", resolved=resolve(schema, bundle.mapping),
+    )
+    for name in ("Hidden", "Gated"):
+        field = _field(out, name)
+        assert field["client_validation_formula"] not in ("", UNMANAGED), name
+        assert field["validation_formula"] == UNMANAGED, name
+        assert field["validation_message"] == UNMANAGED, name
 
 
 def test_declared_mode_leaves_undeclared_columns_alone() -> None:

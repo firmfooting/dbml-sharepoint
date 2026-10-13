@@ -397,6 +397,7 @@ class FindingCode(StrEnum):
     COLUMN_VALIDATION_MISSING_A_BLANK_ARM = (
         "column_validation_missing_a_blank_arm", "error"
     )
+    COLUMN_VALIDATION_ON_A_BOOLEAN_COLUMN = "column_validation_on_a_boolean_column", "error"
     COLUMN_VALIDATION_ON_A_RETIRED_COLUMN = "column_validation_on_a_retired_column", "error"
     COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS = (
         "column_validation_references_other_columns", "error"
@@ -508,9 +509,6 @@ class FindingCode(StrEnum):
         "governance_value_outside_vocabulary", "error")
 
     # --- form visibility (analysis/forms.py) --------------------------------
-    FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN = (
-        "form_visibility_condition_on_a_boolean_column", "error"
-    )
     FORM_VISIBILITY_CONDITION_UNREACHABLE = "form_visibility_condition_unreachable", "error"
     FORM_VISIBILITY_ON_A_CALCULATED_COLUMN = "form_visibility_on_a_calculated_column", "error"
     REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form", "error"

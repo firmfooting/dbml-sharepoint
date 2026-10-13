@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.save_rules import (
     compares_with_the_clock,
     refuses_a_blank,
 )
+from dbml_sharepoint.analysis.typemap import is_boolean
 from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition
 
 #: Shipped families carrying an unguarded comparison on a nullable column.
@@ -387,6 +388,16 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"<={MAX_VALIDATION_MESSAGE} characters.",
                     location=col_at,
                 ))
+            if is_boolean(types.get(column)):
+                findings.append(Finding(
+                    FindingCode.COLUMN_VALIDATION_ON_A_BOOLEAN_COLUMN,
+                    f"{ctx}.{column}: {column!r} is a Yes/No column and SharePoint "
+                    f"refuses a validation formula on that field type "
+                    f"(field.client-validation.boolean-server-only) -- use "
+                    f"list_validation, or move the column off boolean.",
+                    location=col_at,
+                ))
+                continue
             # SharePoint permits a column validation formula to reference
             # ONLY the column being validated; a cross-column rule belongs
             # in list_validation, and the error says so.

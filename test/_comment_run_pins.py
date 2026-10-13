@@ -143,7 +143,6 @@ PINNED: dict[str, list[str]] = {
         "ec9502a9a239",
     ],
     "src/dbml_sharepoint/analysis/forms.py": [
-        "9108ec6cf11e",
     ],
     "src/dbml_sharepoint/analysis/joins.py": [
         "a3e58a625a66",
@@ -244,7 +243,6 @@ PINNED: dict[str, list[str]] = {
         "7a96775281a7",
         "80e21a6ddd40",
         "ae44d2607253",
-        "e93d08cb0b6c",
         "f11f29803e84",
     ],
     "src/dbml_sharepoint/generators/manifestgen.py": [
@@ -330,7 +328,7 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/solutions/visitor-log/20-configure/mapping.yaml": [
         "0edc66cdc3b7",
         "1bd26c967bdd",
-        "8baa5b64400e",
+        "46585db97a5f",
         "96316775d4b3",
         "a674e180d8cb",
         "c4a120a38f3c",

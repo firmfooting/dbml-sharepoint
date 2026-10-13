@@ -251,6 +251,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "not need this -- the build hoists it onto the list rule and guards it "
         "there (see `analysis/save_rules.py`)."
     ),
+    FindingCode.COLUMN_VALIDATION_ON_A_BOOLEAN_COLUMN: (
+        "A `column_validation` rule is declared on a Yes/No column. "
+        "SharePoint refuses a validation formula on that field type "
+        "(`field.client-validation.boolean-server-only`), so the deploy "
+        "would abort at the field it names. Use `list_validation` for the "
+        "rule, or move the column off boolean."
+    ),
     FindingCode.COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS: (
         "A column validation formula references a column other than its "
         "own; SharePoint permits only the column being validated."
@@ -1170,12 +1177,6 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_SECTION_FIELD_NOT_RENDERED: (
         "A form body section names a field the entity does not render."
-    ),
-    FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN: (
-        "A Yes/No column declares a `when`. SharePoint refuses validation "
-        "formulas on that field type, so the conditional visibility cannot "
-        "be deployed and the deploy aborts at the field it names. Declare "
-        "the visibility without `when`, or move the column off boolean."
     ),
     FindingCode.FORM_VISIBILITY_CONDITION_UNREACHABLE: (
         "A column is hidden on every form yet carries a `when`, which "
