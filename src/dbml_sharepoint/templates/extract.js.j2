@@ -131,12 +131,21 @@
   // read addresses each list by the id the enumeration returned instead.
   let targets = LIST_PATHS && LIST_PATHS.map((path) => ({ path, id: null }));
   if (targets === null) {
-    const rows = await getAll(
-      'web/lists?$select=Id,Hidden,IsCatalog,RootFolder/ServerRelativeUrl&$expand=RootFolder&$top=5000',
-      'list enumeration',
-    );
+    let rows;
+    try {
+      rows = await getAll(
+        'web/lists?$select=Id,Hidden,IsCatalog,RootFolder/ServerRelativeUrl&$expand=RootFolder&$top=5000',
+        'list enumeration',
+      );
+    } catch (err) {
+      log('ERROR', `Could not enumerate the lists on this site: ${err.message}`);
+      log('ERROR', 'Nothing was downloaded. Check your permissions and re-run.');
+      return { aborted: 'list-enumeration-failed' };
+    }
+    // Sorted by path so the first list, which names the project, does not depend on service order.
     targets = rows.filter((l) => !l.Hidden && !l.IsCatalog)
-      .map((l) => ({ path: String((l.RootFolder && l.RootFolder.ServerRelativeUrl) || l.Id), id: l.Id }));
+      .map((l) => ({ path: String((l.RootFolder && l.RootFolder.ServerRelativeUrl) || l.Id), id: l.Id }))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     log('INFO', `Site read: ${targets.length} visible list(s).`);
     if (!targets.length) {
       log('ERROR', 'Nothing was downloaded. This site has no visible lists to read.');

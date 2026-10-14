@@ -1784,6 +1784,30 @@ def test_extract_of_a_site_download_lands_in_the_sites_folder(
     assert (tmp_path / "Risk" / NOTES_RELPATH).is_file()
 
 
+def test_titles_deriving_one_entity_name_are_refused(tmp_path: Path) -> None:
+    """Two tables of one name, or a mapping keeping one, would lose a list."""
+    payload = _site_payload()
+    lists = payload["lists"]
+    assert isinstance(lists, list)
+    first, second = lists
+    assert isinstance(first, dict)
+    assert isinstance(second, dict)
+    payload["lists"] = [
+        {**first, "title": "Action Register"},
+        {**second, "title": "Action-Register"},
+    ]
+    source = tmp_path / "site.json"
+    source.write_text(json.dumps(payload), newline="\n")
+
+    result = _run("extract", str(source), "--out", str(tmp_path / "project"))
+    assert result.exit_code != 0
+    message = plain(result.output)
+    assert "'Action Register'" in message
+    assert "'Action-Register'" in message
+    assert "ActionRegister" in message
+    assert not (tmp_path / "project").exists()
+
+
 def test_a_site_read_of_one_list_still_lands_in_the_sites_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
