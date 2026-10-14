@@ -838,6 +838,17 @@ def execute_extraction(
             )
             for source_list in loaded.lists
         }
+    except CONFIG_ERRORS as exc:
+        config_error("extraction source", source, exc)
+    for name in set(entity_names.values()):
+        titles = [t for t, n in entity_names.items() if n == name]
+        if len(titles) > 1:
+            quoted = " and ".join(f"'{t}'" for t in titles)
+            raise typer.BadParameter(
+                f"The lists {quoted} would both become the table {name}. "
+                "Rename one of them in SharePoint and download again.",
+            )
+    try:
         extraction = extraction_from(loaded, entity_names=entity_names)
     except CONFIG_ERRORS as exc:
         config_error("extraction source", source, exc)

@@ -65,7 +65,11 @@ _HARNESS = textwrap.dedent(r"""
       if (u.includes('web/lists?$select=Title,Hidden')) {
         return results(CONFIG.titles.map((t) => ({ Title: t, Hidden: false })));
       }
-      if (u.includes('web/lists?$select=Id,Hidden,IsCatalog')) return results(CONFIG.siteLists);
+      if (u.includes('web/lists?$select=Id,Hidden,IsCatalog')) {
+        const denied = { error: { message: { value: 'Access denied' } } };
+        if (CONFIG.siteListsStatus) return reply(CONFIG.siteListsStatus, denied);
+        return results(CONFIG.siteLists);
+      }
       const byId = /web\/lists\(guid'([^']+)'\)\?\$select=/.exec(u);
       if (byId) {
         const found = (CONFIG.lists || [CONFIG.list]).find((l) => l.Id === byId[1]);
@@ -265,8 +269,21 @@ def test_a_site_read_extracts_every_visible_list(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(__name__ + "._config", lambda: config)
     result, out = _run_script(None)
     assert "__THREW__" not in out, out
-    assert [entry["title"] for entry in result["lists"]] == [LIST_TITLE, "Action Register"]
+    assert [entry["title"] for entry in result["lists"]] == ["Action Register", LIST_TITLE]
     assert result["siteRead"].value is True
+
+
+def test_a_refused_list_enumeration_aborts_with_a_named_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config["siteListsStatus"] = 403
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, out = _run_script(None)
+    assert "__THREW__" not in out, out
+    assert result["aborted"] == "list-enumeration-failed"
+    assert "list enumeration: HTTP 403" in out
+    assert "Nothing was downloaded" in out
 
 
 def test_a_site_with_no_visible_lists_downloads_nothing(
