@@ -98,6 +98,11 @@ _KINDS: dict[str, tuple[str, str]] = {
         """These lookups show a column other than Title. The deploy shows
         the target list's `display_column`, one per list.""",
     ),
+    "lookup-delete-behaviour": (
+        "Lookup columns: delete behaviour",
+        """These lookups restrict or cascade deletes in their target list. The
+        deploy leaves the default, which is neither.""",
+    ),
     "calculated-result-type": (
         "Calculated columns dropped: unknown result type",
         "The calculated types this tool deploys are text, number and date.",

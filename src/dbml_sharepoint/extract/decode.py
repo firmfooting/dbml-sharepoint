@@ -381,6 +381,13 @@ def _column_type(
                     f"{target}'s `display_column`, so set that in the mapping "
                     "if every lookup into it shows this column.",
                 ))
+            if raw.delete_behavior not in (None, "None"):
+                unrecovered.append(Unrecovered(
+                    "lookup-delete-behaviour", subject,
+                    f"has the delete behaviour {raw.delete_behavior!r}; the deploy "
+                    "sets none, so declare it by hand if deleting from "
+                    f"{target} must stay constrained.",
+                ))
             return f"int{MULTI_VALUE_SUFFIX}" if multi else "int"
         arity = (
             f" as an array (`int{MULTI_VALUE_SUFFIX}`), because it holds many"

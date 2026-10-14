@@ -472,6 +472,27 @@ def test_a_lookup_showing_another_column_says_so() -> None:
     assert "'Code'" in unrecovered[0].detail
 
 
+def test_a_lookup_with_a_delete_constraint_says_so() -> None:
+    """The deploy sets no RelationshipDeleteBehavior, so the ref would lose it."""
+    unrecovered: list[Unrecovered] = []
+    [column] = _decode_lookup(
+        field_xml("Lookup", List=OTHER_LIST_ATTR, RelationshipDeleteBehavior="Restrict"),
+        unrecovered,
+    ).columns
+    assert column.ref == "Other"
+    assert [u.kind for u in unrecovered] == ["lookup-delete-behaviour"]
+    assert "'Restrict'" in unrecovered[0].detail
+
+
+def test_a_lookup_with_the_default_delete_behaviour_is_silent() -> None:
+    unrecovered: list[Unrecovered] = []
+    _decode_lookup(
+        field_xml("Lookup", List=OTHER_LIST_ATTR, RelationshipDeleteBehavior="None"),
+        unrecovered,
+    )
+    assert unrecovered == []
+
+
 def test_a_site_read_resolves_its_lookups_into_a_schema_that_parses(
     tmp_path: Path,
 ) -> None:
