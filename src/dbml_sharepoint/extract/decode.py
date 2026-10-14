@@ -385,8 +385,8 @@ def _column_type(
                 unrecovered.append(Unrecovered(
                     "lookup-delete-behaviour", subject,
                     f"has the delete behaviour {raw.delete_behavior!r}; the deploy "
-                    "sets none, so declare it by hand if deleting from "
-                    f"{target} must stay constrained.",
+                    "cannot declare one, so set it again on the live list after "
+                    f"deploying if deleting from {target} must stay constrained.",
                 ))
             return f"int{MULTI_VALUE_SUFFIX}" if multi else "int"
         arity = (
