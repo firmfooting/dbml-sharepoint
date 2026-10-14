@@ -68,6 +68,7 @@ from dbml_sharepoint.extract.run import (
 )
 from dbml_sharepoint.extract.run import write as write_extraction
 from dbml_sharepoint.extract.sources import load_source
+from dbml_sharepoint.generators.extractgen import site_slug
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
@@ -837,17 +838,28 @@ def execute_extraction(
             )
             for source_list in loaded.lists
         }
+    except CONFIG_ERRORS as exc:
+        config_error("extraction source", source, exc)
+    for name in set(entity_names.values()):
+        titles = [t for t, n in entity_names.items() if n == name]
+        if len(titles) > 1:
+            quoted = " and ".join(f"'{t}'" for t in titles)
+            raise typer.BadParameter(
+                f"The lists {quoted} would both become the table {name}. "
+                "Rename one of them in SharePoint and download again.",
+            )
+    try:
         extraction = extraction_from(loaded, entity_names=entity_names)
     except CONFIG_ERRORS as exc:
         config_error("extraction source", source, exc)
 
     if project is not None:
         check_identifier(project, "--project")
-    # The FIRST list's title. A download this tool generates carries exactly
-    # one, and a hand-assembled one carrying several has no single folder it
-    # could be named after; `--out` is the answer there.
+    # A site read, or any download of several lists, lands in the folder
+    # `extract-script --site` seeded, named after the site.
+    by_site = loaded.site_read or len(loaded.lists) > 1
     root = out if out is not None else folder_for_download(
-        source, loaded.lists[0].title,
+        source, site_slug(loaded.site_url) if by_site else loaded.lists[0].title,
     )
     _refuse_existing_project(root, force=force)
 

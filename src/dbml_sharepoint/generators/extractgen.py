@@ -12,6 +12,7 @@ guarantee test pins that.
 """
 
 import re
+from urllib.parse import urlparse
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.extract.sources import LIVE_FORMAT
@@ -77,10 +78,21 @@ def download_name(list_titles: list[str]) -> str:
     return f"{slug}-extract.json" if slug else DEFAULT_DOWNLOAD_NAME
 
 
+def site_slug(site_url: str) -> str:
+    """The last segment of a site URL, which names a whole-site read's folder."""
+    return slug_from_path(urlparse(site_url).path)
+
+
+def site_download_name(site_url: str) -> str:
+    """The file name a whole-site read is saved as."""
+    slug = list_slug(site_slug(site_url))
+    return f"{slug}-site-extract.json" if slug else DEFAULT_DOWNLOAD_NAME
+
+
 def generate_extract_js(
     *,
     site_url: str,
-    list_paths: list[str],
+    list_paths: list[str] | None,
     generated_at: str,
     application: str = APPLICATION_NAME,
 ) -> str:
@@ -95,16 +107,23 @@ def generate_extract_js(
     The download name still comes from the slug, because it names a local
     file rather than a list. It is derived from the path here rather than
     taken as a second argument, so the two cannot be passed out of step.
+
+    `None` reads every visible list on the site, found when the script runs.
     """
-    if not list_paths:
+    if list_paths is not None and not list_paths:
         raise NoListsError(
             "no lists were named, so the script would read nothing. Pass "
             "--list once per list to extract.",
         )
     return script_env(application).get_template("extract.js.j2").render(
         site_url=site_url,
-        list_paths=list_paths,
+        # The header names what is read; LIST_PATHS stays null so the script finds the lists.
+        list_paths=["every visible list on the site"] if list_paths is None else list_paths,
+        site_read=list_paths is None,
         generated_at=generated_at,
         live_format=LIVE_FORMAT,
-        download_name=download_name([slug_from_path(p) for p in list_paths]),
+        download_name=(
+            site_download_name(site_url) if list_paths is None
+            else download_name([slug_from_path(p) for p in list_paths])
+        ),
     )

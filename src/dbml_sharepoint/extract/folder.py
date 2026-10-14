@@ -29,6 +29,8 @@ from dbml_sharepoint.generators.extractgen import (
     download_name,
     generate_extract_js,
     list_slug,
+    site_download_name,
+    site_slug,
 )
 
 #: What the readme is called. Lower case, because it sits beside
@@ -98,27 +100,35 @@ def _wrapped(text: str) -> str:
     )
 
 
-def render_readme(*, list_title: str, site_url: str) -> str:
-    """The readme.md that seeds one list's folder."""
-    download = download_name([list_title])
+def render_readme(*, list_title: str, site_url: str, whole_site: bool = False) -> str:
+    """The readme.md that seeds one list's folder, or one whole site's."""
+    if whole_site:
+        download = site_download_name(site_url)
+        holds = f"every visible list on `{site_url}`"
+        what = "the site's lists"
+        open_it = "a page on the site"
+    else:
+        download = download_name([list_title])
+        holds = f"one SharePoint list, {list_title} on `{site_url}`"
+        what = "the list's"
+        open_it = "the list in SharePoint"
     return "\n\n".join((
         "# Extraction folder",
         # The site URL is in backticks because markdownlint's MD034 refuses a
         # bare one, and this file lands in a project that may well lint it.
         _wrapped(
-            f"This folder holds one SharePoint list's extraction. The list is "
-            f"{list_title} on `{site_url}`, and dbml-sharepoint writes its "
-            f"draft schema and mapping here.",
+            f"This folder holds the extraction of {holds}. dbml-sharepoint "
+            f"writes the draft schema and mapping here.",
         ),
-        "## Step 1: read the list",
+        "## Step 1: read the site" if whole_site else "## Step 1: read the list",
         _wrapped(
-            f"Open the list in SharePoint, open the browser console (F12 in "
+            f"Open {open_it}, open the browser console (F12 in "
             f"Edge and in Chrome), and paste the whole of `{EXTRACT_SCRIPT}` "
             f"into it. Every request that script makes is a GET, so it changes "
             f"nothing on the site.",
         ),
         _wrapped(
-            f"It saves the list's field definitions as `{download}`. Put that "
+            f"It saves {what} field definitions as `{download}`. Put that "
             f"file in this folder, beside this one.",
         ),
         "## Step 2: recover the draft",
@@ -145,7 +155,7 @@ def render_readme(*, list_title: str, site_url: str) -> str:
 def seed(
     *,
     list_title: str,
-    list_path: str,
+    list_path: str | None,
     site_url: str,
     generated_at: str,
     script: Path | None = None,
@@ -160,13 +170,22 @@ def seed(
     `list_title` is the URL slug and names the FOLDER; `list_path` is the
     server-relative URL and is what the emitted script RESOLVES BY. They stop
     being the same string the moment the list is renamed in place.
+
+    A `list_path` of None seeds a whole-site read, in a folder named after
+    the site.
     """
-    path = script if script is not None else folder_for(list_title) / EXTRACT_SCRIPT
+    whole_site = list_path is None
+    name = site_slug(site_url) if whole_site else list_title
+    path = script if script is not None else folder_for(name) / EXTRACT_SCRIPT
     write_artifact(path, generate_extract_js(
-        site_url=site_url, list_paths=[list_path], generated_at=generated_at,
+        site_url=site_url,
+        list_paths=None if list_path is None else [list_path],
+        generated_at=generated_at,
     ))
     readme = path.parent / README_FILENAME
     if readme.exists():
         return Seeded(folder=path.parent, script=path, readme=None)
-    write_artifact(readme, render_readme(list_title=list_title, site_url=site_url))
+    write_artifact(readme, render_readme(
+        list_title=list_title, site_url=site_url, whole_site=whole_site,
+    ))
     return Seeded(folder=path.parent, script=path, readme=readme)

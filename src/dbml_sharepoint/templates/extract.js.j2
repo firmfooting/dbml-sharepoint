@@ -25,7 +25,7 @@
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
-  const LIST_PATHS = {{ list_paths | tojson(indent=2) }};
+  const LIST_PATHS = {{ (none if site_read else list_paths) | tojson(indent=2) }};
   const FORMAT = {{ live_format | tojson }};
   const DOWNLOAD_NAME = {{ download_name | tojson }};
   const GENERATED_AT = {{ generated_at | tojson }};
@@ -58,9 +58,12 @@
 
   // Resolved by path, then addressed by GUID for every subsequent read, so
   // one lookup settles which list this is and nothing after it can drift.
-  async function readList(path) {
+  // `id` is set for a site read, whose enumeration already named each list.
+  async function readList(path, id = null) {
+    const select = 'Id,Title,Description,BaseTemplate,ItemCount';
     const meta = await getOne(
-      listByPathUrl(path, '&$select=Id,Title,Description,BaseTemplate,ItemCount'), `list at '${path}'`,
+      id ? `web/lists(guid'${sharePointGuid(id, 'list')}')?$select=${select}` : listByPathUrl(path, `&$select=${select}`),
+      `list at '${path}'`,
     );
     const title = String(meta.Title || '');
     const listPath = `web/lists(guid'${sharePointGuid(meta.Id, 'list')}')`;
@@ -121,10 +124,38 @@
     };
   }
 
-  const lists = [];
-  for (const path of LIST_PATHS) {
+  // A site read finds its lists here. Hidden lists and catalogues are the
+  // platform's own, and reading them would only add tables to delete.
+  // GetList refused a server-relative path holding a space live, so a site
+  // read addresses each list by the id the enumeration returned instead.
+  let targets = LIST_PATHS && LIST_PATHS.map((path) => ({ path, id: null }));
+  if (targets === null) {
+    let rows;
     try {
-      lists.push(await readList(path));
+      rows = await getAll(
+        'web/lists?$select=Id,Hidden,IsCatalog,RootFolder/ServerRelativeUrl&$expand=RootFolder&$top=5000',
+        'list enumeration',
+      );
+    } catch (err) {
+      log('ERROR', `Could not enumerate the lists on this site: ${err.message}`);
+      log('ERROR', 'Nothing was downloaded. Check your permissions and re-run.');
+      return { aborted: 'list-enumeration-failed' };
+    }
+    // Sorted by path so the first list, which names the project, does not depend on service order.
+    targets = rows.filter((l) => !l.Hidden && !l.IsCatalog)
+      .map((l) => ({ path: String((l.RootFolder && l.RootFolder.ServerRelativeUrl) || l.Id), id: l.Id }))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    log('INFO', `Site read: ${targets.length} visible list(s).`);
+    if (!targets.length) {
+      log('ERROR', 'Nothing was downloaded. This site has no visible lists to read.');
+      return { aborted: 'no-lists' };
+    }
+  }
+
+  const lists = [];
+  for (const { path, id } of targets) {
+    try {
+      lists.push(await readList(path, id));
     } catch (err) {
       // Abort rather than download what was read so far. A partial
       // extraction produces a schema that parses, builds and is missing a
@@ -145,6 +176,7 @@
   const payload = {
     format: FORMAT,
     siteUrl: `${window.location.origin}${WEB}`,
+    siteRead: LIST_PATHS === null,
     generatedAt: GENERATED_AT,
     deployerVersion: DEPLOYER_VERSION,
     lists,
