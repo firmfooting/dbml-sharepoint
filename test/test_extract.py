@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import override
 
 import pytest
-from _console import ScriptedConsole, collapsed
+from _console import ScriptedConsole, collapsed, plain
 from _narrow import as_dict
 from _node import NODE
 from _paths import FIXTURES, SOLUTION_TEMPLATES
@@ -1758,7 +1758,7 @@ def test_extract_script_takes_a_list_or_a_site(
     monkeypatch.chdir(tmp_path)
     result = _run(*args)
     assert result.exit_code != 0
-    assert "--site" in result.output
+    assert "--site" in plain(result.output)
     assert list(tmp_path.iterdir()) == []
 
 
