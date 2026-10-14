@@ -15,6 +15,7 @@ from dbml_sharepoint.extract.decode import (
     Extraction,
     Unrecovered,
     decode_list,
+    list_guid,
     new_enum_registry,
 )
 from dbml_sharepoint.extract.emit import (
@@ -62,6 +63,10 @@ def extraction_from(source: Source, *, entity_names: dict[str, str]) -> Extracti
     enums = new_enum_registry()
     unrecovered: list[Unrecovered] = []
     extraction = Extraction(source=source.kind, absences=source.capabilities)
+    lookup_targets = {
+        list_guid(source_list.list_id): entity_names[source_list.title]
+        for source_list in source.lists if source_list.list_id
+    }
     for source_list in source.lists:
         entity = entity_names[source_list.title]
         extraction.entities.append(decode_list(
@@ -71,6 +76,7 @@ def extraction_from(source: Source, *, entity_names: dict[str, str]) -> Extracti
             enums=enums,
             unrecovered=unrecovered,
             list_description=source_list.description,
+            lookup_targets=lookup_targets,
         ))
         if not source_list.description:
             # Named up front because `build` refuses the schema for it

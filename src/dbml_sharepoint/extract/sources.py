@@ -45,6 +45,8 @@ class SourceList:
     title: str
     fields: list[RawField]
     description: str = ""
+    #: The list's GUID, which is what another list's lookup names it by.
+    list_id: str = ""
     #: Views, as read live. Kept whole and reported rather than decoded:
     #: recovering a `views:` declaration from CAML is a second inversion
     #: problem and this tool does not guess at one.
@@ -112,6 +114,7 @@ def load_live_json(raw: str) -> Source:
             title=title,
             fields=_parse_all(entry.get("fields"), f"lists[{index}].fields"),
             description=_text(entry, "description", f"lists[{index}]"),
+            list_id=_text(entry, "id", f"lists[{index}]"),
             views=_views(entry.get("views"), f"lists[{index}].views"),
             content_type_formatter=_text(entry, "contentTypeFormatter", f"lists[{index}]"),
         ))

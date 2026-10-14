@@ -84,9 +84,14 @@ _KINDS: dict[str, tuple[str, str]] = {
     ),
     "lookup-target": (
         "Lookup columns dropped",
-        """A lookup's target is a list GUID in the field XML. Resolving it
-        needs the site's other lists, and a `ref` pointing at the wrong
+        """A lookup's target is a list GUID in the field XML. Only a list
+        read in the same download resolves, and a `ref` pointing at the wrong
         table is worse than none, so these were left out.""",
+    ),
+    "lookup-display-column": (
+        "Lookup columns: displayed column",
+        """These lookups show a column other than Title. The deploy shows
+        the target list's `display_column`, one per list.""",
     ),
     "calculated-result-type": (
         "Calculated columns dropped: unknown result type",

@@ -97,6 +97,8 @@ def _settings(col: DecodedColumn) -> list[str]:
         settings.append("not null")
     if col.unique:
         settings.append("unique")
+    if col.ref:
+        settings.append(f"ref: > {col.ref}.Id")
     if col.default is not None:
         settings.append(f"default: {_default_literal(col.default)}")
     if col.note:

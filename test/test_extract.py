@@ -410,6 +410,87 @@ def test_one_field_type_at_a_time(xml: str, expected: str) -> None:
     assert [c.dbml_type for c in _decode(xml).columns] == [expected]
 
 
+#: A list id as `web/lists` returns it, and the same list as a lookup's
+#: `List` attribute stores it: braced, and not necessarily the same case.
+OTHER_ID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+OTHER_LIST_ATTR = "{0F8FAD5B-D9CB-469F-A165-70867728950E}"
+
+
+def _decode_lookup(
+    xml: str, unrecovered: list[Unrecovered] | None = None,
+) -> DecodedEntity:
+    return decode_list(
+        [parse_field_xml(xml)], entity="T", list_title="t",
+        enums=new_enum_registry(),
+        unrecovered=[] if unrecovered is None else unrecovered,
+        lookup_targets={OTHER_ID: "Other"},
+    )
+
+
+@pytest.mark.parametrize(("xml", "dbml_type", "ref"), [
+    (field_xml("Lookup", List=OTHER_LIST_ATTR, ShowField="Title"), "int", "Other"),
+    (field_xml("LookupMulti", List=OTHER_LIST_ATTR, Mult="TRUE"), "int[]", "Other"),
+    (field_xml("Lookup", List="Self"), "int", "T"),
+])
+def test_a_lookup_into_a_list_in_the_same_read_becomes_a_ref(
+    xml: str, dbml_type: str, ref: str,
+) -> None:
+    unrecovered: list[Unrecovered] = []
+    [column] = _decode_lookup(xml, unrecovered).columns
+    assert (column.dbml_type, column.ref) == (dbml_type, ref)
+    assert unrecovered == []
+
+
+def test_a_lookup_outside_the_read_is_still_dropped_and_named() -> None:
+    unrecovered: list[Unrecovered] = []
+    decoded = _decode_lookup(field_xml("Lookup", List="{guid}"), unrecovered)
+    assert decoded.columns == []
+    assert [u.kind for u in unrecovered] == ["lookup-target"]
+
+
+def test_a_lookup_showing_another_column_says_so() -> None:
+    """The deploy shows the target's display_column, which is one per list,
+    so a lookup showing something else is a note rather than a guess."""
+    unrecovered: list[Unrecovered] = []
+    [column] = _decode_lookup(
+        field_xml("Lookup", List=OTHER_LIST_ATTR, ShowField="Code"), unrecovered,
+    ).columns
+    assert column.ref == "Other"
+    assert [u.kind for u in unrecovered] == ["lookup-display-column"]
+    assert "'Code'" in unrecovered[0].detail
+
+
+def test_a_site_read_resolves_its_lookups_into_a_schema_that_parses(
+    tmp_path: Path,
+) -> None:
+    """The list ids come from the download, and the ref survives the emitter
+    and the parser."""
+    payload = _live_payload()
+    lists = payload["lists"]
+    assert isinstance(lists, list)
+    first = lists[0]
+    assert isinstance(first, dict)
+    target = {**first, "title": "CT_Party", "id": OTHER_ID}
+    lookup = field_xml(
+        "Lookup", List=OTHER_LIST_ATTR, ShowField="Title", StaticName="Party",
+    )
+    fields = first["fields"]
+    assert isinstance(fields, list)
+    lists[0] = {**first, "fields": [*fields, lookup]}
+    lists.append(target)
+    source = load_live_json(json.dumps(payload))
+    assert source.lists[1].list_id == OTHER_ID
+
+    extraction = extraction_from(
+        source, entity_names={LIST_TITLE: ENTITY, "CT_Party": "Party"},
+    )
+    schema = render_schema(extraction, project="p")
+    assert "ref: > Party.Id" in schema
+    path = tmp_path / "schema.dbml"
+    path.write_text(schema, newline="\n")
+    parse_dbml(path)
+
+
 @pytest.mark.parametrize(("xml", "kind"), [
     (field_xml("Lookup", List="{guid}"), "lookup-target"),
     (field_xml("Thumbnail"), "unsupported-field-type"),
