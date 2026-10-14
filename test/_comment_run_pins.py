@@ -217,9 +217,6 @@ PINNED: dict[str, list[str]] = {
         "c2b23a1fe2db",
         "ddcc94036162",
     ],
-    "src/dbml_sharepoint/extract/decode.py": [
-        "e79de3ada7e5",
-    ],
     "src/dbml_sharepoint/generators/assessgen.py": [
         "0d5c557d836f",
         "2d777c46eff9",

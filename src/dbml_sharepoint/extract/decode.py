@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass, field
 
 from dbml_sharepoint.analysis.column_refs import rewrite_formula_refs
+from dbml_sharepoint.analysis.lookups import DEFAULT_DISPLAY_COLUMN
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     KNOWN_SCALARS,
@@ -104,6 +105,8 @@ class DecodedColumn:
     default: str | bool | None = None
     note: str = ""
     indexed: bool = False
+    #: The entity a lookup points at, emitted as `ref: > <ref>.Id`.
+    ref: str = ""
     #: Kept so the notes can quote the element for a column whose type or
     #: settings only partly survived.
     raw: RawField | None = field(default=None, repr=False)
@@ -216,8 +219,13 @@ def decode_list(
     enums: _EnumRegistry,
     unrecovered: list[Unrecovered],
     list_description: str = "",
+    lookup_targets: dict[str, str] | None = None,
 ) -> DecodedEntity:
-    """Decode one list's fields into a schema entity and its mapping facts."""
+    """Decode one list's fields into a schema entity and its mapping facts.
+
+    `lookup_targets` maps a `list_guid` to its entity, for the lists read
+    alongside this one; a lookup into any of them becomes a `ref`.
+    """
     decoded = DecodedEntity(name=entity, list_title=list_title, note=list_description)
     types: dict[str, str] = {}
     kept: list[RawField] = []
@@ -234,8 +242,9 @@ def decode_list(
     # Types resolve first, in one pass, because the inverters below need to
     # know a referenced column's type before they can rebuild a condition
     # that mentions it, and a condition may name a column declared later.
+    targets = lookup_targets or {}
     for raw in kept:
-        col_type = _column_type(raw, entity, enums, unrecovered)
+        col_type = _column_type(raw, entity, enums, unrecovered, targets)
         if col_type is None:
             continue
         types[raw.internal_name] = col_type
@@ -244,7 +253,9 @@ def decode_list(
         col_type = types.get(raw.internal_name)
         if col_type is None:
             continue
-        decoded.columns.append(_column(raw, col_type, entity, unrecovered))
+        decoded.columns.append(_column(
+            raw, col_type, entity, unrecovered, ref=_lookup_target(raw, entity, targets) or "",
+        ))
         if raw.indexed:
             decoded.indexes.append(raw.internal_name)
         _recover_mapping(raw, decoded, types, entity, unrecovered)
@@ -259,6 +270,7 @@ def _column_type(
     entity: str,
     enums: _EnumRegistry,
     unrecovered: list[Unrecovered],
+    lookup_targets: dict[str, str],
 ) -> str | None:
     """The DBML type for one field, or None when this tool will not name it.
 
@@ -348,16 +360,35 @@ def _column_type(
         return calculated
 
     if raw.sp_type in ("Lookup", "LookupMulti"):
-        # A lookup's target is a list GUID in the XML. Resolving it needs the
-        # site's other lists, which only the live path reads, and a `ref` to
-        # the wrong table is worse than none.
-        #
-        # `LookupMulti` is the same kind at a different arity, measured
-        # 2026-09-02: a multi-value lookup reads back Type="LookupMulti" over
-        # FieldTypeKind 7, the Lookup kind. It rides the same arm because the
-        # target is equally unresolvable, and the ARITY is named here so the
-        # hand-added ref carries the brackets.
+        # Resolved only against the lists read alongside it, because a `ref`
+        # to the wrong table is worse than none. `LookupMulti` reads back over
+        # the Lookup FieldTypeKind, so it shares this arm at array arity.
+        if raw.primary_lookup:
+            unrecovered.append(Unrecovered(
+                "lookup-projected", subject,
+                f"a column projected from the lookup {raw.primary_lookup}, "
+                f"showing {raw.lookup_field!r}; declare it on that lookup's "
+                "mapping entry if you want it back.",
+            ))
+            return None
         multi = raw.sp_type == "LookupMulti"
+        target = _lookup_target(raw, entity, lookup_targets)
+        if target is not None:
+            if raw.lookup_field not in (None, DEFAULT_DISPLAY_COLUMN):
+                unrecovered.append(Unrecovered(
+                    "lookup-display-column", subject,
+                    f"shows {raw.lookup_field!r} from {target}; the deploy shows "
+                    f"{target}'s `display_column`, so set that in the mapping "
+                    "if every lookup into it shows this column.",
+                ))
+            if raw.delete_behavior not in (None, "None"):
+                unrecovered.append(Unrecovered(
+                    "lookup-delete-behaviour", subject,
+                    f"has the delete behaviour {raw.delete_behavior!r}; the deploy "
+                    "cannot declare one, so set it again on the live list after "
+                    f"deploying if deleting from {target} must stay constrained.",
+                ))
+            return f"int{MULTI_VALUE_SUFFIX}" if multi else "int"
         arity = (
             f" as an array (`int{MULTI_VALUE_SUFFIX}`), because it holds many"
             if multi else ""
@@ -365,8 +396,9 @@ def _column_type(
         unrecovered.append(Unrecovered(
             "lookup-target", subject,
             f"a {raw.sp_type} column pointing at list "
-            f"{raw.lookup_list or 'unknown'}; add the `ref` by hand{arity} "
-            f"once the target entity is in the schema.",
+            f"{raw.lookup_list or 'unknown'}, which this read did not include; "
+            f"add the `ref` by hand{arity} once the target entity is in the "
+            f"schema, or read the whole site with `extract-script --site`.",
         ))
         return None
 
@@ -378,8 +410,27 @@ def _column_type(
     return None
 
 
+def list_guid(value: str) -> str:
+    """A list GUID as compared here: `web/lists` returns one bare and a
+    lookup's `List` attribute stores one braced, in either case."""
+    return value.strip("{}").lower()
+
+
+def _lookup_target(
+    raw: RawField, entity: str, lookup_targets: dict[str, str],
+) -> str | None:
+    """The entity a lookup points at, when it is one this run decodes."""
+    if raw.sp_type not in ("Lookup", "LookupMulti") or not raw.lookup_list or raw.primary_lookup:
+        return None
+    # Microsoft Learn's Field element: `List` is the target's braced GUID, or "Self".
+    if raw.lookup_list == "Self":
+        return entity
+    return lookup_targets.get(list_guid(raw.lookup_list))
+
+
 def _column(
     raw: RawField, col_type: str, entity: str, unrecovered: list[Unrecovered],
+    *, ref: str = "",
 ) -> DecodedColumn:
     subject = f"{entity}.{raw.internal_name}"
     if not _PLAIN_IDENTIFIER.match(raw.internal_name):
@@ -408,6 +459,7 @@ def _column(
         default=default,
         note=raw.description,
         indexed=raw.indexed,
+        ref=ref,
         raw=raw,
     )
 

@@ -184,6 +184,8 @@ def test_a_list_that_reads_cleanly_still_extracts() -> None:
     assert "__THREW__" not in out, out
     assert result["lists"][0]["title"] == LIST_TITLE
     assert result["lists"][0]["fields"] == ['<Field Name="Title" Type="Text" />']
+    # The id is what a lookup's List attribute names, so `extract` can resolve it.
+    assert result["lists"][0]["id"] == "aaaaaaaa-0000-0000-0000-000000000001"
 
 
 @pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
