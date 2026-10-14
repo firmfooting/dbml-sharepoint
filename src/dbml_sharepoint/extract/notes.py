@@ -88,6 +88,11 @@ _KINDS: dict[str, tuple[str, str]] = {
         read in the same download resolves, and a `ref` pointing at the wrong
         table is worse than none, so these were left out.""",
     ),
+    "lookup-projected": (
+        "Lookup columns dropped: projected",
+        """These show another column of a lookup's target and depend on that
+        lookup, so they are not relationships of their own.""",
+    ),
     "lookup-display-column": (
         "Lookup columns: displayed column",
         """These lookups show a column other than Title. The deploy shows

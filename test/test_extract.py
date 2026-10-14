@@ -441,6 +441,18 @@ def test_a_lookup_into_a_list_in_the_same_read_becomes_a_ref(
     assert unrecovered == []
 
 
+def test_a_projected_lookup_column_is_not_a_second_ref() -> None:
+    """Microsoft Learn's Field element: `FieldRef` on a secondary lookup names
+    the primary lookup it depends on, so it carries no relationship of its own."""
+    unrecovered: list[Unrecovered] = []
+    decoded = _decode_lookup(field_xml(
+        "Lookup", List=OTHER_LIST_ATTR, ShowField="Code", ReadOnly="TRUE",
+        FieldRef="1b2c3d4e-0000-0000-0000-000000000000",
+    ), unrecovered)
+    assert decoded.columns == []
+    assert [u.kind for u in unrecovered] == ["lookup-projected"]
+
+
 def test_a_lookup_outside_the_read_is_still_dropped_and_named() -> None:
     unrecovered: list[Unrecovered] = []
     decoded = _decode_lookup(field_xml("Lookup", List="{guid}"), unrecovered)

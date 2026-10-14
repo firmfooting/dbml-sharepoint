@@ -363,6 +363,14 @@ def _column_type(
         # Resolved only against the lists read alongside it, because a `ref`
         # to the wrong table is worse than none. `LookupMulti` reads back over
         # the Lookup FieldTypeKind, so it shares this arm at array arity.
+        if raw.primary_lookup:
+            unrecovered.append(Unrecovered(
+                "lookup-projected", subject,
+                f"a column projected from the lookup {raw.primary_lookup}, "
+                f"showing {raw.lookup_field!r}; declare it on that lookup's "
+                "mapping entry if you want it back.",
+            ))
+            return None
         multi = raw.sp_type == "LookupMulti"
         target = _lookup_target(raw, entity, lookup_targets)
         if target is not None:
@@ -405,7 +413,7 @@ def _lookup_target(
     raw: RawField, entity: str, lookup_targets: dict[str, str],
 ) -> str | None:
     """The entity a lookup points at, when it is one this run decodes."""
-    if raw.sp_type not in ("Lookup", "LookupMulti") or not raw.lookup_list:
+    if raw.sp_type not in ("Lookup", "LookupMulti") or not raw.lookup_list or raw.primary_lookup:
         return None
     # Microsoft Learn's Field element: `List` is the target's braced GUID, or "Self".
     if raw.lookup_list == "Self":

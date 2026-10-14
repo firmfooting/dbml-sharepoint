@@ -121,6 +121,8 @@ class RawField:
     user_selection_mode: str | None = None
     lookup_list: str | None = None
     lookup_field: str | None = None
+    #: The primary lookup a secondary (projected) lookup depends on.
+    primary_lookup: str | None = None
     formula: str | None = None
     result_type: str | None = None
     field_refs: tuple[str, ...] = ()
@@ -218,6 +220,7 @@ def parse_field_xml(xml: str) -> RawField:
         user_selection_mode=element.get("UserSelectionMode"),
         lookup_list=element.get("List"),
         lookup_field=element.get("ShowField"),
+        primary_lookup=element.get("FieldRef"),
         formula=_child_text(element, "Formula"),
         result_type=element.get("ResultType"),
         field_refs=refs,
