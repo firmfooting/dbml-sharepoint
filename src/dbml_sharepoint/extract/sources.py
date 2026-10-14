@@ -61,6 +61,8 @@ class Source:
     #: What a read structurally cannot carry, for the notes.
     capabilities: tuple[str, ...] = ()
     site_url: str = ""
+    #: True when `extract-script --site` wrote the download.
+    site_read: bool = False
 
 
 #: What a live read does not recover, whatever the list has. Read by the
@@ -118,6 +120,7 @@ def load_live_json(raw: str) -> Source:
         capabilities=LIVE_ABSENCES,
         lists=lists,
         site_url=_text(document, "siteUrl", "the download"),
+        site_read=document.get("siteRead") is True,
     )
 
 

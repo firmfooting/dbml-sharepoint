@@ -65,8 +65,18 @@ _HARNESS = textwrap.dedent(r"""
       if (u.includes('web/lists?$select=Title,Hidden')) {
         return results(CONFIG.titles.map((t) => ({ Title: t, Hidden: false })));
       }
-      if (u.includes('web/lists?$select=Hidden,IsCatalog')) return results(CONFIG.siteLists);
+      if (u.includes('web/lists?$select=Id,Hidden,IsCatalog')) return results(CONFIG.siteLists);
+      const byId = /web\/lists\(guid'([^']+)'\)\?\$select=/.exec(u);
+      if (byId) {
+        const found = (CONFIG.lists || [CONFIG.list]).find((l) => l.Id === byId[1]);
+        if (found) return reply(200, { d: found });
+        return reply(404, { error: { message: { value: 'List not found' } } });
+      }
       const byPath = /GetList\(@listUrl\)\?@listUrl='([^']+)'/.exec(u);
+      if (byPath && CONFIG.getListRefuses) {
+        const refused = 'Cannot find resource for the request sites.';
+        return reply(404, { error: { message: { value: refused } } });
+      }
       if (byPath) {
         const found = (CONFIG.lists || [CONFIG.list]).find((l) => l.Path === byPath[1]);
         if (!found) {
@@ -224,28 +234,39 @@ def test_a_field_page_without_results_aborts_extraction(
     assert "lists" not in result
 
 
-def _site_entry(path: str, *, hidden: bool = False, catalog: bool = False) -> dict[str, object]:
-    return {"Hidden": hidden, "IsCatalog": catalog, "RootFolder": {"ServerRelativeUrl": path}}
+def _site_entry(
+    path: str, list_id: str = "", *, hidden: bool = False, catalog: bool = False,
+) -> dict[str, object]:
+    return {
+        "Id": list_id, "Hidden": hidden, "IsCatalog": catalog,
+        "RootFolder": {"ServerRelativeUrl": path},
+    }
 
 
 def test_a_site_read_extracts_every_visible_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """Hidden lists and catalogues are the platform's own, not the site's
-    data, so a site read skips them and reads the rest by path."""
+    data, so a site read skips them and reads the rest by the id the
+    enumeration returned. GetList refused a path holding a space live."""
     config = _config()
-    other_path = f"{WEB}/Lists/PT_Project"
+    other_path = f"{WEB}/Lists/Action Register"
+    other_id = "aaaaaaaa-0000-0000-0000-000000000002"
     assert isinstance(config["list"], dict)
-    other = {**config["list"], "Title": "PT_Project", "Path": other_path}
+    first_id = config["list"]["Id"]
+    assert isinstance(first_id, str)
+    other = {**config["list"], "Id": other_id, "Title": "Action Register", "Path": other_path}
     config["lists"] = [config["list"], other]
+    config["getListRefuses"] = True
     config["siteLists"] = [
-        _site_entry(LIST_PATH),
-        _site_entry(other_path),
+        _site_entry(LIST_PATH, first_id),
+        _site_entry(other_path, other_id),
         _site_entry(f"{WEB}/Lists/Workflow History", hidden=True),
         _site_entry(f"{WEB}/_catalogs/masterpage", catalog=True),
     ]
     monkeypatch.setattr(__name__ + "._config", lambda: config)
     result, out = _run_script(None)
     assert "__THREW__" not in out, out
-    assert [entry["title"] for entry in result["lists"]] == [LIST_TITLE, "PT_Project"]
+    assert [entry["title"] for entry in result["lists"]] == [LIST_TITLE, "Action Register"]
+    assert result["siteRead"].value is True
 
 
 def test_a_site_with_no_visible_lists_downloads_nothing(

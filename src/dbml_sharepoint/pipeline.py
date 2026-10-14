@@ -844,11 +844,11 @@ def execute_extraction(
 
     if project is not None:
         check_identifier(project, "--project")
-    # One list lands in its own folder; several came from a site read, which
-    # `extract-script --site` seeded in a folder named after the site.
+    # A site read, or any download of several lists, lands in the folder
+    # `extract-script --site` seeded, named after the site.
+    by_site = loaded.site_read or len(loaded.lists) > 1
     root = out if out is not None else folder_for_download(
-        source,
-        loaded.lists[0].title if len(loaded.lists) == 1 else site_slug(loaded.site_url),
+        source, site_slug(loaded.site_url) if by_site else loaded.lists[0].title,
     )
     _refuse_existing_project(root, force=force)
 

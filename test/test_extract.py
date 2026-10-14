@@ -1691,6 +1691,25 @@ def test_extract_of_a_site_download_lands_in_the_sites_folder(
     assert (tmp_path / "Risk" / NOTES_RELPATH).is_file()
 
 
+def test_a_site_read_of_one_list_still_lands_in_the_sites_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The download says it was a site read, so a site with one visible list
+    joins the folder `--site` seeded rather than nesting the list's."""
+    folder = tmp_path / "Risk"
+    folder.mkdir()
+    payload = {**_site_payload(), "siteRead": True}
+    lists = payload["lists"]
+    assert isinstance(lists, list)
+    payload["lists"] = lists[:1]
+    source = folder / site_download_name(SITE_URL)
+    source.write_text(json.dumps(payload), newline="\n")
+    monkeypatch.chdir(folder)
+
+    assert _run("extract", source.name).exit_code == 0
+    assert (folder / NOTES_RELPATH).is_file()
+
+
 def test_extract_joins_the_site_folder_the_download_is_already_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
