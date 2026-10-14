@@ -33,7 +33,7 @@ they are corrected below rather than repeated.
 | Idempotent re-run | Documented delta provisioning: reapplying updates rather than duplicates | Documented non-destructive re-run, **except** a field/column added without a pinned `id` risks re-creation on the next run | Undocumented for repeated `POST` list/column creation | Yes: read-verify-reconcile, the deployer's own design |
 | Unattended CI suitability | Yes, with app-only auth | Yes, with SharePoint-admin service credentials or app-only REST | Yes, built for it | No, interactive browser-console paste, by design |
 | Content-type support | Yes | Yes (`createContentType`, `addContentType`, `addContentTypesFromHub`) | Partial: `contentTypes` is a documented relationship on `list` | No, not part of this tool's model |
-| Extraction from an existing site | Yes, `Get-PnPSiteTemplate` | Partial: `Get-SPOSiteScriptFromList` extracts one list, not a whole site | No comparable feature | Partial: `extract` recovers a draft schema and mapping from one list, and itemises what it could not |
+| Extraction from an existing site | Yes, `Get-PnPSiteTemplate` | Partial: `Get-SPOSiteScriptFromList` extracts one list, not a whole site | No comparable feature | Partial: `extract` recovers a draft schema and mapping from one list or every visible list on a site, and itemises what it could not |
 | Official vs. community | Community project; "no SLA for the open-source tool support from Microsoft" | Official Microsoft feature | Official Microsoft API | This project (community, MIT-licensed) |
 | Maintenance status | Active, but the provisioning engine is mid-migration to PnP Core SDK (below) | Actively maintained | Actively maintained, Microsoft's primary automation surface | Active |
 
@@ -42,13 +42,13 @@ they are corrected below rather than repeated.
 **Where it wins.** PnP's provisioning engine reads and writes a template
 that covers content types, site columns, tenant-wide look-and-feel, and
 **extraction from a live site** with `Get-PnPSiteTemplate`. This tool's
-`extract` reads one list at a time and produces a draft to edit rather
-than a template to reapply, so there is still no equivalent to "point PnP
-at an existing site and get a template back". Delta provisioning is a
-documented platform feature of the engine itself: "You can apply
-provisioning templates on top of existing sites. The provisioning engine
-supports delta provisioning, and, as such, will add/update sites based on
-whichever scope is provided" ([PnP provisioning
+`extract` reads one list, or every visible list on a site, and produces a
+draft to edit rather than a template to reapply, so there is still no
+equivalent to "point PnP at an existing site and get a template back".
+Delta provisioning is a documented platform feature of the engine itself:
+"You can apply provisioning templates on top of existing sites. The
+provisioning engine supports delta provisioning, and, as such, will
+add/update sites based on whichever scope is provided" ([PnP provisioning
 framework](https://learn.microsoft.com/sharepoint/dev/solution-guidance/pnp-provisioning-framework)).
 With an app-only credential (certificate or client secret), it runs
 unattended in CI, which this tool's browser-paste model cannot.
