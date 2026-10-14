@@ -68,6 +68,7 @@ from dbml_sharepoint.extract.run import (
 )
 from dbml_sharepoint.extract.run import write as write_extraction
 from dbml_sharepoint.extract.sources import load_source
+from dbml_sharepoint.generators.extractgen import site_slug
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
@@ -843,11 +844,11 @@ def execute_extraction(
 
     if project is not None:
         check_identifier(project, "--project")
-    # The FIRST list's title. A download this tool generates carries exactly
-    # one, and a hand-assembled one carrying several has no single folder it
-    # could be named after; `--out` is the answer there.
+    # One list lands in its own folder; several came from a site read, which
+    # `extract-script --site` seeded in a folder named after the site.
     root = out if out is not None else folder_for_download(
-        source, loaded.lists[0].title,
+        source,
+        loaded.lists[0].title if len(loaded.lists) == 1 else site_slug(loaded.site_url),
     )
     _refuse_existing_project(root, force=force)
 

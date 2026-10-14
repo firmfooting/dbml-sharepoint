@@ -143,7 +143,7 @@ file is still parsed whole, so a malformed line is refused either way.
 ### `extract_script`
 
 ```python
-def extract_script(url: str = ..., out: Path | None = ...) -> None
+def extract_script(url: str | None = ..., site: str | None = ..., out: Path | None = ...) -> None
 ```
 
 Generate the read-only browser-paste script that reads a live list.
@@ -159,6 +159,9 @@ and mapping, so both halves of the flow keep one directory.
 Paste the emitted file into the browser console on that site. It
 downloads the list's field definitions as JSON; feed that JSON to
 `dbml-sharepoint extract` to get a draft schema and mapping.
+
+With --site instead of a list URL, the script reads every visible list
+on the site, found when it runs, into one download.
 
 Every request the script makes is a GET. It carries no write helpers.
 

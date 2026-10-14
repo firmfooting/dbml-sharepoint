@@ -99,7 +99,7 @@ KNOWN_CONTEXT = {
     "deployment_log_columns", "deployment_log_change_columns",
     "deployment_log_change_optional_columns",
     # extractgen, for extract.js
-    "list_paths", "live_format", "download_name",
+    "list_paths", "site_read", "live_format", "download_name",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
     # reason extract.js has none. BOTH halves of that URL are passed:

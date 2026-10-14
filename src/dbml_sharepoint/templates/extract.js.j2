@@ -25,7 +25,7 @@
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
-  const LIST_PATHS = {{ list_paths | tojson(indent=2) }};
+  const LIST_PATHS = {{ (none if site_read else list_paths) | tojson(indent=2) }};
   const FORMAT = {{ live_format | tojson }};
   const DOWNLOAD_NAME = {{ download_name | tojson }};
   const GENERATED_AT = {{ generated_at | tojson }};
@@ -121,8 +121,26 @@
     };
   }
 
+  // A site read finds its lists here. Hidden lists and catalogues are the
+  // platform's own, and reading them would only add tables to delete.
+  let paths = LIST_PATHS;
+  if (paths === null) {
+    const rows = await getAll(
+      'web/lists?$select=Hidden,IsCatalog,RootFolder/ServerRelativeUrl&$expand=RootFolder&$top=5000',
+      'list enumeration',
+    );
+    paths = rows.filter((l) => !l.Hidden && !l.IsCatalog)
+      .map((l) => l.RootFolder && l.RootFolder.ServerRelativeUrl)
+      .filter((p) => typeof p === 'string' && p);
+    log('INFO', `Site read: ${paths.length} visible list(s).`);
+    if (!paths.length) {
+      log('ERROR', 'Nothing was downloaded. This site has no visible lists to read.');
+      return { aborted: 'no-lists' };
+    }
+  }
+
   const lists = [];
-  for (const path of LIST_PATHS) {
+  for (const path of paths) {
     try {
       lists.push(await readList(path));
     } catch (err) {

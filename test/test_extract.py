@@ -97,6 +97,7 @@ from dbml_sharepoint.generators.extractgen import (
     NoListsError,
     download_name,
     generate_extract_js,
+    site_download_name,
     slug_from_path,
 )
 from dbml_sharepoint.jsonvalue import JsonValue
@@ -1425,6 +1426,28 @@ def test_the_extract_script_parses_under_node() -> None:
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def test_a_site_script_finds_its_lists_at_run_time() -> None:
+    """No paths means every visible list on the web, so a list added by hand
+    since the last deploy is read too."""
+    js = generate_extract_js(
+        site_url="https://example.sharepoint.com/sites/risk",
+        list_paths=None, generated_at=GENERATED_AT,
+    )
+    assert "const LIST_PATHS = null;" in js
+    assert "RootFolder/ServerRelativeUrl&$expand=RootFolder" in js
+    assert "IsCatalog" in js
+    assert '"risk-site-extract.json"' in js
+
+
+@pytest.mark.parametrize(("site", "expected"), [
+    ("https://contoso.sharepoint.com/sites/Risk", "Risk-site-extract.json"),
+    ("https://contoso.sharepoint.com/sites/Risk/", "Risk-site-extract.json"),
+    ("https://contoso.sharepoint.com", DEFAULT_DOWNLOAD_NAME),
+])
+def test_a_site_download_is_named_after_the_site(site: str, expected: str) -> None:
+    assert site_download_name(site) == expected
+
+
 # --- The command surface ---------------------------------------------------
 
 
@@ -1616,6 +1639,70 @@ def test_extract_script_refuses_a_url_that_is_not_one(
     result = _run("extract-script", "not a url")
     assert result.exit_code != 0
     assert list(tmp_path.iterdir()) == []
+
+
+def test_extract_script_site_reads_the_whole_site(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--site` seeds a folder named after the site, and the script in it
+    finds its lists when it runs."""
+    monkeypatch.chdir(tmp_path)
+    result = _run("extract-script", "--site", SITE_URL)
+    assert result.exit_code == 0, result.output
+    folder = tmp_path / "Risk"
+    assert "const LIST_PATHS = null;" in (folder / EXTRACT_SCRIPT).read_text(encoding="utf-8")
+    assert (folder / README_FILENAME).is_file()
+    assert site_download_name(SITE_URL) in result.output
+
+
+@pytest.mark.parametrize("args", [
+    ("extract-script", LIST_URL, "--site", SITE_URL),
+    ("extract-script",),
+])
+def test_extract_script_takes_a_list_or_a_site(
+    args: tuple[str, ...], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = _run(*args)
+    assert result.exit_code != 0
+    assert "--site" in result.output
+    assert list(tmp_path.iterdir()) == []
+
+
+def _site_payload() -> dict[str, JsonValue]:
+    """The fixture's list twice under two titles, as a site read returns it."""
+    payload = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    second = {**payload["lists"][0], "title": "CT_Other"}
+    return {**payload, "siteUrl": SITE_URL, "lists": [payload["lists"][0], second]}
+
+
+def test_extract_of_a_site_download_lands_in_the_sites_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A download describing several lists has no one list to be named
+    after, so it lands where `extract-script --site` seeded the script."""
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "downloads" / site_download_name(SITE_URL)
+    source.parent.mkdir()
+    source.write_text(json.dumps(_site_payload()), newline="\n")
+
+    result = _run("extract", str(source))
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "Risk" / NOTES_RELPATH).is_file()
+
+
+def test_extract_joins_the_site_folder_the_download_is_already_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = tmp_path / "Risk"
+    folder.mkdir()
+    source = folder / site_download_name(SITE_URL)
+    source.write_text(json.dumps(_site_payload()), newline="\n")
+    monkeypatch.chdir(folder)
+
+    assert _run("extract", source.name).exit_code == 0
+    assert (folder / NOTES_RELPATH).is_file()
+    assert not (folder / "Risk").exists()
 
 
 # --- The wizard -------------------------------------------------------------

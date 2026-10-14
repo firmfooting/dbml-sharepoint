@@ -32,12 +32,17 @@ from dbml_sharepoint.catalogue import (
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
     README_FILENAME,
+    Seeded,
     folder_for,
     seed,
 )
 from dbml_sharepoint.extract.list_url import ListUrlError, parse_list_url
 from dbml_sharepoint.extract.wizard import run_extract_wizard
-from dbml_sharepoint.generators.extractgen import EXTRACT_SCRIPT, download_name
+from dbml_sharepoint.generators.extractgen import (
+    EXTRACT_SCRIPT,
+    download_name,
+    site_download_name,
+)
 from dbml_sharepoint.generators.identifygen import (
     DEFAULT_DOWNLOAD_NAME,
     IDENTIFY_SCRIPT,
@@ -523,16 +528,21 @@ def report(
 
 @app.command("extract-script")
 def extract_script(
-    url: str = typer.Argument(
-        ...,
+    url: str | None = typer.Argument(
+        None,
         help="The list's URL, copied from the browser address bar with the "
         "list open, e.g. https://contoso.sharepoint.com/sites/Projects/Lists/"
         "PT_Project/AllItems.aspx",
     ),
+    site: str | None = typer.Option(
+        None,
+        help="Read every visible list on this site instead of one list, e.g. "
+        "https://contoso.sharepoint.com/sites/Projects",
+    ),
     out: Path | None = typer.Option(
         None,
         help="Where to write the script, with the readme beside it. Default: "
-        f"<list name>/{EXTRACT_SCRIPT}",
+        f"<list name>/{EXTRACT_SCRIPT}, or <site name>/{EXTRACT_SCRIPT} with --site",
     ),
 ) -> None:
     """Generate the read-only browser-paste script that reads a live list.
@@ -549,17 +559,32 @@ def extract_script(
     downloads the list's field definitions as JSON; feed that JSON to
     `dbml-sharepoint extract` to get a draft schema and mapping.
 
+    With --site instead of a list URL, the script reads every visible list
+    on the site, found when it runs, into one download.
+
     Every request the script makes is a GET. It carries no write helpers.
     """
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    if site is not None and url is None:
+        used = validate_site_url(site)
+        seeded = seed(
+            list_title="", list_path=None, site_url=used,
+            generated_at=generated_at, script=out,
+        )
+        download = site_download_name(used)
+        typer.echo(f"Reading every visible list on {used}.")
+        _report_seeded(seeded, used, download)
+        return
+    if url is None or site is not None:
+        raise typer.BadParameter("pass a list URL or --site, and not both.")
     try:
         target = parse_list_url(url)
     except ListUrlError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+        raise typer.BadParameter(f"{exc} To read every list, pass --site.") from exc
     # Still asked of `validate_site_url`, which owns what a usable site URL
     # is, so the split half meets the same rule an operator-typed one does.
     used = validate_site_url(target.site_url)
 
-    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     seeded = seed(
         list_title=target.list_title,
         list_path=target.list_path,
@@ -568,6 +593,11 @@ def extract_script(
         script=out,
     )
     typer.echo(f"Reading the list at {target.list_path!r} on {used}.")
+    _report_seeded(seeded, used, download_name([target.list_title]))
+
+
+def _report_seeded(seeded: Seeded, used: str, download: str) -> None:
+    """Say what extract-script wrote and what to do with the download."""
     typer.echo(
         f"Wrote {seeded.script}. Open it, copy all of it, and paste it into the "
         f"browser console on {used}. It makes no changes.",
@@ -576,7 +606,6 @@ def extract_script(
         typer.echo(f"Wrote {seeded.readme}, which has the rest of the procedure.")
     else:
         typer.echo(f"Left the {README_FILENAME} already in {seeded.folder} alone.")
-    download = download_name([target.list_title])
     typer.echo(
         f"The script downloads {download}. Save it into {seeded.folder}, then "
         f"run: dbml-sharepoint extract {seeded.folder / download}",

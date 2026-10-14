@@ -65,12 +65,14 @@ _HARNESS = textwrap.dedent(r"""
       if (u.includes('web/lists?$select=Title,Hidden')) {
         return results(CONFIG.titles.map((t) => ({ Title: t, Hidden: false })));
       }
+      if (u.includes('web/lists?$select=Hidden,IsCatalog')) return results(CONFIG.siteLists);
       const byPath = /GetList\(@listUrl\)\?@listUrl='([^']+)'/.exec(u);
       if (byPath) {
-        if (byPath[1] !== CONFIG.list.Path) {
+        const found = (CONFIG.lists || [CONFIG.list]).find((l) => l.Path === byPath[1]);
+        if (!found) {
           return reply(404, { error: { message: { value: 'List not found' } } });
         }
-        return reply(200, { d: CONFIG.list });
+        return reply(200, { d: found });
       }
       if (u.includes('/fields?')) {
         const d = { results: CONFIG.fields, ...CONFIG.fieldPage };
@@ -105,7 +107,7 @@ def _config() -> dict[str, object]:
 Run = tuple[Json, str]
 
 
-def _run_script(list_paths: list[str]) -> Run:
+def _run_script(list_paths: list[str] | None) -> Run:
     """Run the emitted extract script against the mock and return its result."""
     body = generate_extract_js(
         site_url=SITE, list_paths=list_paths, generated_at=GENERATED_AT,
@@ -220,3 +222,38 @@ def test_a_field_page_without_results_aborts_extraction(
     assert result["aborted"] == "list-read-failed"
     assert "without a d.results array" in output
     assert "lists" not in result
+
+
+def _site_entry(path: str, *, hidden: bool = False, catalog: bool = False) -> dict[str, object]:
+    return {"Hidden": hidden, "IsCatalog": catalog, "RootFolder": {"ServerRelativeUrl": path}}
+
+
+def test_a_site_read_extracts_every_visible_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hidden lists and catalogues are the platform's own, not the site's
+    data, so a site read skips them and reads the rest by path."""
+    config = _config()
+    other_path = f"{WEB}/Lists/PT_Project"
+    assert isinstance(config["list"], dict)
+    other = {**config["list"], "Title": "PT_Project", "Path": other_path}
+    config["lists"] = [config["list"], other]
+    config["siteLists"] = [
+        _site_entry(LIST_PATH),
+        _site_entry(other_path),
+        _site_entry(f"{WEB}/Lists/Workflow History", hidden=True),
+        _site_entry(f"{WEB}/_catalogs/masterpage", catalog=True),
+    ]
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, out = _run_script(None)
+    assert "__THREW__" not in out, out
+    assert [entry["title"] for entry in result["lists"]] == [LIST_TITLE, "PT_Project"]
+
+
+def test_a_site_with_no_visible_lists_downloads_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config["siteLists"] = [_site_entry(f"{WEB}/_catalogs/masterpage", catalog=True)]
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, out = _run_script(None)
+    assert result["aborted"] == "no-lists"
+    assert "Nothing was downloaded" in out
