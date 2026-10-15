@@ -27,11 +27,19 @@ move the cycle rather than close it.
 SYSTEM_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'ID', 'Modified'})
 ```
 
-### `INDEXABLE_BUILTINS`
+### `BUILTIN_COLUMN_TYPES`
 
 ```python
-INDEXABLE_BUILTINS = ('Created', 'Author', 'Modified', 'Editor')
+BUILTIN_COLUMN_TYPES = {'Created': 'datetime', 'Modified': 'datetime', 'Author': 'person', 'Editor': 'person'}
 ```
+
+### `is_declared_builtin`
+
+```python
+def is_declared_builtin(col: Column) -> bool
+```
+
+A column named for a built-in that carries the built-in's type.
 
 ### `LIBRARY_COLUMNS`
 

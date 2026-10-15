@@ -48,13 +48,20 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
-def test_built_in_columns_can_be_indexed_without_being_declared(tmp_path: Path) -> None:
+def test_a_declared_built_in_column_is_indexed_and_never_created(tmp_path: Path) -> None:
     schema, bundle = pack(
         tmp_path,
-        dbml=table("Risk", ID_PK, "Status nvarchar", "indexes { `Created` `Author` Status }"),
+        dbml=table(
+            "Risk", ID_PK, "Status nvarchar", "Created datetime", "Author person",
+            "indexes { Created Author Status }",
+        ),
         mapping=entities("Risk"),
     )
     output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    created = str(output["lists"][0]["fields_phase1"])
+    assert "'Created'" not in created
+    assert "'Author'" not in created
+    assert "'Status'" in created
     assert output["indexed_columns"] == [
         {"list": "APP_Risk", "field": "Created"},
         {"list": "APP_Risk", "field": "Author"},

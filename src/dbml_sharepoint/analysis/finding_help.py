@@ -1212,8 +1212,7 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.INDEX_COLUMN_NOT_RENDERED: (
         "An `indexes { }` entry names a column the deploy never "
-        "creates. Only the built-in columns Created, Author, Modified "
-        "and Editor may be indexed undeclared."
+        "creates."
     ),
     FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE: (
         "An `indexes { }` entry names a column of a type SharePoint "

@@ -17,7 +17,7 @@ move the cycle rather than close it.
 from collections.abc import Iterable
 
 from dbml_sharepoint.model.mapping_types import EntityKind
-from dbml_sharepoint.model.parser import Table
+from dbml_sharepoint.model.parser import Column, Table
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
 # references and view/form field lists may name them; they are never
@@ -26,11 +26,17 @@ from dbml_sharepoint.model.parser import Table
 # for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
-# The built-ins an `indexes { }` entry may name without declaring them. They
-# are written in DBML as backticked expressions (`Created`), because a bare
-# name is refused by the DBML parser when no column of that name is declared.
-# Internal names only, as for every declared column.
-INDEXABLE_BUILTINS: tuple[str, ...] = ("Created", "Author", "Modified", "Editor")
+# Built-in columns a blueprint may declare so that `indexes { }` can name them
+# (DBML only indexes a declared column). The deploy never creates, alters or
+# deletes one; the declared type must be the one SharePoint gives it.
+BUILTIN_COLUMN_TYPES: dict[str, str] = {
+    "Created": "datetime", "Modified": "datetime", "Author": "person", "Editor": "person",
+}
+
+
+def is_declared_builtin(col: Column) -> bool:
+    """A column named for a built-in that carries the built-in's type."""
+    return BUILTIN_COLUMN_TYPES.get(col.name) == col.type
 
 # The file-identity column a document library has and a list does not. An
 # uploaded file's Title is null (MEASURED 2026-07-29,

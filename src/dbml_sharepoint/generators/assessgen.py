@@ -24,7 +24,7 @@ from dbml_sharepoint.analysis.limits import (
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin, rendered_columns
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
@@ -62,6 +62,8 @@ def _declared_unique_columns(
         if col.name in cross_site_cols:
             continue
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
+            continue
+        if is_declared_builtin(col):
             continue
         if col.name == "Title":
             if col.unique:

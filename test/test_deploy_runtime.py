@@ -4370,7 +4370,7 @@ def test_an_undeclared_built_in_column_is_indexed_by_field_id(tmp_path: Path) ->
     """`Created` is never created or reconciled, yet the index phase MERGEs it by Id."""
     body = _declared_deploy_js(
         tmp_path, "", self_reference=True,
-        extra_lines=("indexes {", "(Note)", "`Created`", "}"),
+        extra_lines=("Created datetime", "indexes {", "(Note)", "Created", "}"),
     ).rstrip()
     output = _run(
         f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"

@@ -306,7 +306,7 @@ def test_a_misspelled_enum_array_is_still_an_unknown_type() -> None:
     assert "audit_event" in finding.message
 
 def test_reserved_author_is_error() -> None:
-    schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
+    schema = make_schema(make_table("PaperRegister", make_column("Author", "nvarchar")))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert finding.severity == "error"
     assert finding.location == Location(
@@ -877,28 +877,21 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     assert finding.severity == "error"
     assert "Task" in finding.message
 
-def test_indexing_an_undeclared_built_in_column_is_accepted() -> None:
-    schema = make_schema(
-        make_table(
-            "Task", make_column("Title"),
-            indexes=["Created", "Author", "Modified", "Editor"],
-        ),
-    )
-    bundle = make_bundle(entities=["Task"])
-    assert not [
-        f for f in validate_against_mapping(schema, bundle)
-        if f.code is FindingCode.INDEX_COLUMN_NOT_RENDERED
-    ]
+def test_a_declared_built_in_column_of_its_own_type_is_valid() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"),
+        make_column("Created", "datetime"), make_column("Author", "person"),
+        make_column("Modified", "datetime"), make_column("Editor", "person"),
+        indexes=["Created", "Author", "Modified", "Editor"],
+    ))
+    assert FindingCode.RESERVED_COLUMN_NAME not in [f.code for f in validate(schema)]
 
 
-@pytest.mark.parametrize("name", ["Created By", "Version", "ID", "Nope"])
-def test_indexing_any_other_undeclared_column_names_the_allowed_built_ins(name: str) -> None:
-    schema = make_schema(make_table("Task", make_column("Title"), indexes=[name]))
-    finding = only(
-        validate_against_mapping(schema, make_bundle(entities=["Task"])),
-        FindingCode.INDEX_COLUMN_NOT_RENDERED,
-    )
-    assert "Created, Author, Modified, Editor" in finding.message
+@pytest.mark.parametrize(("name", "wrong"), [("Created", "nvarchar"), ("Author", "datetime")])
+def test_a_declared_built_in_column_of_the_wrong_type_is_refused(name: str, wrong: str) -> None:
+    schema = make_schema(make_table("Task", make_column("Title"), make_column(name, wrong)))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "may be declared only so it can be indexed" in finding.message
 
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:

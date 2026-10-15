@@ -231,7 +231,7 @@ dbml-sharepoint explain unknown_column_type
 | `identity_redeclares_builtin` | error | `identities:` declares `enterprise_reader`, `automation` or `operator`. These are built in; enrol them without declaring them. |
 | `identity_unknown` | error | `enroll` or `enroll_during_run` names an identity that is neither built in nor declared under `identities:`. |
 | `illegal_column_name_character` | error | A column name contains a character SharePoint rejects. |
-| `index_column_not_rendered` | error | An `indexes { }` entry names a column the deploy never creates. Only the built-in columns Created, Author, Modified and Editor may be indexed undeclared. |
+| `index_column_not_rendered` | error | An `indexes { }` entry names a column the deploy never creates. |
 | `index_column_type_unindexable` | error | An `indexes { }` entry names a column of a type SharePoint cannot index. |
 | `index_duplicates_unique_column` | error | An `indexes { }` entry names a column that already carries an implicit index from its `[unique]` setting. |
 | `index_limit_approaching` | warning | A list has reached 18 of its 20 indexes. SharePoint creates indexes by itself -- opening a sorted view on an unindexed column adds one -- and those are invisible to this build, so leave headroom. |

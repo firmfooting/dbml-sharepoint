@@ -10,6 +10,10 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME
+from dbml_sharepoint.analysis.rendered_columns import (
+    BUILTIN_COLUMN_TYPES,
+    is_declared_builtin,
+)
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_types import FoldersFromEnum, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
@@ -144,7 +148,13 @@ def _check_column(
     is_pk_id = name == "Id" and col.is_pk and col.is_auto_increment
     is_title = name == "Title"
 
-    if name in RESERVED_NAMES and not is_pk_id:
+    if name in BUILTIN_COLUMN_TYPES and not is_declared_builtin(col):
+        findings.append(_report(
+            FindingCode.RESERVED_COLUMN_NAME, at,
+            f"reserved column name. A built-in may be declared only so it can "
+            f"be indexed, and only as type {BUILTIN_COLUMN_TYPES[name]!r}.",
+        ))
+    elif name in RESERVED_NAMES and not is_pk_id and not is_declared_builtin(col):
         findings.append(_report(
             FindingCode.RESERVED_COLUMN_NAME, at, "reserved column name.",
         ))
