@@ -16,7 +16,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
 )
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_types import FoldersFromEnum, MappingBundle
-from dbml_sharepoint.model.parser import Column, Schema
+from dbml_sharepoint.model.parser import Column, Schema, Table
 from dbml_sharepoint.model.release import Release
 
 # Hard-error reserved names. Note: 'Title' is special-cased (PATCH existing
@@ -97,6 +97,8 @@ def validate(schema: Schema) -> list[Finding]:
             seen_columns.add(col.name)
 
             findings.extend(_check_column(table.name, col, table_names, enum_members))
+            if is_declared_builtin(col):
+                findings.extend(_check_declared_builtin(table, col, enum_members))
 
     seen_enums: set[str] = set()
     referenced_enums = _collect_referenced_enums(schema)
@@ -139,6 +141,27 @@ def validate(schema: Schema) -> list[Finding]:
     return findings
 
 
+def _check_declared_builtin(
+    table: Table, col: Column, enums: dict[str, list[str]],
+) -> list[Finding]:
+    """A declared built-in exists only to be indexed, and only as its own type."""
+    at = Location(Section.SCHEMA, entity=table.name, column=col.name)
+    findings: list[Finding] = []
+    if col.type in enums:
+        findings.append(_report(
+            FindingCode.RESERVED_COLUMN_NAME, at,
+            f"an enum named {col.type!r} shadows the type the built-in "
+            f"{col.name!r} must be declared with.",
+        ))
+    if not any(col.name in index.columns for index in table.indexes):
+        findings.append(_report(
+            FindingCode.RESERVED_COLUMN_NAME, at,
+            f"the built-in {col.name!r} is declared but never indexed; "
+            f"declaring it is only allowed so an indexes {{ }} entry can name it.",
+        ))
+    return findings
+
+
 def _check_column(
     table: str, col: Column, tables: set[str], enums: dict[str, list[str]],
 ) -> list[Finding]:
@@ -156,11 +179,13 @@ def _check_column(
         ))
     elif is_declared_builtin(col) and (
         col.unique or col.required or col.default is not None or col.is_pk
+        or col.ref is not None or col.is_auto_increment
     ):
         findings.append(_report(
             FindingCode.RESERVED_COLUMN_NAME, at,
-            "a declared built-in takes no [unique], [pk], not null or default; the "
-            "deploy never writes the field, so they would be ignored.",
+            "a declared built-in takes no settings but a note ([unique], [pk], "
+            "increment, ref, not null or default); the deploy never writes the "
+            "field, so they would be ignored.",
         ))
     elif name in RESERVED_NAMES and not is_pk_id and not is_declared_builtin(col):
         findings.append(_report(

@@ -912,6 +912,7 @@ def test_a_declared_built_in_refuses_settings_the_deploy_would_ignore(
             make_column("Created", "datetime", unique=unique, required=required, default=default),
             is_pk=pk,
         ),
+        indexes=["Created"],
     ))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert "would be ignored" in finding.message
@@ -982,6 +983,37 @@ def test_the_data_dictionary_lists_a_declared_built_in_once() -> None:
     )
     rows = dictionary_rows(_builtin_task(), bundle, "default")
     assert [row.column for _, row in rows].count("Created") == 1
+
+
+def test_a_declared_built_in_may_not_be_shadowed_by_an_enum_of_its_type_name() -> None:
+    schema = make_schema(
+        make_table(
+            "Task", make_column("Title"), make_column("Created", "datetime"),
+            indexes=["Created"],
+        ),
+        enums=[make_enum("datetime", "A", "B")],
+    )
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "shadows" in finding.message
+
+
+def test_a_declared_built_in_may_not_carry_a_ref() -> None:
+    schema = make_schema(
+        make_table("Other", make_column("Title")),
+        make_table(
+            "Task", make_column("Title"),
+            make_column("Author", "person", ref="Other.Id"), indexes=["Author"],
+        ),
+    )
+    assert "ref" in only(validate(schema), FindingCode.RESERVED_COLUMN_NAME).message
+
+
+def test_a_declared_built_in_must_be_indexed() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime", note="n"),
+    ))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "never indexed" in finding.message
 
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
