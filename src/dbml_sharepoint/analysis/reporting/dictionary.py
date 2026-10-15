@@ -19,6 +19,7 @@ from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.derived import derived_output_names
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
+from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin
 from dbml_sharepoint.analysis.report_columns import (
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
@@ -256,6 +257,8 @@ def column_rows_for_table(
     retired = bundle.mapping.retired_columns.get(table.name, {})
     rows: list[DictionaryRow] = []
     for col in table.columns:
+        if is_declared_builtin(col):
+            continue
         populated, rule = _form_behaviour_cells(table.name, col.name, bundle)
         spec = retired.get(col.name)
         # The bare-list declaration form carries no date; "yes" still says

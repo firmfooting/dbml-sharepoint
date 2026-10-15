@@ -933,6 +933,57 @@ def test_a_declared_built_in_is_not_demo_writable() -> None:
     assert "Created" in finding.message
 
 
+def _builtin_task() -> Schema:
+    return make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime"),
+        indexes=["Created"], note="Task.",
+    ))
+
+
+def test_a_display_name_override_on_a_declared_built_in_is_refused() -> None:
+    bundle = make_bundle(
+        entities=["Task"], display_name_mode="auto",
+        display_name_overrides={"Task": {"Created": "Made"}},
+    )
+    errors = [
+        f for f in validate_against_mapping(_builtin_task(), bundle)
+        if f.severity == "error"
+    ]
+    assert any("Created" in f.message for f in errors), errors
+
+
+def test_a_declared_built_in_does_not_collide_with_the_reporting_system_columns() -> None:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    bundle = make_bundle(
+        entities=["Task"], display_name_mode="auto",
+        reporting=ReportingOptions(system_columns=True),
+    )
+    none_of(
+        validate_against_mapping(_builtin_task(), bundle),
+        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    )
+
+
+def test_a_default_formula_on_a_declared_built_in_is_refused() -> None:
+    bundle = make_bundle(
+        entities=["Task"], default_formulas={"Task": {"Created": "=TODAY()"}},
+    )
+    errors = validate_against_mapping(_builtin_task(), bundle)
+    assert FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN in [f.code for f in errors]
+
+
+def test_the_data_dictionary_lists_a_declared_built_in_once() -> None:
+    from dbml_sharepoint.analysis.reporting.dictionary import dictionary_rows
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    bundle = make_bundle(
+        entities=["Task"], reporting=ReportingOptions(system_columns=True),
+    )
+    rows = dictionary_rows(_builtin_task(), bundle, "default")
+    assert [row.column for _, row in rows].count("Created") == 1
+
+
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's logical DBML field is expanded and never exists
     in SharePoint, so its otherwise-valid DBML index must be rejected."""

@@ -111,6 +111,9 @@ def rendered_columns(
 
     rendered: set[str] = set()
     for col in table.columns:
+        # Declared only so an index can name it; the index path reads it directly.
+        if is_declared_builtin(col):
+            continue
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
             # Skipped because SharePoint provides the identity column itself,
             # so the deploy must not create one. This used to add "SP indexes

@@ -5,7 +5,7 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.lookups import display_column_for, displays_library_name
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin, rendered_columns
 from dbml_sharepoint.analysis.report_columns import (
     report_columns_for,
     report_output_names,
@@ -193,7 +193,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # A cross-site ref is expanded to a Choice + URL pair, so the
                 # declared column never reaches the query. `_build_plans`
                 # skips the same pairs.
-                if col.name in xcols:
+                if col.name in xcols or is_declared_builtin(col):
                     continue
                 try:
                     sp = map_column(col, enum_names)
