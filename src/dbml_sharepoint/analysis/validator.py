@@ -154,6 +154,12 @@ def _check_column(
             f"reserved column name. A built-in may be declared only so it can "
             f"be indexed, and only as type {BUILTIN_COLUMN_TYPES[name]!r}.",
         ))
+    elif is_declared_builtin(col) and (col.unique or col.required or col.default is not None):
+        findings.append(_report(
+            FindingCode.RESERVED_COLUMN_NAME, at,
+            "a declared built-in takes no [unique], not null or default; the "
+            "deploy never writes the field, so they would be ignored.",
+        ))
     elif name in RESERVED_NAMES and not is_pk_id and not is_declared_builtin(col):
         findings.append(_report(
             FindingCode.RESERVED_COLUMN_NAME, at, "reserved column name.",

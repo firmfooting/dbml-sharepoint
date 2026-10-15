@@ -17,7 +17,6 @@ from dbml_sharepoint.analysis.limits import (
     MAX_FIELD_DESCRIPTION,
     MAX_TEXT_FIELD_LENGTH,
 )
-from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin
 from dbml_sharepoint.model.parser import Column, ColumnDefault
 
 type FieldKind = Literal[
@@ -588,7 +587,7 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
 
 
 def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
-    if (col.is_pk and col.is_auto_increment and col.type == "int") or is_declared_builtin(col):
+    if col.is_pk and col.is_auto_increment and col.type == "int":
         return SPField(
             name=col.name, kind="Skip", field_type_kind=None,
             required=False, unique=False, default=None, description="",

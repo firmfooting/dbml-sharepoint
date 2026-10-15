@@ -47,6 +47,7 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
+    DemoItem,
     EntityMapping,
     ItemSecurity,
     ListPermissionPolicy,
@@ -892,6 +893,37 @@ def test_a_declared_built_in_column_of_the_wrong_type_is_refused(name: str, wron
     schema = make_schema(make_table("Task", make_column("Title"), make_column(name, wrong)))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert "may be declared only so it can be indexed" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("unique", "required", "default"),
+    [(True, False, None), (False, True, None), (False, False, "x")],
+)
+def test_a_declared_built_in_refuses_settings_the_deploy_would_ignore(
+    unique: bool, required: bool, default: str | None,
+) -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"),
+        make_column("Created", "datetime", unique=unique, required=required, default=default),
+    ))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "would be ignored" in finding.message
+
+
+def test_a_declared_built_in_is_not_demo_writable() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime"), note="Task.",
+    ))
+    bundle = make_bundle(
+        entities=["Task"],
+        demo_items={"Task": [DemoItem(key="t1", values={
+            "Title": "[DEMO] a", "Created": "2026-01-01",
+        })]},
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.DEMO_COLUMN_NOT_WRITABLE,
+    )
+    assert "Created" in finding.message
 
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:

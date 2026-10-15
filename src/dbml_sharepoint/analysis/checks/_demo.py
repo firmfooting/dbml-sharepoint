@@ -7,7 +7,7 @@ import re
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import BUILTIN_COLUMN_TYPES, rendered_columns
 from dbml_sharepoint.analysis.typemap import (
     DATE_TYPES,
     TODAY_SENTINEL,
@@ -166,7 +166,10 @@ def check(vc: ValidationContext) -> list[Finding]:
         if demo_table is None or entity_name not in bundle.mapping.entities:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        demo_writable = rendered_columns(demo_table, xcols) | {"Title"}
+        # Declared built-ins exist only so an index can name them.
+        demo_writable = (
+            rendered_columns(demo_table, xcols) | {"Title"}
+        ) - set(BUILTIN_COLUMN_TYPES)
         demo_types = {c.name: c.type for c in demo_table.columns}
         columns = {c.name: c for c in demo_table.columns}
         row_positions = {row.key: position for position, row in enumerate(demo_rows)}

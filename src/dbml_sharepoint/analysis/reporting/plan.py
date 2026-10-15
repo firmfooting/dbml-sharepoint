@@ -30,6 +30,7 @@ from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
 from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import is_deployed_here
+from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin
 from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
     ITEM_URL_COLUMN,
@@ -657,6 +658,8 @@ def build_plans(
         for col in table.columns:
             if (table.name, col.name) in cross_site_keys:
                 plan.skipped.append(col.name)
+                continue
+            if is_declared_builtin(col):
                 continue
             sp = map_column(col, enum_names)
             if sp.kind != "Skip":
