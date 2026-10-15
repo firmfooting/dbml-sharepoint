@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.18.0...v0.19.0) (2026-10-15)
+
+
+### Features
+
+* **extract:** read every visible list on a site with extract-script --site ([#841](https://github.com/firmfooting/dbml-sharepoint/issues/841)) ([e21d3d5](https://github.com/firmfooting/dbml-sharepoint/commit/e21d3d514fbdc681987cc57919f13d928f01ce97))
+* **extract:** resolve lookups into lists read in the same download as refs ([#842](https://github.com/firmfooting/dbml-sharepoint/issues/842)) ([4faa5bd](https://github.com/firmfooting/dbml-sharepoint/commit/4faa5bdcb27b4cc0c83424688ec85344e76debdd))
+* **validator:** allow indexes on the built-in Created, Author, Modified and Editor columns ([#850](https://github.com/firmfooting/dbml-sharepoint/issues/850)) ([0cc71e0](https://github.com/firmfooting/dbml-sharepoint/commit/0cc71e03b0210c3656d2b1ccc5d1144d659a7d51))
+
 ## [0.18.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.17.0...v0.18.0) (2026-10-13)
 
 
