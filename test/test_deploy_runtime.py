@@ -4366,8 +4366,8 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_undeclared_built_in_column_is_indexed_by_field_id(tmp_path: Path) -> None:
-    """`Created` is never created or reconciled, yet the index phase MERGEs it by Id."""
+def test_a_declared_built_in_column_is_indexed_by_field_id(tmp_path: Path) -> None:
+    """A declared `Created` is never created or reconciled, yet the index phase MERGEs it by Id."""
     body = _declared_deploy_js(
         tmp_path, "", self_reference=True,
         extra_lines=("Created datetime", "indexes {", "(Note)", "Created", "}"),
