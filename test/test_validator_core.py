@@ -1,4 +1,5 @@
 """Validator: the shared fixtures, cross-cutting checks and the extension hook."""
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar, Literal, override
 
@@ -896,15 +897,21 @@ def test_a_declared_built_in_column_of_the_wrong_type_is_refused(name: str, wron
 
 
 @pytest.mark.parametrize(
-    ("unique", "required", "default"),
-    [(True, False, None), (False, True, None), (False, False, "x")],
+    ("unique", "required", "default", "pk"),
+    [
+        (True, False, None, False), (False, True, None, False),
+        (False, False, "x", False), (False, False, None, True),
+    ],
 )
 def test_a_declared_built_in_refuses_settings_the_deploy_would_ignore(
-    unique: bool, required: bool, default: str | None,
+    unique: bool, required: bool, default: str | None, pk: bool,
 ) -> None:
     schema = make_schema(make_table(
         "Task", make_column("Title"),
-        make_column("Created", "datetime", unique=unique, required=required, default=default),
+        replace(
+            make_column("Created", "datetime", unique=unique, required=required, default=default),
+            is_pk=pk,
+        ),
     ))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert "would be ignored" in finding.message
