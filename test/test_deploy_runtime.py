@@ -588,7 +588,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const named = (url.match(/getbyinternalnameortitle\('([^']+)'\)/) || [])[1];
         if (named === 'Title') return { d: titleField(listTitle) };
         if (named) {
-          const f = created[`${listTitle} ${named}`];
+          // The built-ins every list has from creation, never declared.
+          const f = created[`${listTitle} ${named}`] || (
+            ['Created', 'Modified', 'Author', 'Editor'].includes(named)
+              ? { ...fieldShape(listTitle, named, { FieldTypeKind: 4 }),
+                  Id: '55555555-5555-5555-5555-555555555555' }
+              : undefined
+          );
           if (!f) return { error: { code: '-2147024809, System.ArgumentException' } };
           // A derived-property probe (MaxLength, Choices, DisplayFormat...)
           // or a lookup-target probe names none of the shape columns; echo
@@ -4357,6 +4363,28 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
         f"one ChangeSet spans {len(list_ids)} lists; the list is the boundary "
         "the seal phase draws and this phase makes no wider claim"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_built_in_column_is_indexed_by_field_id(tmp_path: Path) -> None:
+    """A declared `Created` is never created or reconciled, yet the index phase MERGEs it by Id."""
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("Created datetime", "indexes {", "(Note)", "Created", "}"),
+    ).rstrip()
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(ln for ln in output.splitlines() if ln.startswith("__BATCHES__"))
+    ops = [
+        op for b in Json.loads(line.removeprefix("__BATCHES__")) for op in b["ops"]
+        if '"Indexed":true' in (op["body"] or "")
+    ]
+    assert len(ops) == 3 and all(op["method"] == "MERGE" for op in ops), output[-2000:]
+    assert any("fields(guid'55555555-5555-5555-5555-555555555555')" in op["url"] for op in ops), ops
+    assert "[ERROR]" not in output, output[-2000:]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

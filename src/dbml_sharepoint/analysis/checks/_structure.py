@@ -27,7 +27,7 @@ from dbml_sharepoint.analysis.list_description import (
 )
 from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import compute_phases
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin, rendered_columns
 from dbml_sharepoint.analysis.reporting.plan import is_projectable
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
@@ -1028,9 +1028,10 @@ def _indexable_columns(
     xcols = vc.cross_site_columns(entity_name)
     rendered = rendered_columns(table, xcols)
     columns_by_name = {col.name: col for col in table.columns}
+    declared_builtins = {col.name for col in table.columns if is_declared_builtin(col)}
     for target in targets:
         col_name = target.column
-        if col_name not in rendered:
+        if col_name not in rendered and col_name not in declared_builtins:
             hint = (
                 " (cross-site logical columns are replaced by generated "
                 "companion fields and cannot be indexed from DBML)"

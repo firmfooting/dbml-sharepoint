@@ -392,6 +392,11 @@ The supported DBML subset is intentionally narrow:
   and calculated types reject `[unique]` because SharePoint cannot enforce it.
   This follows Microsoft's documented [unique-column type
   matrix](https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns).
+- The built-in columns `Created` and `Modified` (type `datetime`) and `Author`
+  and `Editor` (type `person`) may be declared so that an entry can name them,
+  because DBML indexes only declared columns. The deploy never creates, alters
+  or deletes a declared built-in; it only sets `Indexed` on it. Any other type
+  under those names is rejected as a reserved column name.
 - A list may have at most 20 effective declared/unique indexes. Declaring the
   same column twice is an error.
 - Text, Number, Date/DateTime, Boolean, Choice, Lookup and Person columns can

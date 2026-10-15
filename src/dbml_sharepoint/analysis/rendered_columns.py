@@ -17,7 +17,7 @@ move the cycle rather than close it.
 from collections.abc import Iterable
 
 from dbml_sharepoint.model.mapping_types import EntityKind
-from dbml_sharepoint.model.parser import Table
+from dbml_sharepoint.model.parser import Column, Table
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
 # references and view/form field lists may name them; they are never
@@ -25,6 +25,18 @@ from dbml_sharepoint.model.parser import Table
 # display_names) stay strict, as do list-validation formulas (SP support
 # for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
+
+# Built-in columns a blueprint may declare so that `indexes { }` can name them
+# (DBML only indexes a declared column). The deploy never creates, alters or
+# deletes one; the declared type must be the one SharePoint gives it.
+BUILTIN_COLUMN_TYPES: dict[str, str] = {
+    "Created": "datetime", "Modified": "datetime", "Author": "person", "Editor": "person",
+}
+
+
+def is_declared_builtin(col: Column) -> bool:
+    """A column named for a built-in that carries the built-in's type."""
+    return BUILTIN_COLUMN_TYPES.get(col.name) == col.type
 
 # The file-identity column a document library has and a list does not. An
 # uploaded file's Title is null (MEASURED 2026-07-29,
@@ -99,6 +111,9 @@ def rendered_columns(
 
     rendered: set[str] = set()
     for col in table.columns:
+        # Declared only so an index can name it; the index path reads it directly.
+        if is_declared_builtin(col):
+            continue
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
             # Skipped because SharePoint provides the identity column itself,
             # so the deploy must not create one. This used to add "SP indexes

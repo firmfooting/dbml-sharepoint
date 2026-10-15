@@ -1,4 +1,5 @@
 """Validator: the shared fixtures, cross-cutting checks and the extension hook."""
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar, Literal, override
 
@@ -47,6 +48,7 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
+    DemoItem,
     EntityMapping,
     ItemSecurity,
     ListPermissionPolicy,
@@ -306,7 +308,7 @@ def test_a_misspelled_enum_array_is_still_an_unknown_type() -> None:
     assert "audit_event" in finding.message
 
 def test_reserved_author_is_error() -> None:
-    schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
+    schema = make_schema(make_table("PaperRegister", make_column("Author", "nvarchar")))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert finding.severity == "error"
     assert finding.location == Location(
@@ -876,6 +878,143 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     )
     assert finding.severity == "error"
     assert "Task" in finding.message
+
+def test_a_declared_built_in_column_of_its_own_type_is_valid() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"),
+        make_column("Created", "datetime"), make_column("Author", "person"),
+        make_column("Modified", "datetime"), make_column("Editor", "person"),
+        indexes=["Created", "Author", "Modified", "Editor"],
+    ))
+    assert FindingCode.RESERVED_COLUMN_NAME not in [f.code for f in validate(schema)]
+
+
+@pytest.mark.parametrize(("name", "wrong"), [("Created", "nvarchar"), ("Author", "datetime")])
+def test_a_declared_built_in_column_of_the_wrong_type_is_refused(name: str, wrong: str) -> None:
+    schema = make_schema(make_table("Task", make_column("Title"), make_column(name, wrong)))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "may be declared only so it can be indexed" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("unique", "required", "default", "pk"),
+    [
+        (True, False, None, False), (False, True, None, False),
+        (False, False, "x", False), (False, False, None, True),
+    ],
+)
+def test_a_declared_built_in_refuses_settings_the_deploy_would_ignore(
+    unique: bool, required: bool, default: str | None, pk: bool,
+) -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"),
+        replace(
+            make_column("Created", "datetime", unique=unique, required=required, default=default),
+            is_pk=pk,
+        ),
+        indexes=["Created"],
+    ))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "would be ignored" in finding.message
+
+
+def test_a_declared_built_in_is_not_demo_writable() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime"), note="Task.",
+    ))
+    bundle = make_bundle(
+        entities=["Task"],
+        demo_items={"Task": [DemoItem(key="t1", values={
+            "Title": "[DEMO] a", "Created": "2026-01-01",
+        })]},
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.DEMO_COLUMN_NOT_WRITABLE,
+    )
+    assert "Created" in finding.message
+
+
+def _builtin_task() -> Schema:
+    return make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime"),
+        indexes=["Created"], note="Task.",
+    ))
+
+
+def test_a_display_name_override_on_a_declared_built_in_is_refused() -> None:
+    bundle = make_bundle(
+        entities=["Task"], display_name_mode="auto",
+        display_name_overrides={"Task": {"Created": "Made"}},
+    )
+    errors = [
+        f for f in validate_against_mapping(_builtin_task(), bundle)
+        if f.severity == "error"
+    ]
+    assert any("Created" in f.message for f in errors), errors
+
+
+def test_a_declared_built_in_does_not_collide_with_the_reporting_system_columns() -> None:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    bundle = make_bundle(
+        entities=["Task"], display_name_mode="auto",
+        reporting=ReportingOptions(system_columns=True),
+    )
+    none_of(
+        validate_against_mapping(_builtin_task(), bundle),
+        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    )
+
+
+def test_a_default_formula_on_a_declared_built_in_is_refused() -> None:
+    bundle = make_bundle(
+        entities=["Task"], default_formulas={"Task": {"Created": "=TODAY()"}},
+    )
+    errors = validate_against_mapping(_builtin_task(), bundle)
+    assert FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN in [f.code for f in errors]
+
+
+def test_the_data_dictionary_lists_a_declared_built_in_once() -> None:
+    from dbml_sharepoint.analysis.reporting.dictionary import dictionary_rows
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    bundle = make_bundle(
+        entities=["Task"], reporting=ReportingOptions(system_columns=True),
+    )
+    rows = dictionary_rows(_builtin_task(), bundle, "default")
+    assert [row.column for _, row in rows].count("Created") == 1
+
+
+def test_a_declared_built_in_may_not_be_shadowed_by_an_enum_of_its_type_name() -> None:
+    schema = make_schema(
+        make_table(
+            "Task", make_column("Title"), make_column("Created", "datetime"),
+            indexes=["Created"],
+        ),
+        enums=[make_enum("datetime", "A", "B")],
+    )
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "shadows" in finding.message
+
+
+def test_a_declared_built_in_may_not_carry_a_ref() -> None:
+    schema = make_schema(
+        make_table("Other", make_column("Title")),
+        make_table(
+            "Task", make_column("Title"),
+            make_column("Author", "person", ref="Other.Id"), indexes=["Author"],
+        ),
+    )
+    assert "ref" in only(validate(schema), FindingCode.RESERVED_COLUMN_NAME).message
+
+
+def test_a_declared_built_in_must_be_indexed() -> None:
+    schema = make_schema(make_table(
+        "Task", make_column("Title"), make_column("Created", "datetime", note="n"),
+    ))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert "never indexed" in finding.message
+
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's logical DBML field is expanded and never exists

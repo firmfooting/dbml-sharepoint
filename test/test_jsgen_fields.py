@@ -48,6 +48,43 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
+def test_a_declared_built_in_column_is_indexed_and_never_created(tmp_path: Path) -> None:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Risk", ID_PK, "Status nvarchar", "Created datetime", "Author person",
+            "indexes { Created Author Status }",
+        ),
+        mapping=entities("Risk"),
+    )
+    output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    created = str(output["lists"][0]["fields_phase1"])
+    assert "'Created'" not in created
+    assert "'Author'" not in created
+    assert "'Status'" in created
+    assert output["indexed_columns"] == [
+        {"list": "APP_Risk", "field": "Created"},
+        {"list": "APP_Risk", "field": "Author"},
+        {"list": "APP_Risk", "field": "Status"},
+    ]
+
+
+def test_a_declared_built_in_is_not_reported_as_the_identity_column(tmp_path: Path) -> None:
+    from dbml_sharepoint.analysis.reporting.dictionary import dictionary_rows
+    from dbml_sharepoint.analysis.reporting.plan import build_plans
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, "Created datetime", "indexes { Created }"),
+        mapping=entities("Risk"),
+    )
+    plan = build_plans(schema, bundle, "default")[0]
+    assert plan.selects.count("Id") == 1
+    assert [name for name, _ in plan.m_types].count("Id") == 1
+    columns = [row.column for _, row in dictionary_rows(schema, bundle, "default")]
+    assert columns.count("Id") == 1
+
+
 def test_a_lookup_targets_display_column_is_deployed_as_an_index(
     tmp_path: Path,
 ) -> None:

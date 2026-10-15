@@ -40,7 +40,7 @@ from dbml_sharepoint.analysis.permissions import (
     requires_manage_permissions,
 )
 from dbml_sharepoint.analysis.phases import phases_context
-from dbml_sharepoint.analysis.rendered_columns import effective_view_fields
+from dbml_sharepoint.analysis.rendered_columns import effective_view_fields, is_declared_builtin
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import (
     level_description,
@@ -700,6 +700,10 @@ def build_schema_json(
                 continue
 
             if col.name == "Id" and col.is_pk and col.is_auto_increment:
+                continue
+
+            # Declared only so an index can name it; SharePoint owns the field.
+            if is_declared_builtin(col):
                 continue
 
             if col.name == "Title":
