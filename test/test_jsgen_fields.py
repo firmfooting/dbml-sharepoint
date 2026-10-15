@@ -48,6 +48,20 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
+def test_built_in_columns_can_be_indexed_without_being_declared(tmp_path: Path) -> None:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, "Status nvarchar", "indexes { `Created` `Author` Status }"),
+        mapping=entities("Risk"),
+    )
+    output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assert output["indexed_columns"] == [
+        {"list": "APP_Risk", "field": "Created"},
+        {"list": "APP_Risk", "field": "Author"},
+        {"list": "APP_Risk", "field": "Status"},
+    ]
+
+
 def test_a_lookup_targets_display_column_is_deployed_as_an_index(
     tmp_path: Path,
 ) -> None:

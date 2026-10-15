@@ -27,7 +27,7 @@ from dbml_sharepoint.analysis.list_description import (
 )
 from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import compute_phases
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import INDEXABLE_BUILTINS, rendered_columns
 from dbml_sharepoint.analysis.reporting.plan import is_projectable
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
@@ -1030,7 +1030,7 @@ def _indexable_columns(
     columns_by_name = {col.name: col for col in table.columns}
     for target in targets:
         col_name = target.column
-        if col_name not in rendered:
+        if col_name not in rendered and col_name not in INDEXABLE_BUILTINS:
             hint = (
                 " (cross-site logical columns are replaced by generated "
                 "companion fields and cannot be indexed from DBML)"
@@ -1040,7 +1040,10 @@ def _indexable_columns(
             findings.append(Finding(
                 FindingCode.INDEX_COLUMN_NOT_RENDERED,
                 f"{entity_name}.indexes: {col_name!r} is not a "
-                f"rendered column of {entity_name}{hint}.",
+                f"rendered column of {entity_name}{hint}. Built-in columns "
+                f"can be indexed without being declared, but only "
+                f"{', '.join(INDEXABLE_BUILTINS)}, written as a backticked "
+                f"expression such as `Created`.",
                 location=Location(
                     Section.SCHEMA, entity=entity_name,
                     sub=f"indexes[{target.position}]",

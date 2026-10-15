@@ -26,6 +26,12 @@ from dbml_sharepoint.model.parser import Table
 # for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
+# The built-ins an `indexes { }` entry may name without declaring them. They
+# are written in DBML as backticked expressions (`Created`), because a bare
+# name is refused by the DBML parser when no column of that name is declared.
+# Internal names only, as for every declared column.
+INDEXABLE_BUILTINS: tuple[str, ...] = ("Created", "Author", "Modified", "Editor")
+
 # The file-identity column a document library has and a list does not. An
 # uploaded file's Title is null (MEASURED 2026-07-29,
 # `library.file-vs-item.title-after-upload` in document-library-probe.js) and

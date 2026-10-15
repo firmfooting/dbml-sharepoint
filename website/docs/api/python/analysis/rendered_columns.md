@@ -27,6 +27,12 @@ move the cycle rather than close it.
 SYSTEM_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'ID', 'Modified'})
 ```
 
+### `INDEXABLE_BUILTINS`
+
+```python
+INDEXABLE_BUILTINS = ('Created', 'Author', 'Modified', 'Editor')
+```
+
 ### `LIBRARY_COLUMNS`
 
 ```python

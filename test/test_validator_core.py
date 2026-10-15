@@ -877,6 +877,30 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     assert finding.severity == "error"
     assert "Task" in finding.message
 
+def test_indexing_an_undeclared_built_in_column_is_accepted() -> None:
+    schema = make_schema(
+        make_table(
+            "Task", make_column("Title"),
+            indexes=["Created", "Author", "Modified", "Editor"],
+        ),
+    )
+    bundle = make_bundle(entities=["Task"])
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.code is FindingCode.INDEX_COLUMN_NOT_RENDERED
+    ]
+
+
+@pytest.mark.parametrize("name", ["Created By", "Version", "ID", "Nope"])
+def test_indexing_any_other_undeclared_column_names_the_allowed_built_ins(name: str) -> None:
+    schema = make_schema(make_table("Task", make_column("Title"), indexes=[name]))
+    finding = only(
+        validate_against_mapping(schema, make_bundle(entities=["Task"])),
+        FindingCode.INDEX_COLUMN_NOT_RENDERED,
+    )
+    assert "Created, Author, Modified, Editor" in finding.message
+
+
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's logical DBML field is expanded and never exists
     in SharePoint, so its otherwise-valid DBML index must be rejected."""
