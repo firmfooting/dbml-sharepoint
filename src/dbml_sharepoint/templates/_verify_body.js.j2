@@ -144,10 +144,11 @@
     const tz = await readJson('web/regionalsettings/timezone');
     const info = (tz.ok && tz.d && tz.d.Information) || null;
     let siteOffset = null;
+    let siteOffsets = [];
     if (!info) {
       finding('site_zone', 'NOT-ASSESSABLE', 'web/regionalsettings/timezone did not report a zone; every date case needs the site\'s midnight and is skipped.');
     } else {
-      const offsets = [...new Set([
+      const offsets = siteOffsets = [...new Set([
         -(info.Bias + (info.StandardBias || 0)),
         -(info.Bias + (info.DaylightBias || 0)),
       ])];
@@ -161,10 +162,15 @@
         finding('site_zone', 'NOT-ASSESSABLE', `${zone} They differ, so which of the site's offsets is in force is unknown; every date case is skipped. Paste from a browser in the site's zone.`);
       }
     }
+    // The offset is read per date from the browser, which has already matched the site's zone.
+    // null when the browser's offset on that date is neither of the site's.
     const midnightUtc = (days) => {
       const shifted = new Date(Date.now() + siteOffset * 60000);
       const utcMidnight = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate() + days);
-      return new Date(utcMidnight - siteOffset * 60000).toISOString();
+      const offsetAt = (ms) => -new Date(ms).getTimezoneOffset();
+      let offset = offsetAt(utcMidnight - siteOffset * 60000);
+      offset = offsetAt(utcMidnight - offset * 60000);
+      return siteOffsets.includes(offset) ? new Date(utcMidnight - offset * 60000).toISOString() : null;
     };
     const instantUtc = (seconds) => new Date(Date.now() + seconds * 1000).toISOString();
     const siteDateOf = (iso) => new Date(new Date(iso).getTime() + (siteOffset || 0) * 60000).toISOString().slice(0, 10);
