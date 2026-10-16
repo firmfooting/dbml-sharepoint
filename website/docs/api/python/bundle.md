@@ -222,7 +222,7 @@ parameter would break every one of them.
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: Path, *, schema: Schema, mapping_bundle: MappingBundle, resolved: ResolvedMapping, release: Release, site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: DeploymentExtension | None = None, site_context: SiteContext | None = None, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({}), env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint') -> str
+def emit_bundle(out: Path, *, schema: Schema, mapping_bundle: MappingBundle, resolved: ResolvedMapping, release: Release, site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: DeploymentExtension | None = None, site_context: SiteContext | None = None, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({}), env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint', no_query_files: bool = False) -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.
@@ -242,4 +242,7 @@ is a documented composition point extension CLIs call directly, and a
 required parameter would break every one of them. ``time_zone`` is
 optional for the same reason; ``execute_build`` always supplies it, and
 only the reporting pack reads it.
+
+``no_query_files`` skips the reporting Power Query files, as the
+mapping's ``reporting.query_files: false`` does.
 

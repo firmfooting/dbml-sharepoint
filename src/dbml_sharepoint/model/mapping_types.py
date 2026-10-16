@@ -747,7 +747,7 @@ class PermissionsConfig:
 @dataclass(frozen=True)
 class ReportingOptions:
     """The `reporting:` section: what the reporting pack adds beyond the
-    schema's own columns. Everything defaults off, so a pack regenerated
+    schema's own columns. Every switch defaults to leaving the pack as it was, so a pack regenerated
     from an unchanged mapping keeps its shape."""
 
     # Created By, Created, Modified By and Modified on every list query,
@@ -756,6 +756,8 @@ class ReportingOptions:
     # A `_Users.pq` dimension over the site's user information list, and a
     # `... Key` on every person column that joins it.
     users_table: bool = False
+    # False skips writing reporting/powerquery on build; the API still renders them.
+    query_files: bool = True
     # No time zone here. The site's zone is a build input (`--time-zone`, or
     # `DBMLSP_TIME_ZONE` in the env file): a fact about the site a pack is
     # built for, not about the solution, and the loader refuses the old

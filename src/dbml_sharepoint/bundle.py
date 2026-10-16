@@ -358,6 +358,7 @@ def emit_bundle(
     change_log_list: str | None = None,
     no_sidecars: bool = False,
     application: str = APPLICATION_NAME,
+    no_query_files: bool = False,
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
@@ -376,6 +377,9 @@ def emit_bundle(
     required parameter would break every one of them. ``time_zone`` is
     optional for the same reason; ``execute_build`` always supplies it, and
     only the reporting pack reads it.
+
+    ``no_query_files`` skips the reporting Power Query files, as the
+    mapping's ``reporting.query_files: false`` does.
     """
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
@@ -503,6 +507,9 @@ def emit_bundle(
         # travels the same way.
         site_url=site_url, application=application,
         time_zone=time_zone,
+        query_files=(
+            mapping_bundle.mapping.reporting.query_files and not no_query_files
+        ),
     )
     write_index(
         out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance,

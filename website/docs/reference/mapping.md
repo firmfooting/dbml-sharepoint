@@ -893,15 +893,17 @@ the next re-paste detects it, reverts it and reports having done so.
 reporting:
   system_columns: true
   users_table: true
+  query_files: false
 ```
 
 Settings for the generated reporting pack: the `reporting/` directory of
-a build and the output of `dbml-sharepoint report`. The two switches take
+a build and the output of `dbml-sharepoint report`. The switches take
 a real boolean; `"yes"` and `1` are refused rather than read as true.
-Everything here is off unless declared, so a pack regenerated from an
-unchanged mapping keeps its shape, and nothing here touches the deployed
-lists. The [reporting pack](../artifacts/reporting.md) page describes the
-generated queries in full.
+Every switch but `query_files` is off unless declared, so a pack
+regenerated from an unchanged mapping keeps its shape, and nothing here
+touches the deployed lists. The
+[reporting pack](../artifacts/reporting.md) page describes the generated
+queries in full.
 
 ### `system_columns`
 
@@ -953,6 +955,14 @@ Measured 2026-09-02 by a site admin: the list is readable and every
 selected field exists on it. A reporting reader account has not been
 measured; a 403 on refreshing `_Users` means it needs read access to
 that list.
+
+### `query_files`
+
+`false` makes `build` skip the `reporting/powerquery/*.pq` files, including
+`_ModelInfo.pq` and the dictionary queries. Default `true`. The queries are
+still rendered in memory and returned by the public API, the SQL views, guide
+and dictionary are still written, and `checksums.txt` lists only the files
+written. `build --no-query-files` overrides the setting for one run.
 
 ### The site's time zone is not declared here
 

@@ -182,6 +182,7 @@ def execute_build(
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
+    no_query_files: bool = False,
     application: str = APPLICATION_NAME,
     identities: Sequence[str] = (),
     source_date_epoch: int | None = None,
@@ -523,6 +524,7 @@ def execute_build(
             change_log_list=None if no_sidecars else change_log,
             no_sidecars=no_sidecars,
             application=application,
+            no_query_files=no_query_files,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

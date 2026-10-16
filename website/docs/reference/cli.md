@@ -25,6 +25,7 @@ pack reads a clock, and demo-data.js.txt with `--seed`).
 | `--site-role ROLE` | `default` | Which entities deploy here; must match a `site_role` declared by the mapping's entities |
 | `--out PATH` | `./build` | Output directory |
 | `--dry-run` | off | Validate only; no JS output |
+| `--no-query-files` | off | Do not write `reporting/powerquery/*.pq`, overriding the mapping's `reporting.query_files`; the checksums list only what was written |
 | `--seed` | off | Also emit demo-data.js.txt from the mapping's `demo_items` |
 | `--enterprise-reader UPN` | nobody | UPN of a reporting service account the deploy enrols, read-only, into the mapping's enterprise-reader group; the membership is permanent and a rollback does not remove it |
 | `--identity NAME=KIND:VALUE[,KIND:VALUE...]` | none | NAME=KIND:VALUE[,KIND:VALUE...] for one identity the mapping enrols; repeat per name. KIND is user (a UPN), security_group or m365_group (an Entra object id; the m365_group owners form is refused). Overrides `DBMLSP_IDENTITY_<NAME>` in the env file |

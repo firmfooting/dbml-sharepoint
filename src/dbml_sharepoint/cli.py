@@ -277,6 +277,13 @@ def build(
         "bites when the central deployment log is out of reach, since a run "
         "that finds it writes there and makes no sidecars either way.",
     ),
+    no_query_files: bool = typer.Option(
+        False,
+        "--no-query-files",
+        help="Do not write reporting/powerquery/*.pq, whatever the mapping's "
+        "reporting.query_files says. The SQL views, guide and dictionary "
+        "are still written, and the queries stay available through the API.",
+    ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.
 
@@ -333,6 +340,7 @@ def build(
         deployment_log_site=deployment_log_site,
         change_log_list=change_log_list,
         no_sidecars=no_sidecars,
+        no_query_files=no_query_files,
     )
 
 
