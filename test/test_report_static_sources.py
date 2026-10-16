@@ -293,3 +293,65 @@ def test_a_page_carries_a_next_link_under_either_spelling(
     helper = text.split("NextLink = ", 1)[1].split("),", 1)[0]
     assert f'"{spelling}"' in helper
     assert text.count(f'"{spelling}"') == 1
+
+
+# What the sandbox answered for a person, a lookup and a multi-value person under
+# `Accept: application/json;odata=nometadata` (finding report-m.web-contents.person-expand-shape):
+# an expanded field that is unset is OMITTED from the record, not null or empty.
+_NOMETADATA_ROWS = [
+    {"Id": 1, "Title": "empty", "ShapeUserId": None, "ShapeUserMultiId": None, "ID": 1},
+    {"Id": 2, "Title": "target", "ShapeUserId": None, "ShapeUserMultiId": None, "ID": 2},
+    {"ShapeUser": {"Title": "Bot 1"}, "Id": 6, "Title": "users", "ShapeUserId": 6,
+     "ShapeUserMultiId": [6, 10], "ID": 6},
+    {"ShapeLookup": {"Title": "target"}, "Id": 11, "Title": "lookups",
+     "ShapeLookupId": 2, "ID": 11},
+]
+
+
+def _columns_argument(text: str, start: int) -> list[str]:
+    """The explicit column list of the `GetAll(` call whose `(` ends at `start`."""
+    first = _first_argument(text, start)
+    second = _first_argument(text, start + len(first) + 1)
+    third = _first_argument(text, start + len(first) + 1 + len(second) + 1).strip()
+    assert third.startswith("{") and third.endswith("}"), third
+    return re.findall(r'"((?:[^"]|"")*)"', third)
+
+
+def test_a_table_is_built_from_the_planned_columns_never_the_first_record(
+    tmp_path: Path,
+) -> None:
+    """The first row of a list may leave an unset person or lookup out
+    entirely, and a column taken from the first record then vanishes for every
+    row, so the expand step fills it with nulls. The columns come from the
+    plan's own `$select`, whatever the rows hold."""
+    schema, bundle = pack(tmp_path, _PAIR_DBML, _PAIR_MAPPING)
+    for text in generate_powerquery(schema, bundle, "default").values():
+        code = _code(text)
+        assert "Table.FromRecords(rows, null" not in code and ", null, MissingField" not in code
+        assert "Table.FromRecords(List.Combine(Pages), columns, MissingField.UseNull)" in code
+    code = _code(generate_powerquery(schema, bundle, "default")["APP_Action.pq"])
+    at = code.index("Source = GetAll(") + len("Source = GetAll(")
+    columns = _columns_argument(code, at)
+    assert columns[0] == "Id" and "RelatedRiskId" in columns and "RelatedRisk" in columns
+    # Every top-level key any measured row can carry, requested or not, is either
+    # a requested column or one the report drops (the uppercase ID).
+    keys = {key for row in _NOMETADATA_ROWS for key in row} - {"ID"}
+    first = set(_NOMETADATA_ROWS[0]) - {"ID"}
+    assert first != keys, "the fixture must have a first row missing a later key"
+    for key in ("ShapeUser", "ShapeLookup"):
+        assert key in keys - first
+
+
+def test_every_getall_call_passes_a_column_list(tmp_path: Path) -> None:
+    schema, bundle = pack(tmp_path, _PAIR_DBML, _PAIR_MAPPING)
+    queries = {
+        **generate_powerquery(schema, bundle, "default"),
+        **generate_dictionary_powerquery(schema, bundle, "default"),
+    }
+    seen = 0
+    for text in queries.values():
+        code = _code(text)
+        for match in re.finditer(r"(?<![\w])GetAll\(", code):
+            seen += 1
+            assert _columns_argument(code, match.end())
+    assert seen

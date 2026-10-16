@@ -146,9 +146,11 @@ def _get_m() -> list[str]:
         '            page, "odata.nextLink",',
         '            Record.FieldOrDefault(page, "@odata.nextLink", null)',
         "        ),",
-        "    // Every row of a collection, as a table. A list with no rows gives a",
-        "    // table with no columns, which the Ensured step of each caller fills.",
-        "    GetAll = (relativePath as text, query as record) as table =>",
+        "    // Every row of a collection, as a table with exactly `columns`. They are",
+        "    // named, never read off the first record: an unset person or lookup is",
+        "    // left out of its record altogether, so the first row can lack a column",
+        "    // that later rows carry. A list with no rows keeps its columns.",
+        "    GetAll = (relativePath as text, query as record, columns as list) as table =>",
         "        let",
         "            Pages = List.Generate(",
         "                () => Get(relativePath, query),",
@@ -160,13 +162,25 @@ def _get_m() -> list[str]:
         "                each _[value]",
         "            )",
         "        in",
-        "            Table.FromRecords(List.Combine(Pages), null, MissingField.UseNull),",
+        "            Table.FromRecords(List.Combine(Pages), columns, MissingField.UseNull),",
     ]
 
 
 def _query_m(options: dict[str, str]) -> str:
     """A `Get` query record from OData options, each value a ready M string."""
     return "[" + ", ".join(f'#"{k}" = {v}' for k, v in options.items()) + "]"
+
+
+def _columns_m(select: str) -> str:
+    """An M list of the top-level fields a `$select` names (`A/Title` is `A`)."""
+    names = dict.fromkeys(part.split("/")[0] for part in select.split(","))
+    return "{" + ", ".join(_m_string(name) for name in names) + "}"
+
+
+_FIELDS_SELECT = (
+    "InternalName,Title,TypeAsString,Hidden,ReadOnlyField,CanBeDeleted,"
+    "ClientValidationFormula,ValidationFormula"
+)
 
 
 def _list_path(title: str, tail: str) -> str:
@@ -844,7 +858,8 @@ def _fetch_m(
     check: both come from the enclosing query.
     """
     # Learn: $top selects the first n rows of the result; the default page is 100.
-    options = {"$select": _m_string(",".join(plan.selects)), "$top": '"5000"'}
+    options_select = ",".join(plan.selects)
+    options = {"$select": _m_string(options_select), "$top": '"5000"'}
     if plan.expands:
         options["$expand"] = _m_string(",".join(plan.expands))
     # Every column a step below names. `multi_value_joins` is the one output
@@ -880,7 +895,8 @@ def _fetch_m(
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = GetAll(",
         f"        {_m_string(_list_path(plan.list_title, 'items'))},",
-        f"        {_query_m(options)}",
+        f"        {_query_m(options)},",
+        f"        {_columns_m(options_select)}",
         "    ),",
     ]
     prev = "Source"
@@ -1290,7 +1306,8 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "    // the reporting account needs read access to this list.",
         "    Source = GetAll(",
         '        "siteuserinfolist/items",',
-        f"        {_query_m({'$select': _m_string(select), '$top': _m_string('5000')})}",
+        f"        {_query_m({'$select': _m_string(select), '$top': _m_string('5000')})},",
+        f"        {_columns_m(select)}",
         "    ),",
         # The users list is read like any other list and answers like one, so
         # a site whose user information list the reporting account can see but
@@ -1397,10 +1414,8 @@ def _render_user_added_columns_m(
             "",
         ])
     audit_calls: list[str] = []
-    fields_query = _query_m({"$select": _m_string(
-        "InternalName,Title,TypeAsString,Hidden,ReadOnlyField,CanBeDeleted,"
-        "ClientValidationFormula,ValidationFormula",
-    )})
+    fields_columns = _columns_m(_FIELDS_SELECT)
+    fields_query = _query_m({"$select": _m_string(_FIELDS_SELECT)})
     for plan in plans:
         expected = ", ".join(
             _m_string(name)
@@ -1411,7 +1426,7 @@ def _render_user_added_columns_m(
         fields_path = _list_path(plan.list_title, "fields")
         audit_calls += [
             f"        Audit({_m_string(plan.list_title)}, {{{expected}}},",
-            f"            GetAll({_m_string(fields_path)}, {fields_query})),",
+            f"            GetAll({_m_string(fields_path)}, {fields_query}, {fields_columns})),",
         ]
     audit_calls[-1] = audit_calls[-1].rstrip(",")
     lines = [
