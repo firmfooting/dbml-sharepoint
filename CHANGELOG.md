@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.20.1...v0.21.0) (2026-10-16)
+
+
+### Features
+
+* **reporting:** read SharePoint through one Web.Contents source ([#856](https://github.com/firmfooting/dbml-sharepoint/issues/856)) ([6f291ab](https://github.com/firmfooting/dbml-sharepoint/commit/6f291abab827985c3e4db916a2addce490dba2ea))
+
 ## [0.20.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.20.0...v0.20.1) (2026-10-16)
 
 
