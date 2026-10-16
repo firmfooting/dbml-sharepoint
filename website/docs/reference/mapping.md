@@ -894,6 +894,7 @@ reporting:
   system_columns: true
   users_table: true
   query_files: false
+  internal_names: true
 ```
 
 Settings for the generated reporting pack: the `reporting/` directory of
@@ -965,6 +966,18 @@ and dictionary are still written, and `checksums.txt` lists only the files
 written. A rebuild clears the whole `reporting/` directory first, so query files
 from an earlier build do not survive it. `build --no-query-files` overrides the
 setting for one run.
+
+### `internal_names`
+
+`true` leaves the Power Query output with the schema's internal column
+names (`MemberOrganisation`, `IsAgencyIct`) by dropping the
+`RenamedForModel` step from every list query. Default `false`, which
+renames each column to its display title as before. `display_names` still
+governs the SharePoint forms and views either way. Only the list queries
+change: `_Users.pq` keeps its fixed titles, the SQL views already use
+internal names, and the display-title collision checks still run. Choose
+one setting per model, because switching it renames every column a report
+refers to.
 
 ### The site's time zone is not declared here
 

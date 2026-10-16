@@ -758,6 +758,9 @@ class ReportingOptions:
     users_table: bool = False
     # False skips writing reporting/powerquery on build; the API still renders them.
     query_files: bool = True
+    # True drops the display-name rename step from every Power Query list
+    # query, so a report author codes against the schema's internal names.
+    internal_names: bool = False
     # No time zone here. The site's zone is a build input (`--time-zone`, or
     # `DBMLSP_TIME_ZONE` in the env file): a fact about the site a pack is
     # built for, not about the solution, and the loader refuses the old
