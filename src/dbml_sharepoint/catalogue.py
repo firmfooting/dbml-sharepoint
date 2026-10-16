@@ -594,10 +594,36 @@ def _build(family: Path, source: BlueprintRoot) -> Solution:
     )
 
 
+#: Parsed catalogue per roots and tree stamps; frozen items in tuples, copied to lists per call.
+_GATHERED: dict[object, tuple[tuple[Solution, ...], tuple[Refusal, ...], tuple[Shadowed, ...]]] = {}
+_WATCHED_SUFFIXES = frozenset({".yaml", ".yml", ".toml"})
+
+
+def _tree_stamp(root: Path) -> tuple[int, int, int]:
+    """File count, newest mtime and total size of the YAML and manifest files under `root`."""
+    stats = [
+        path.stat()
+        for path in root.rglob("*")
+        if path.suffix in _WATCHED_SUFFIXES and path.is_file()
+    ]
+    newest = max((st.st_mtime_ns for st in stats), default=0)
+    return len(stats), newest, sum(st.st_size for st in stats)
+
+
 def _gather_solutions(
     roots: list[BlueprintRoot],
 ) -> tuple[list[Solution], list[Refusal], list[Shadowed]]:
     """Every blueprint in every root, in root order then by id; a repeated id is hidden."""
+    key = tuple((source, _tree_stamp(source.root)) for source in roots)
+    if (hit := _GATHERED.get(key)) is None:
+        _GATHERED.clear()
+        _GATHERED[key] = hit = _gather_uncached(roots)
+    return list(hit[0]), list(hit[1]), list(hit[2])
+
+
+def _gather_uncached(
+    roots: list[BlueprintRoot],
+) -> tuple[tuple[Solution, ...], tuple[Refusal, ...], tuple[Shadowed, ...]]:
     solutions: list[Solution] = []
     refused: list[Refusal] = []
     shadowed: list[Shadowed] = []
@@ -616,7 +642,7 @@ def _gather_solutions(
                 continue
             kept[solution.id] = source.distribution
             solutions.append(solution)
-    return solutions, refused, shadowed
+    return tuple(solutions), tuple(refused), tuple(shadowed)
 
 
 def available_solutions() -> list[Solution]:
