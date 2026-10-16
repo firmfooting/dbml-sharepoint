@@ -10,7 +10,7 @@
 Turn a DBML schema and a YAML mapping into a fail-closed script that
 provisions SharePoint Online lists from the browser console.
 
-[![CI](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/ci.yml)
+[![CI](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/hourly.yml/badge.svg?branch=main)](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/hourly.yml)
 [![PyPI](https://img.shields.io/pypi/v/dbml-sharepoint?color=2A6B64)](https://pypi.org/project/dbml-sharepoint/)
 [![Python](https://img.shields.io/badge/python-3.15%2B-2A6B64)](https://github.com/firmfooting/dbml-sharepoint/blob/main/pyproject.toml)
 [![Licence](https://img.shields.io/badge/licence-MIT-2A6B64)](https://github.com/firmfooting/dbml-sharepoint/blob/main/LICENSE)
