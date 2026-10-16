@@ -33,7 +33,9 @@ from dbml_sharepoint.model.parser import Schema, parse_dbml
 BLUEPRINTS = engine_blueprints()
 FAMILIES = sorted(BLUEPRINTS)
 
-_QUERY_REF = re.compile(r'#"([^"$][^"]*)"')
+#: The OData option fields a generated `Query` record names; they are not query references.
+_OPTION_FIELDS = frozenset({"$select", "$top", "$expand", "$filter", "$orderby", "$skiptoken"})
+_QUERY_REF = re.compile(r'#"([^"]+)"')
 
 
 def _family(name: str) -> tuple[Schema, MappingBundle]:
@@ -49,9 +51,14 @@ def _reads(queries: dict[str, str]) -> dict[str, set[str]]:
     name in a comment resolves to nothing, but the graph is read from the
     text a consumer pastes, and a stray reference there is still wrong."""
     return {
-        filename[:-3]: set(_QUERY_REF.findall(text)) - {filename[:-3]}
+        filename[:-3]: set(_QUERY_REF.findall(text)) - _OPTION_FIELDS - {filename[:-3]}
         for filename, text in queries.items()
     }
+
+
+def test_only_the_generated_option_fields_are_left_out_of_the_graph() -> None:
+    text = 'Get("", [#"$select" = "a", #"$top" = "1"]) & #"$Report" & #"Other"'
+    assert _reads({"Q.pq": text}) == {"Q": {"$Report", "Other"}}
 
 
 def _cycles(graph: dict[str, set[str]]) -> list[tuple[str, ...]]:
