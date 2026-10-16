@@ -56,6 +56,41 @@ def _first_argument(text: str, start: int) -> str:
     raise AssertionError("unbalanced call")
 
 
+def _options_argument(text: str, start: int) -> str:
+    """The second argument of a call, from just after its `(`."""
+    first = _first_argument(text, start)
+    rest = text[start + len(first) + 1 :]
+    return _first_argument(rest, 0).strip()
+
+
+def _web_contents_options(query: str) -> list[str]:
+    code = _code(query)
+    return [
+        _options_argument(code, m.end())
+        for m in re.finditer(r"(?<![\w.])Web\.Contents\(", code)
+    ]
+
+
+def _bad_options(query: str) -> list[str]:
+    """Options that are not ONE record literal: the service reads a record built
+    by `&`, an `if` or a call as a dynamic data source."""
+    bad = []
+    for options in _web_contents_options(query):
+        flat = re.sub(r'"(?:[^"]|"")*"', '""', options)
+        depth, closes_early, top = 0, False, ""
+        for i, char in enumerate(flat):
+            depth += char in "[({"
+            depth -= char in "])}"
+            if depth == 0 and i < len(flat) - 1:
+                closes_early = True
+            if depth == 1:
+                top += char
+        one_record = flat.startswith("[") and flat.endswith("]") and not closes_early
+        if not one_record or "&" in top or re.search(r"\bif\b|\w\(", top):
+            bad.append(options)
+    return bad
+
+
 def _data_source_urls(query: str) -> list[str]:
     code = _code(query)
     return [
@@ -65,6 +100,16 @@ def _data_source_urls(query: str) -> list[str]:
 
 def _bad(query: str) -> list[str]:
     return [url for url in _data_source_urls(query) if not _STATIC_URL.fullmatch(url)]
+
+
+def test_the_checker_rejects_options_that_are_not_one_record_literal() -> None:
+    literal = 'Web.Contents(SiteUrl & "/a", [RelativePath = p, Query = q, Headers = [A = "&"]])'
+    assert _web_contents_options(literal) == ['[RelativePath = p, Query = q, Headers = [A = "&"]]']
+    assert _bad_options(literal) == []
+    assert _bad_options('Web.Contents("a", [Query = q] & [RelativePath = p])') != []
+    assert _bad_options('Web.Contents("a", [Query = q] & (if p = "" then [] else [A = 1]))') != []
+    assert _bad_options("Web.Contents(\"a\", Record.AddField([], \"A\", 1))") != []
+    assert _bad_options('Web.Contents("a", opts)') != []
 
 
 def test_the_checker_separates_static_from_dynamic_urls() -> None:
@@ -133,6 +178,7 @@ def test_every_data_source_in_a_cross_list_bundle_is_static(
     for name, text in queries.items():
         assert _bad(text) == [], name
         assert "OData.Feed" not in text, name
+        assert _bad_options(text) == [], name
         sources = _data_source_urls(text)
         # One data source per query: the base inside Get, none elsewhere.
         assert len(sources) == (0 if name in _TABLES else 1), name
@@ -164,6 +210,7 @@ def test_every_data_source_in_a_shipped_family_is_static(family: str) -> None:
                 seen += len(_data_source_urls(text))
                 assert _bad(text) == [], f"{family}/{role}/{name}"
                 assert "OData.Feed" not in text, f"{family}/{role}/{name}"
+                assert _bad_options(text) == [], f"{family}/{role}/{name}"
                 assert len(_data_source_urls(text)) <= 1, f"{family}/{role}/{name}"
     assert seen
 
