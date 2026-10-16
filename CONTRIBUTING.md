@@ -140,14 +140,25 @@ changes selects no tests, except configured repository guards. `--dry-run`
 prints the selected commands and paths as JSON.
 
 Changed test modules run directly, with serial execution where pytest-xdist
-is installed. Source, fixture, template and shared helper changes run whole
-owning suites and their transitive local dependants. Deleted tests expand to
-whole suites; unknown paths and unavailable Git bases run every suite. The
-routes live in `.github/changed-tests.json`; update them when adding a package
-or a dependency between packages. The runner is vendored from
-`firmfooting/.github` and needs no extra dependencies or cache.
+is installed, unless another test module imports them or the suite lists them
+under `scanners`; then the whole suite runs. Source, fixture, template and
+shared helper changes run whole owning suites and the suites that list them in
+`depends_on` (direct edges, not transitive). Deleted tests expand to whole
+suites; unknown paths and unavailable Git bases run every suite. The routes
+live in `.github/changed-tests.json`; update them when adding a package or a
+dependency between packages. The runner is vendored from `firmfooting/.github`
+and needs no extra dependencies or cache.
 
-This command provides fast local feedback. Test modules can be imported by
-other tests, and runtime dependencies can extend beyond declared package
-routes. Run the existing full pre-push and CI gates before merging. Use the
-existing full-suite commands for coverage and finding reachability checks.
+Every pytest run is audited: the runner records the repository files each
+suite opens and fails the run (`Route gap`) when a suite read a path that the
+routes do not send to it, so a missing edge fails the full run instead of
+passing silently. Python-level reads are covered; files read by a subprocess
+or only checked for existence are not. `--full` audits every suite. Extra
+pytest arguments after `--` are passed through, and a suite that a filter such
+as `-k` empties is not a failure. `--cov` and `--check-finding-reachability`
+are refused: use the existing full-suite commands for those. A prek hook
+(`changed-tests-pin`) fails when the vendored runner differs from the SHA-256
+pinned in the routes file.
+
+This command provides fast local feedback. Run the existing full pre-push and
+CI gates before merging.
