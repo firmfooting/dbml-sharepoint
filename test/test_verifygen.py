@@ -278,6 +278,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       webServerRelativeUrl: '/sites/test', userLoginName: 'probe@example.com',
     };
     const BROWSER_OFFSET = 0;
+    const OFFSET_BEFORE_THE_CHANGE = null;
+    const BIASES = { Bias: 0, StandardBias: 0, DaylightBias: 0 };
     const LISTS = [];
     const LIST_NEXT = undefined;
     const EXPECT_NO_WRITES = false;
@@ -296,7 +298,11 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const GROUP_MEMBERS = {};
     const GROUP_REPLY = null;
     const FORCE_CHECKOUT = undefined;
-    Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
+    // An instant more than an hour ago is before the clock change.
+    Date.prototype.getTimezoneOffset = function () {
+      const old = OFFSET_BEFORE_THE_CHANGE !== null && this.getTime() < Date.now() - 3600000;
+      return -(old ? OFFSET_BEFORE_THE_CHANGE : BROWSER_OFFSET);
+    };
     const DAY = 86400000;
     const STORED = { rule: null };
     const defaults = new Map();
@@ -385,7 +391,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       if (u.includes('regionalsettings/timezone')) {
         return respond(200, { d: {
           Description: '(UTC) Coordinated Universal Time',
-          Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } } });
+          Information: BIASES } });
       }
       if (path.endsWith('/web/lists') && method === 'GET') {
         return respond(200, { d: { results: LISTS, __next: LIST_NEXT } });
@@ -923,3 +929,35 @@ if __name__ == "__main__":  # pragma: no cover
     _target = EXPECTED / "simple-verify.js"
     write_golden(_target, _simple_verify_js())
     print(f"wrote {_target}")  # noqa: T201
+
+
+def test_a_calculated_scratch_column_is_created_after_the_column_it_references() -> None:
+    schema = make_schema(make_table(
+        "Task", column("Title", required=True), column("Due", "date"),
+        column("Soon", "calculated_date"), note="Tasks.",
+    ))
+    bundle = make_bundle(
+        entities=["Task"],
+        calculated_formulas={"Task": {"Soon": "=[Due]+7"}},
+        views={"Task": [ViewDef(title="Soon", fields=["Title"], where=Group("all_of", (
+            Leaf(field="Soon", op="leq", value="today+7"),
+        )))]},
+    )
+    names = [c["name"].text for c in verify_targets(schema, bundle, "default")["columns"]]
+    assert names.index("CD") < names.index("CC")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_seeded_midnights_use_the_offset_in_force_on_each_date() -> None:
+    """A zone at +10:00 that moved to +11:00 an hour ago: earlier dates sit at the old offset."""
+    summary = _run_verify(
+        BROWSER_OFFSET="660", OFFSET_BEFORE_THE_CHANGE="600",
+        BIASES="{ Bias: -600, StandardBias: 0, DaylightBias: -60 }",
+    )
+    seeded: dict[str, set[str]] = {"new": set(), "old": set()}
+    for call in summary["calls"]:
+        text = json.dumps(call["body"].value) if "body" in call else ""
+        for stamp in re.findall(r"\d{4}-\d\d-\d\dT(\d\d):00:00\.000Z", text):
+            seeded["old" if stamp == "14" else "new"].add(stamp)
+    # Midnight at +10:00 is 14:00Z, and at +11:00 it is 13:00Z.
+    assert seeded == {"old": {"14"}, "new": {"13"}}

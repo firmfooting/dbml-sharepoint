@@ -428,7 +428,11 @@ def verify_targets(
     return {
         "list_title": VERIFY_LIST_TITLE,
         "marker": verify_marker(),
-        "columns": [targets.columns[name] for name in sorted(targets.columns)],
+        # Calculated columns last: SharePoint refuses a formula naming a column not yet created.
+        "columns": [
+            targets.columns[name]
+            for name in sorted(targets.columns, key=lambda n: ("formula" in targets.columns[n], n))
+        ],
         "rows": [
             {"id": row["id"], "column": row["column"], "value": row["value"]}
             for row in targets.rows.values()
