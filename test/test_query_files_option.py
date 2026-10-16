@@ -104,6 +104,9 @@ def test_a_bundle_without_query_files_never_points_at_one(tmp_path: Path) -> Non
         text = (off / name).read_text(encoding="utf-8")
         assert ".pq" not in text
         assert "Power Query M" not in text
+    guide = (off / "reporting/guide.md").read_text(encoding="utf-8")
+    assert "loadable" not in guide
+    assert "_DataDictionary.pq" not in guide
     on = _build(tmp_path / "on", None)
     assert "Power Query M" in (on / "index.md").read_text(encoding="utf-8")
     assert "paste the file contents" in (on / "reporting/guide.md").read_text(encoding="utf-8")

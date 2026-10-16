@@ -352,16 +352,16 @@ def generate_reporting_md(
         "",
         "## Data dictionary page (in-report)",
         "",
-        ("The dictionary also ships as loadable data so every report can "
-         + ("carry its own documentation page: load `_DataDictionary.pq` and "
-         "`_ModelInfo.pq` alongside the list queries (they are static "
-         "`#table` literals with no connection and no refresh cost), add a report "
-         "page with a table visual over `_DataDictionary` sorted by "
-         "`SortOrder`, and a card or table over `_ModelInfo` for the "
-         "release/schema provenance. SQL consumers get the same rows as "
-         if query_files else "carry its own documentation page. SQL consumers get the rows as "
-         ) +
-         f"`vw_{bundle.mapping.prefix}DataDictionary` and "
+        (("The dictionary also ships as loadable data so every report can "
+          "carry its own documentation page: load `_DataDictionary.pq` and "
+          "`_ModelInfo.pq` alongside the list queries (they are static "
+          "`#table` literals with no connection and no refresh cost), add a report "
+          "page with a table visual over `_DataDictionary` sorted by "
+          "`SortOrder`, and a card or table over `_ModelInfo` for the "
+          "release/schema provenance. SQL consumers get the same rows as "
+          if query_files else
+          "SQL consumers get the dictionary and the release/schema provenance as ")
+         + f"`vw_{bundle.mapping.prefix}DataDictionary` and "
          f"`vw_{bundle.mapping.prefix}ModelInfo` (built from embedded "
          "VALUES, with no landing table needed)."),
     ]
