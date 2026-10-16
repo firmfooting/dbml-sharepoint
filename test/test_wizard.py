@@ -43,6 +43,7 @@ from dbml_sharepoint.catalogue import (
     load_solution,
     read_catalogue,
 )
+from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -4237,4 +4238,29 @@ def test_a_provider_template_that_fails_validation_is_refused_before_writing(
     shown = _collapsed(console)
     assert "fails validation" in shown
     assert "entity_not_in_schema" in shown
+    assert not destination.exists()
+
+
+def test_a_template_whose_extension_requires_its_project_cli_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ProjectOnly(BaseExtension):
+        name = "project_only"
+        requires_project_cli = True
+
+    solution = replace(
+        _fake_family(tmp_path / "fake"), distribution="acme-packs", license="BUSL-1.1",
+    )
+    _offer_only(monkeypatch, solution)
+
+    def resolve_project_only(_name: str | None) -> BaseExtension:
+        return ProjectOnly()
+
+    monkeypatch.setattr(wizard, "resolve_extension", resolve_project_only)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "requires its project-specific CLI" in _collapsed(console)
     assert not destination.exists()
