@@ -1,12 +1,13 @@
 # test/test_report_static_sources.py
-"""Every data source a report query opens takes `SiteUrl & "<literal>"`.
+"""Every query reads SharePoint through ONE `Web.Contents` data source.
 
-The Power BI Service refuses to schedule a refresh for a data source whose
-URL it cannot resolve statically (Learn, "Refresh and dynamic data
-sources"). A computed site root, or a function parameter reaching
-`OData.Feed`, is dynamic. Nothing in a build or in Desktop sees this, so the
-shape is pinned here over the text of every generated query. The evidence is
-in the findings records.
+The Power BI Service asks for one credential per distinct data source and
+refuses to schedule a refresh for one whose URL it cannot resolve statically
+(Learn, "Refresh and dynamic data sources"). So each query opens a single
+`Web.Contents` whose base is a string literal (`SiteUrl & "<literal>"` when the
+standalone command has only the parameter), every read goes through `Get`, and
+the rest of each URL travels in `RelativePath` and `Query`. Nothing in a build
+or in Desktop sees a violation, so the shape is pinned over the generated text.
 """
 
 import re
@@ -25,7 +26,7 @@ from dbml_sharepoint.model.parser import parse_dbml
 
 BLUEPRINTS = engine_blueprints()
 _SOURCE = re.compile(r"(?<![\w.])(OData\.Feed|Web\.Contents|SharePoint\.\w+)\(")
-_STATIC_URL = re.compile(r'SiteUrl(\s*&\s*"(?:[^"]|"")*")+')
+_STATIC_URL = re.compile(r'(SiteUrl\s*&\s*)?"(?:[^"]|"")*"')
 
 
 def _code(query: str) -> str:
@@ -68,16 +69,13 @@ def _bad(query: str) -> list[str]:
 
 def test_the_checker_separates_static_from_dynamic_urls() -> None:
     """The guard is only worth having if it fires on the shapes that were refused."""
-    static = 'x = OData.Feed(SiteUrl & "/_api/web?$select=Title" & "", null, [A = 1])'
-    assert _data_source_urls(static) == ['SiteUrl & "/_api/web?$select=Title" & ""']
-    assert _bad(static) == []
-    assert _bad('OData.Feed(SiteRoot & "/_api/web", null)') != []
-    assert _bad("OData.Feed(url, null)") != []
-    assert _bad('OData.Feed(Text.TrimEnd(SiteUrl, "/") & "/_api/web", null)') != []
-    assert _bad('Web.Contents(SiteUrl & path)') != []
+    assert _bad('x = Web.Contents("https://a/_api/web", [A = 1])') == []
+    assert _bad('x = Web.Contents(SiteUrl & "/_api/web", [A = 1])') == []
+    assert _bad("Web.Contents(url, [A = 1])") != []
+    assert _bad("Web.Contents(SiteUrl & path)") != []
     assert _bad('SharePoint.Files(SiteUrl, [ApiVersion = 15])') != []
-    assert _bad('// OData.Feed(url)\nOData.Feed(SiteUrl & "/a")') == []
-    assert _data_source_urls('OData.Feed(SiteUrl & "a,(b""c")') == ['SiteUrl & "a,(b""c"']
+    assert _bad('// Web.Contents(url)\nWeb.Contents("https://a")') == []
+    assert _data_source_urls('Web.Contents("a,(b""c", [])') == ['"a,(b""c"']
 
 
 _PAIR_DBML = """
@@ -120,6 +118,9 @@ derived_columns:
 """
 
 
+_TABLES = {"_DataDictionary.pq", "_ModelInfo.pq"}
+
+
 @pytest.mark.parametrize("site_url", [None, "https://tenant.sharepoint.com/sites/Ops"])
 def test_every_data_source_in_a_cross_list_bundle_is_static(
     tmp_path: Path, site_url: str | None,
@@ -129,12 +130,18 @@ def test_every_data_source_in_a_cross_list_bundle_is_static(
         **generate_powerquery(schema, bundle, "default", site_url=site_url),
         **generate_dictionary_powerquery(schema, bundle, "default", site_url=site_url),
     }
-    sources = {name: _data_source_urls(text) for name, text in queries.items()}
-    # Every list reads the site, its time zone or folder, and the other list inline.
-    assert len(sources["APP_Risk.pq"]) >= 4
-    assert len(sources["_UserAddedColumns.pq"]) == 2
     for name, text in queries.items():
         assert _bad(text) == [], name
+        assert "OData.Feed" not in text, name
+        sources = _data_source_urls(text)
+        # One data source per query: the base inside Get, none elsewhere.
+        assert len(sources) == (0 if name in _TABLES else 1), name
+        if sources:
+            assert text.count("Web.Contents(") == 1, name
+            assert sources[0] == (
+                '"https://tenant.sharepoint.com/sites/Ops/_api/web"'
+                if site_url else 'SiteUrl & "/_api/web"'
+            ), name
 
 
 @pytest.mark.parametrize("family", sorted(BLUEPRINTS))
@@ -159,4 +166,56 @@ def test_every_data_source_in_a_shipped_family_is_static(family: str) -> None:
             }.items():
                 seen += len(_data_source_urls(text))
                 assert _bad(text) == [], f"{family}/{role}/{name}"
+                assert "OData.Feed" not in text, f"{family}/{role}/{name}"
+                assert len(_data_source_urls(text)) <= 1, f"{family}/{role}/{name}"
     assert seen
+
+
+def test_every_read_goes_through_get_and_paging_moves_only_the_query() -> None:
+    schema, bundle = pack(
+        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+    )
+    text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
+    # No call reaches the network except through Get / GetAll.
+    assert len(re.findall(r"Web\.Contents\(", text)) == 1
+    assert len(re.findall(r"(?<![\w])Get(All)?\(", text)) >= 5
+    # Paging: only the next link's query keys are carried over, never the link.
+    assert 'Uri.Parts(Record.Field(_, "odata.nextLink"))[Query]' in text
+    assert text.count("nextLink") == 2
+    assert '#"$top" = "5000"' in text
+
+
+@pytest.mark.parametrize(("title", "encoded"), [
+    ("Risk Register", "Risk%20Register"),
+    ("R&D", "R%26D"),
+    ("Bob's List", "Bob%27%27s%20List"),
+])
+def test_a_list_title_is_percent_encoded_once_in_the_relative_path(
+    title: str, encoded: str,
+) -> None:
+    from dataclasses import replace
+
+    from dbml_sharepoint.analysis.reporting.names import query_name
+    from dbml_sharepoint.analysis.reporting.plan import build_plans
+    from dbml_sharepoint.generators.report_m import _render_m
+
+    schema, bundle = pack(Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING)
+    plans = build_plans(schema, bundle, "default")
+    bases = {query_name(plan.list_title): plan for plan in plans}
+    text = _render_m(replace(plans[0], list_title=title), bases)
+    assert f"lists/getbytitle('{encoded}')/items" in text
+    assert f"lists/getbytitle('{encoded}')/RootFolder" in text
+    assert "%25" not in text
+
+
+def test_a_list_with_no_rows_still_gets_every_declared_column() -> None:
+    """A list with no rows answers with no columns; the step straight after the
+    read adds each declared one, before the typing step names it."""
+    schema, bundle = pack(
+        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+    )
+    text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
+    assert text.index("Source = GetAll(") < text.index("Ensured = List.Accumulate(")
+    typed = text.index("Typed = Table.TransformColumnTypes(")
+    assert text.index("Ensured = List.Accumulate(") < typed
+    assert "Table.AddColumn(t, c, each null, type text)" in text

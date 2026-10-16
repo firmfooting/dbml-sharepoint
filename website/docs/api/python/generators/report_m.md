@@ -9,7 +9,7 @@ sidebar_position: 44
 
 The Power Query side of the reporting pack.
 
-One M query per list, ``OData.Feed`` against the list's REST endpoint, with
+One M query per list, read through ``Web.Contents`` from the list's REST endpoint, with
 lookup and person columns expanded to a join key plus display column and
 column types applied from the deployer's own typemap; the ``_Users``
 dimension; and the three loadable tables (``_DataDictionary``,

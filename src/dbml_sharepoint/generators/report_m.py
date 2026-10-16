@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/generators/report_m.py
 """The Power Query side of the reporting pack.
 
-One M query per list, ``OData.Feed`` against the list's REST endpoint, with
+One M query per list, read through ``Web.Contents`` from the list's REST endpoint, with
 lookup and person columns expanded to a join key plus display column and
 column types applied from the deployer's own typemap; the ``_Users``
 dimension; and the three loadable tables (``_DataDictionary``,
@@ -106,11 +106,73 @@ def _site_url_binding_m(site_url: str | None) -> list[str]:
     return [
         "    // Baked in at build time from `--site-url`; there is nothing to",
         "    // set up. To report across several sites, duplicate this query",
-        "    // and change this ONE line per copy (or point it at a text",
-        "    // parameter). Everything below, including the site name,",
-        "    // derives from it.",
+        "    // and change this line and the Web.Contents base in Get per",
+        "    // copy. Everything below, including the site name, derives",
+        "    // from them.",
         f"    SiteUrl = {_m_string(site_url)},",
     ]
+
+
+# THE one place the data source is decided. Every read in every query goes
+# through `Get`, whose `Web.Contents` takes this base and nothing else; the rest
+# of each URL travels in `RelativePath` and `Query`, so the Power BI service
+# sees ONE data source per site and asks for one credential. Moving the base
+# (say to the site root) is a change to this function alone.
+def _web_base_m(site_url: str | None) -> str:
+    """The M expression for the `Web.Contents` base: a literal when the build
+    knows the site, otherwise the `SiteUrl` parameter."""
+    if site_url is None:
+        return 'SiteUrl & "/_api/web"'
+    return _m_string(site_url + "/_api/web")
+
+
+def _get_m(site_url: str | None) -> list[str]:
+    """`Get` (one read) and `GetAll` (a collection, every page) for a top-level `let`.
+
+    Paging follows `odata.nextLink` by moving only its query keys into the
+    next request; the full link is never passed to `Web.Contents`.
+    """
+    return [
+        "    // The only read path: one Web.Contents data source for the model.",
+        "    Get = (relativePath as text, query as record) as any =>",
+        "        Json.Document(",
+        "            Web.Contents(",
+        f"                {_web_base_m(site_url)},",
+        "                [",
+        "                    Query = query,",
+        '                    Headers = [Accept = "application/json;odata=nometadata"]',
+        '                ] & (if relativePath = "" then [] else [RelativePath = relativePath])',
+        "            )",
+        "        ),",
+        "    // Every row of a collection, as a table. A list with no rows gives a",
+        "    // table with no columns, which the Ensured step of each caller fills.",
+        "    GetAll = (relativePath as text, query as record) as table =>",
+        "        let",
+        "            Pages = List.Generate(",
+        "                () => Get(relativePath, query),",
+        "                each _ <> null,",
+        "                each",
+        '                    if Record.HasFields(_, "odata.nextLink")',
+        "                    then Get(",
+        "                        relativePath,",
+        '                        Uri.Parts(Record.Field(_, "odata.nextLink"))[Query]',
+        "                    )",
+        "                    else null,",
+        "                each _[value]",
+        "            )",
+        "        in",
+        "            Table.FromRecords(List.Combine(Pages), null, MissingField.UseNull),",
+    ]
+
+
+def _query_m(options: dict[str, str]) -> str:
+    """A `Get` query record from OData options, each value a ready M string."""
+    return "[" + ", ".join(f'#"{k}" = {v}' for k, v in options.items()) + "]"
+
+
+def _list_path(title: str, tail: str) -> str:
+    """`lists/getbytitle('<title>')/<tail>`, the title percent-encoded once."""
+    return "lists/getbytitle('" + quote(title.replace("'", "''"), safe="") + "')/" + tail
 
 
 # The site root, derived from the SiteUrl binding above rather than trusted
@@ -131,11 +193,7 @@ _SITE_NAME_M: list[str] = [
     "    // are the data, so this must not be able to fail the refresh.",
     "    SiteName =",
     "        try",
-    "            OData.Feed(",
-    '                SiteUrl & "/_api/web?$select=Title",',
-    "                null,",
-    '                [Implementation = "2.0"]',
-    "            )[Title]",
+    '            Get("", [#"$select" = "Title"])[Title]',
     "        otherwise SiteUrl,",
 ]
 
@@ -146,7 +204,7 @@ _SITE_NAME_M: list[str] = [
 # query ends in `_checked_m`, which raises it before any row is read.
 _SITE_URL_CHECK_M: list[str] = [
     "    // SiteUrl must be the bare site root. Validated, not rewritten, so",
-    "    // every data source below can take SiteUrl & a literal.",
+    "    // the Get base below is a literal or SiteUrl & a literal.",
     "    SiteUrlProblem =",
     "        if not Text.StartsWith(SiteUrl, \"https://\", Comparer.OrdinalIgnoreCase)",
     "            or Text.EndsWith(SiteUrl, \"/\")",
@@ -198,7 +256,7 @@ _SITE_ORIGIN_M: list[str] = [
 # MEASURED on a live tenant, 2026-09-07: a calculated column of output type
 # Date is served as a PLAIN STRING. In one /items response `LastReviewedDate`
 # carried m:type="Edm.DateTime" and the calculated `NextReviewDue` beside it
-# carried no m:type at all, so OData.Feed landed the second as text, the
+# carried no m:type at all, so the second landed as text, the
 # `type date` conversion errored on every row, and Power BI's default
 # `returnErrorValuesAsNull` turned each error into a blank. The column read as
 # empty rather than as broken, which is why the refresh reported nothing.
@@ -304,11 +362,7 @@ def _zone_m(zone: ZoneTable | None) -> list[str]:
         "    Zone =",
         "        try",
         "            let",
-        "                Info = OData.Feed(",
-        '                    SiteUrl & "/_api/web/RegionalSettings/TimeZone",',
-        "                    null,",
-        '                    [Implementation = "2.0"]',
-        "                )[Information],",
+        '                Info = Get("RegionalSettings/TimeZone", [])[Information],',
         '                Bias = Number.From(Record.FieldOrDefault(Info, "Bias", 0)),',
         "                Standard =",
         '                    Number.From(Record.FieldOrDefault(Info, "StandardBias", 0)),',
@@ -464,7 +518,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
     is worse than not trying because the two wrong ones are indistinguishable
     from the eight right ones.
 
-    Same single-entity ``OData.Feed`` read as the site name above, evaluated
+    Same single-entity ``Get`` read as the site name above, evaluated
     once per refresh rather than once per row, and it fails soft the same way
     and for the same reason: a link is a convenience, the rows are the data.
 
@@ -476,11 +530,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
     branch that ran rides beside the URL, so a report can suppress the link
     rather than ship a 404.
     """
-    escaped_title = quote(plan.list_title.replace("'", "''"), safe="")
-    endpoint = (
-        f"/_api/web/lists/getbytitle('{escaped_title}')"
-        "/RootFolder?$select=ServerRelativeUrl"
-    )
+    endpoint = _list_path(plan.list_title, "RootFolder")
     return [
         "    ItemUrl =",
         "        try",
@@ -488,10 +538,9 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "                resolved = true,",
         "                base =",
         "                    SiteOrigin",
-        "                        & OData.Feed(",
-        f"                            SiteUrl & {_m_string(endpoint)},",
-        "                            null,",
-        '                            [Implementation = "2.0"]',
+        "                        & Get(",
+        f"                            {_m_string(endpoint)},",
+        '                            [#"$select" = "ServerRelativeUrl"]',
         "                        )[ServerRelativeUrl]",
         f'                        & "{plan.item_url_suffix}"',
         "            ]",
@@ -796,7 +845,9 @@ def _fetch_m(
     check: both come from the enclosing query.
     """
     # Learn: $top selects the first n rows of the result; the default page is 100.
-    query_string = "?$select=" + ",".join(plan.selects) + "&$top=5000"
+    options = {"$select": _m_string(",".join(plan.selects)), "$top": '"5000"'}
+    if plan.expands:
+        options["$expand"] = _m_string(",".join(plan.expands))
     # Every column a step below names. `multi_value_joins` is the one output
     # column deliberately absent from `m_types` (its join step ascribes the
     # type), and a set built from `m_types` alone would leave that one column
@@ -811,6 +862,7 @@ def _fetch_m(
         "let",
         *([] if nested else _site_url_binding_m(site_url)),
         *([] if nested else _SITE_URL_CHECK_M),
+        *([] if nested else _get_m(site_url)),
         # Deliberately inline rather than a shared _SiteName query. A shared
         # query binds to ONE SiteUrl parameter, so every duplicate of this
         # list -- one per site, which is exactly how a multi-site report is
@@ -827,19 +879,9 @@ def _fetch_m(
         *(_AS_STAMP_M if zone_read else []),
         *(_AS_DATE_M if dates else []),
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
-        "    Source = OData.Feed(",
-        "        SiteUrl & " + _m_string(
-            "/_api/web/lists/getbytitle('"
-            + quote(plan.list_title.replace("'", "''"), safe="") + "')/items",
-        ),
-        f'            & "{query_string}"',
-    ]
-    if plan.expands:
-        lines.append(f'            & "&$expand={",".join(plan.expands)}"')
-    lines[-1] += ","
-    lines += [
-        "        null,",
-        '        [Implementation = "2.0"]',
+        "    Source = GetAll(",
+        f"        {_m_string(_list_path(plan.list_title, 'items'))},",
+        f"        {_query_m(options)}",
         "    ),",
     ]
     prev = "Source"
@@ -1239,6 +1281,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "let",
         *_site_url_binding_m(site_url),
         *_SITE_URL_CHECK_M,
+        *_get_m(site_url),
         *_SITE_NAME_M,
         "    // MEASURED on a live tenant, 2026-09-02, by a site admin: these are",
         "    // the list's own internal names, a person column's ids resolve to",
@@ -1246,11 +1289,9 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "    // a person, 0x010B for a SharePoint group and 0x010C for a domain",
         "    // group. A reader-tier account was NOT measured: a 403 here means",
         "    // the reporting account needs read access to this list.",
-        "    Source = OData.Feed(",
-        '        SiteUrl & "/_api/web/siteuserinfolist/items"',
-        f'            & "?$select={select}&$top=5000",',
-        "        null,",
-        '        [Implementation = "2.0"]',
+        "    Source = GetAll(",
+        '        "siteuserinfolist/items",',
+        f"        {_query_m({'$select': _m_string(select), '$top': chr(34) + '5000' + chr(34)})}",
         "    ),",
         # The users list is read like any other list and answers like one, so
         # a site whose user information list the reporting account can see but
@@ -1357,6 +1398,10 @@ def _render_user_added_columns_m(
             "",
         ])
     audit_calls: list[str] = []
+    fields_query = _query_m({"$select": _m_string(
+        "InternalName,Title,TypeAsString,Hidden,ReadOnlyField,CanBeDeleted,"
+        "ClientValidationFormula,ValidationFormula",
+    )})
     for plan in plans:
         expected = ", ".join(
             _m_string(name)
@@ -1364,18 +1409,10 @@ def _render_user_added_columns_m(
         )
         # Each list's fields are read at the call, a literal URL beside the
         # site, because a data source behind a function parameter is dynamic.
-        fields_path = (
-            "/_api/web/lists/getbytitle('"
-            + quote(plan.list_title.replace("'", "''"), safe="")
-            + "')/fields"
-            "?$select=InternalName,Title,TypeAsString,"
-            "Hidden,ReadOnlyField,CanBeDeleted,ClientValidationFormula,"
-            "ValidationFormula"
-        )
+        fields_path = _list_path(plan.list_title, "fields")
         audit_calls += [
             f"        Audit({_m_string(plan.list_title)}, {{{expected}}},",
-            f"            OData.Feed(SiteUrl & {_m_string(fields_path)}, null,",
-            '                [Implementation = "2.0"])),',
+            f"            GetAll({_m_string(fields_path)}, {fields_query})),",
         ]
     audit_calls[-1] = audit_calls[-1].rstrip(",")
     lines = [
@@ -1394,6 +1431,7 @@ def _render_user_added_columns_m(
         "let",
         *_site_url_binding_m(site_url),
         *_SITE_URL_CHECK_M,
+        *_get_m(site_url),
         "    // Added by a tenant compliance feature outside operator",
         "    // control; a standing row here would erode the",
         "    // \"any row = investigate\" meaning of this table.",

@@ -33,7 +33,7 @@ from dbml_sharepoint.model.parser import Schema, parse_dbml
 BLUEPRINTS = engine_blueprints()
 FAMILIES = sorted(BLUEPRINTS)
 
-_QUERY_REF = re.compile(r'#"([^"]+)"')
+_QUERY_REF = re.compile(r'#"([^"$][^"]*)"')
 
 
 def _family(name: str) -> tuple[Schema, MappingBundle]:
@@ -156,7 +156,7 @@ def test_an_inlined_read_names_no_query_and_binds_no_url_of_its_own(
     for site_url in (None, "https://tenant.sharepoint.com/sites/Ops"):
         query = _pair(tmp_path, site_url)["APP_Risk.pq"]
         inline = query.split("    Rows1 =\n", 1)[1].split("\n        in\n", 1)[0]
-        assert '#"' not in inline, "an inlined read must read nothing by name"
+        assert not re.search(r'#"(?!\$)', inline), "an inlined read must read nothing by name"
         assert "SiteUrl =" not in inline.replace("WithSiteUrl =", "")
         assert "SiteUrlProblem =" not in inline
         assert "(SiteUrl as text)" not in query
