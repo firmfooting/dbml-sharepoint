@@ -296,8 +296,12 @@ from `--site-url` itself and says so.
 
 The value is checked rather than corrected because the Power BI Service
 refuses to schedule a refresh when a data source's URL is computed. Every
-read in the pack is `SiteUrl & "<literal>"`, so the Service can see the
-data source without running the query.
+read in the pack goes through one `Get` whose `Web.Contents` base is
+`SiteUrl & "/_api/web"`, so the Service can see the data source without
+running the query. The options argument of that call is one record literal
+(`RelativePath`, `Query` and `Headers`, with `RelativePath` always present).
+The Service treats an options record built by `&` concatenation, an `if` or a
+function call as a dynamic data source, even when the base is a literal.
 
 ## Several sites in one report
 

@@ -174,13 +174,13 @@ def test_the_report_joins_the_ids_into_one_text_cell(
     ]
 
     feed = matter.split("getbytitle('APP_Matter')/items\"", 1)[1]
-    select = feed.split("?$select=", 1)[1].split("\"", 1)[0]
+    select = feed.split('#"$select" = "', 1)[1].split("\"", 1)[0]
     assert "PartiesId" in select
     assert 'Text.Combine(List.Transform(_, Text.From), "; ")' in matter
     # No $expand: expanding a collection yields a nested table per row, and
     # nothing in this generator flattens one. The single-value control does
     # expand, so the absence is about arity and not about lookups.
-    expand = feed.split("&$expand=", 1)[1].split("\"", 1)[0]
+    expand = feed.split('#"$expand" = "', 1)[1].split("\"", 1)[0]
     assert "Owner" in expand
     assert "Parties" not in expand
     # A joined set has no bound worth guessing, and a CAST that overflows

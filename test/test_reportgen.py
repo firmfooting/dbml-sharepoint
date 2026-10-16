@@ -70,25 +70,26 @@ def _calculated() -> tuple[Schema, MappingBundle]:
     )
 
 
-def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
+def test_powerquery_one_query_per_entity_read_through_web_contents() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
     assert set(queries) == {"APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq"}
     task = queries["APP_Task.pq"]
-    assert "OData.Feed(" in task
+    assert "OData.Feed" not in task
+    assert task.count("Web.Contents(") == 1
     assert "getbytitle('APP_Task')" in task
     # Parameterised, not hardcoded; see test_report_static_sources.
-    assert "SiteUrl & " in task
+    assert 'SiteUrl & "/_api/web"' in task
 
 
 def test_powerquery_reads_items_five_thousand_a_page() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert task.count("$top=5000") == 1
-    assert task.index("$top=5000") < task.index("&$expand=")
+    assert task.count('#"$top" = "5000"') == 1
+    assert task.index('#"$top"') < task.index('#"$expand"')
     schema, bundle = _users_on()
     users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
-    assert users.count("$top=5000") == 1
+    assert users.count('#"$top" = "5000"') == 1
 
 
 def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
@@ -97,7 +98,7 @@ def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
     # Join key comes back as the scalar <col>Id property...
     assert "ProjectId" in task
     # ...and the display title via $expand + record expansion.
-    assert "$expand=Project" in task
+    assert '#"$expand" = "Project"' in task
     assert 'Table.ExpandRecordColumn' in task
     assert '"ProjectTitle"' in task
 
@@ -159,13 +160,12 @@ def test_the_site_name_is_read_from_the_site_not_configured() -> None:
     """The whole point: nobody maintains a URL-to-name list by hand, and a
     site renamed in SharePoint shows its new name at the next refresh.
 
-    `_api/web?$select=Title` is documented on Microsoft Learn and was
-    confirmed against a live tenant to answer with an OData entry carrying
-    `d:Title` -- the shape `OData.Feed` consumes.
+    `_api/web?$select=Title` is documented on Microsoft Learn and answers
+    with a JSON object carrying `Title`, which `Get` reads.
     """
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert '"/_api/web?$select=Title"' in task
+    assert 'Get("", [#"$select" = "Title"])[Title]' in task
 
 
 def test_each_query_resolves_its_own_site_name() -> None:
@@ -185,7 +185,7 @@ def test_each_query_resolves_its_own_site_name() -> None:
     assert not any(name.startswith("_Site") for name in queries)
     for name, query in queries.items():
         assert "SiteName =" in query, name
-        assert '"/_api/web?$select=Title"' in query, name
+        assert 'Get("", [#"$select" = "Title"])[Title]' in query, name
 
 
 def test_the_site_name_lookup_fails_soft() -> None:
@@ -856,7 +856,7 @@ def test_user_added_columns_powerquery_audits_every_list() -> None:
     assert "_UserAddedColumns.pq" in queries
     q = queries["_UserAddedColumns.pq"]
     assert "/fields" in q
-    assert "$select=InternalName,Title,TypeAsString,Hidden,ReadOnlyField,CanBeDeleted" in q
+    assert '#"$select" = "InternalName,Title,TypeAsString,Hidden,ReadOnlyField,CanBeDeleted' in q
     assert "not [Hidden] and not [ReadOnlyField] and [CanBeDeleted]" in q
     assert "Table.Combine" in q
     for lst in ("APP_Project", "APP_Task", "APP_AppSettings"):
@@ -1426,7 +1426,7 @@ def test_powerquery_joins_a_multi_value_column_into_one_text_cell() -> None:
     schema, bundle = _multi_value()
     q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
 
-    assert "$select=Id,Title,AuditEvents" in q
+    assert '#"$select" = "Id,Title,AuditEvents' in q
     assert "Table.TransformColumns(" in q
     assert 'Text.Combine(_, "; ")' in q
     assert "type text}" in q
@@ -1802,7 +1802,7 @@ def test_system_columns_ride_the_person_and_datetime_arms() -> None:
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     # After the schema's own columns, in the order Created By, Created,
     # Modified By, Modified.
-    assert ',AuthorId,Author/Title,Created,EditorId,Editor/Title,Modified&$top=5000"' in task
+    assert ',AuthorId,Author/Title,Created,EditorId,Editor/Title,Modified"' in task
     assert ',Author,Editor"' in task
     for typed in (
         '{"AuthorId", Int64.Type}', '{"AuthorTitle", type text}',
@@ -1901,7 +1901,7 @@ def test_the_system_column_list_is_the_deploy_side_fact() -> None:
 # NOT measured.
 
 _USERS_SELECT = (
-    "$select=Id,Title,EMail,UserName,Department,JobTitle,Office,Deleted,ContentTypeId"
+    "Id,Title,EMail,UserName,Department,JobTitle,Office,Deleted,ContentTypeId"
 )
 
 
@@ -1932,7 +1932,7 @@ def test_the_users_table_is_off_unless_the_mapping_asks() -> None:
 def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> None:
     schema, bundle = _users_on()
     users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
-    assert 'SiteUrl & "/_api/web/siteuserinfolist/items"' in users
+    assert '"siteuserinfolist/items"' in users
     assert _USERS_SELECT in users
     for typed in (
         '{"Id", Int64.Type}', '{"Title", type text}', '{"EMail", type text}',
@@ -2474,7 +2474,8 @@ def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
     schema, bundle = _simple()
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert (
-        "getbytitle('APP_Task')/RootFolder?$select=ServerRelativeUrl" in query
+        "getbytitle('APP_Task')/RootFolder" in query
+        and '[#"$select" = "ServerRelativeUrl"]' in query
     ), query
     assert "[ServerRelativeUrl]" in query
     # Read once per refresh, not once per row: the link is a column over the
@@ -2730,7 +2731,7 @@ def test_a_date_only_column_reads_the_sites_time_zone() -> None:
     consumer on a UTC+10 site, where 2026-09-03T14:00:00Z is the 4th."""
     schema, bundle = _simple()
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert "/_api/web/RegionalSettings/TimeZone" in query
+    assert 'Get("RegionalSettings/TimeZone", [])' in query
     assert '"Bias"' in query
     assert '"StandardBias"' in query
     assert '"DaylightBias"' in query
@@ -2897,7 +2898,7 @@ def test_a_projection_the_expand_refuses_is_carried_by_a_join(
     """
     schema, bundle = _projecting_type(target_type)
     query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
-    select = query.split("?$select=")[1].split('"')[0]
+    select = query.split('#"$select" = "')[1].split('"')[0]
     assert "Decision/Extra" not in select, "the refused path is still emitted"
     assert '"DecisionExtra"' in query, "the declared column vanished"
     assert "Table.NestedJoin(" in query
@@ -2936,10 +2937,11 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     enums = {e.name for e in schema.enums}
     by_table = {t.name: {c.name: c for c in t.columns} for t in schema.tables}
-    checked = 0
+    checked = parsed = 0
     for name, text in generate_powerquery(schema, bundle, "default").items():
         entity = name[:-3].removeprefix(bundle.mapping.prefix)
-        for select in re.findall(r"\?\$select=([^\"]+)", text):
+        for select in re.findall(r'#"\$select" = "([^"]+)"', text):
+            parsed += 1
             for path in [p for p in select.split(",") if "/" in p]:
                 lookup, target_column = path.split("/", 1)
                 col = by_table.get(entity, {}).get(lookup)
@@ -2953,7 +2955,7 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
                     f"{family}/{name} selects {path!r}, which SharePoint "
                     f"refuses with HTTP 400, failing the whole query"
                 )
-    assert checked or family, family
+    assert parsed, f"{family}: nothing parsed from the Query records"
 
 
 def test_explicit_titles_escape_m_odata_and_sql_delimiters(tmp_path: Path) -> None:
