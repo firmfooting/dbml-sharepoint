@@ -947,6 +947,16 @@ def test_a_calculated_scratch_column_is_created_after_the_column_it_references()
     assert names.index("CD") < names.index("CC")
 
 
+def test_calculated_scratch_columns_keep_their_insertion_order() -> None:
+    """Alphabetical order would put CC10 before CC2, ahead of the column it depends on."""
+    targets = verifygen._Targets()
+    targets.column("CD", "date", 0)
+    targets.column("CC2", "calculated_date", 0, formula="=[CD]")
+    targets.column("CC10", "calculated_date", 0, formula="=[CC2]")
+    ordered = sorted(targets.columns, key=lambda n: verifygen._column_order(targets.columns[n]))
+    assert ordered == ["CD", "CC2", "CC10"]
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_seeded_midnights_use_the_offset_in_force_on_each_date() -> None:
     """A zone at +10:00 that moved to +11:00 an hour ago: earlier dates sit at the old offset."""

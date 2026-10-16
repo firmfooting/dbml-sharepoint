@@ -155,6 +155,12 @@ class VerifyTargets(TypedDict):
     identity_groups: list[dict[str, JsonValue]]
 
 
+def _column_order(column: _Column) -> tuple[bool, str]:
+    """Plain columns by name, then calculated ones in insertion order (the sort is stable)."""
+    calculated = "formula" in column
+    return calculated, "" if calculated else column["name"]
+
+
 def _midnight(days: int) -> _Value:
     return {"kind": "midnight", "days": days}
 
@@ -428,10 +434,10 @@ def verify_targets(
     return {
         "list_title": VERIFY_LIST_TITLE,
         "marker": verify_marker(),
-        # Calculated columns last: SharePoint refuses a formula naming a column not yet created.
+        # Calculated last, in insertion order (SharePoint refuses a formula naming a later column).
         "columns": [
             targets.columns[name]
-            for name in sorted(targets.columns, key=lambda n: ("formula" in targets.columns[n], n))
+            for name in sorted(targets.columns, key=lambda n: _column_order(targets.columns[n]))
         ],
         "rows": [
             {"id": row["id"], "column": row["column"], "value": row["value"]}
