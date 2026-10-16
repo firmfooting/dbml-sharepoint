@@ -106,43 +106,44 @@ def _site_url_binding_m(site_url: str | None) -> list[str]:
     return [
         "    // Baked in at build time from `--site-url`; there is nothing to",
         "    // set up. To report across several sites, duplicate this query",
-        "    // and change this line and the Web.Contents base in Get per",
-        "    // copy. Everything below, including the site name, derives",
-        "    // from them.",
+        "    // and change this ONE line per copy (or point it at a text",
+        "    // parameter). Everything below,",
+        "    // including the site name and the Get base, derives from it.",
         f"    SiteUrl = {_m_string(site_url)},",
     ]
 
 
-# THE one place the data source is decided. Every read in every query goes
-# through `Get`, whose `Web.Contents` takes this base and nothing else; the rest
-# of each URL travels in `RelativePath` and `Query`, so the Power BI service
-# sees ONE data source per site and asks for one credential. Moving the base
-# (say to the site root) is a change to this function alone.
-def _web_base_m(site_url: str | None) -> str:
-    """The M expression for the `Web.Contents` base: a literal when the build
-    knows the site, otherwise the `SiteUrl` parameter."""
-    if site_url is None:
-        return 'SiteUrl & "/_api/web"'
-    return _m_string(site_url + "/_api/web")
+# The one place the data source is decided: every read goes through `Get`, so
+# the service sees one data source and asks for one credential per site.
+# Built from the SiteUrl binding in every mode, so changing SiteUrl on a
+# duplicated query is all a second site needs.
+_WEB_BASE_M = 'SiteUrl & "/_api/web"'
 
 
-def _get_m(site_url: str | None) -> list[str]:
+def _get_m() -> list[str]:
     """`Get` (one read) and `GetAll` (a collection, every page) for a top-level `let`.
 
-    Paging follows `odata.nextLink` by moving only its query keys into the
-    next request; the full link is never passed to `Web.Contents`.
+    Paging follows the next link (`odata.nextLink`, or `@odata.nextLink`) by
+    moving only its query keys into the next request; the full link is never
+    passed to `Web.Contents`.
     """
     return [
         "    // The only read path: one Web.Contents data source for the model.",
         "    Get = (relativePath as text, query as record) as any =>",
         "        Json.Document(",
         "            Web.Contents(",
-        f"                {_web_base_m(site_url)},",
+        f"                {_WEB_BASE_M},",
         "                [",
         "                    Query = query,",
         '                    Headers = [Accept = "application/json;odata=nometadata"]',
         '                ] & (if relativePath = "" then [] else [RelativePath = relativePath])',
         "            )",
+        "        ),",
+        "    // The next page's link, under whichever spelling the answer uses.",
+        "    NextLink = (page as record) as nullable text =>",
+        "        Record.FieldOrDefault(",
+        '            page, "odata.nextLink",',
+        '            Record.FieldOrDefault(page, "@odata.nextLink", null)',
         "        ),",
         "    // Every row of a collection, as a table. A list with no rows gives a",
         "    // table with no columns, which the Ensured step of each caller fills.",
@@ -152,11 +153,8 @@ def _get_m(site_url: str | None) -> list[str]:
         "                () => Get(relativePath, query),",
         "                each _ <> null,",
         "                each",
-        '                    if Record.HasFields(_, "odata.nextLink")',
-        "                    then Get(",
-        "                        relativePath,",
-        '                        Uri.Parts(Record.Field(_, "odata.nextLink"))[Query]',
-        "                    )",
+        "                    if NextLink(_) <> null",
+        "                    then Get(relativePath, Uri.Parts(NextLink(_))[Query])",
         "                    else null,",
         "                each _[value]",
         "            )",
@@ -204,7 +202,7 @@ _SITE_NAME_M: list[str] = [
 # query ends in `_checked_m`, which raises it before any row is read.
 _SITE_URL_CHECK_M: list[str] = [
     "    // SiteUrl must be the bare site root. Validated, not rewritten, so",
-    "    // the Get base below is a literal or SiteUrl & a literal.",
+    "    // the Get base below is SiteUrl & a literal.",
     "    SiteUrlProblem =",
     "        if not Text.StartsWith(SiteUrl, \"https://\", Comparer.OrdinalIgnoreCase)",
     "            or Text.EndsWith(SiteUrl, \"/\")",
@@ -862,7 +860,7 @@ def _fetch_m(
         "let",
         *([] if nested else _site_url_binding_m(site_url)),
         *([] if nested else _SITE_URL_CHECK_M),
-        *([] if nested else _get_m(site_url)),
+        *([] if nested else _get_m()),
         # Deliberately inline rather than a shared _SiteName query. A shared
         # query binds to ONE SiteUrl parameter, so every duplicate of this
         # list -- one per site, which is exactly how a multi-site report is
@@ -1281,7 +1279,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "let",
         *_site_url_binding_m(site_url),
         *_SITE_URL_CHECK_M,
-        *_get_m(site_url),
+        *_get_m(),
         *_SITE_NAME_M,
         "    // MEASURED on a live tenant, 2026-09-02, by a site admin: these are",
         "    // the list's own internal names, a person column's ids resolve to",
@@ -1431,7 +1429,7 @@ def _render_user_added_columns_m(
         "let",
         *_site_url_binding_m(site_url),
         *_SITE_URL_CHECK_M,
-        *_get_m(site_url),
+        *_get_m(),
         "    // Added by a tenant compliance feature outside operator",
         "    // control; a standing row here would erode the",
         "    // \"any row = investigate\" meaning of this table.",

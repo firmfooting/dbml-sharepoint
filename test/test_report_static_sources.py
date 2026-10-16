@@ -4,10 +4,10 @@
 The Power BI Service asks for one credential per distinct data source and
 refuses to schedule a refresh for one whose URL it cannot resolve statically
 (Learn, "Refresh and dynamic data sources"). So each query opens a single
-`Web.Contents` whose base is a string literal (`SiteUrl & "<literal>"` when the
-standalone command has only the parameter), every read goes through `Get`, and
-the rest of each URL travels in `RelativePath` and `Query`. Nothing in a build
-or in Desktop sees a violation, so the shape is pinned over the generated text.
+`Web.Contents` whose base is `SiteUrl & "<literal>"` (SiteUrl is a literal
+binding or a parameter), every read goes through `Get`, and the rest of each
+URL travels in `RelativePath` and `Query`. Nothing in a build or in Desktop
+sees a violation, so the shape is pinned over the generated text.
 """
 
 import re
@@ -138,10 +138,7 @@ def test_every_data_source_in_a_cross_list_bundle_is_static(
         assert len(sources) == (0 if name in _TABLES else 1), name
         if sources:
             assert text.count("Web.Contents(") == 1, name
-            assert sources[0] == (
-                '"https://tenant.sharepoint.com/sites/Ops/_api/web"'
-                if site_url else 'SiteUrl & "/_api/web"'
-            ), name
+            assert sources[0] == 'SiteUrl & "/_api/web"', name
 
 
 @pytest.mark.parametrize("family", sorted(BLUEPRINTS))
@@ -180,8 +177,8 @@ def test_every_read_goes_through_get_and_paging_moves_only_the_query() -> None:
     assert len(re.findall(r"Web\.Contents\(", text)) == 1
     assert len(re.findall(r"(?<![\w])Get(All)?\(", text)) >= 5
     # Paging: only the next link's query keys are carried over, never the link.
-    assert 'Uri.Parts(Record.Field(_, "odata.nextLink"))[Query]' in text
-    assert text.count("nextLink") == 2
+    assert "Uri.Parts(NextLink(_))[Query]" in text
+    assert "Uri.Parts(NextLink(_)" in text and text.count("Uri.Parts(") == 1
     assert '#"$top" = "5000"' in text
 
 
@@ -219,3 +216,15 @@ def test_a_list_with_no_rows_still_gets_every_declared_column() -> None:
     typed = text.index("Typed = Table.TransformColumnTypes(")
     assert text.index("Ensured = List.Accumulate(") < typed
     assert "Table.AddColumn(t, c, each null, type text)" in text
+
+
+@pytest.mark.parametrize("spelling", ["odata.nextLink", "@odata.nextLink"])
+def test_a_page_carries_a_next_link_under_either_spelling(spelling: str) -> None:
+    """One helper reads the link, trying each spelling, and paging asks only it."""
+    schema, bundle = pack(
+        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+    )
+    text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
+    helper = text.split("NextLink = ", 1)[1].split("),", 1)[0]
+    assert f'"{spelling}"' in helper
+    assert text.count(f'"{spelling}"') == 1
