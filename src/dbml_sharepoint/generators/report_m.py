@@ -795,7 +795,8 @@ def _fetch_m(
     reporting-only columns. Nested, it binds neither `SiteUrl` nor its
     check: both come from the enclosing query.
     """
-    query_string = "?$select=" + ",".join(plan.selects)
+    # Learn: $top selects the first n rows of the result; the default page is 100.
+    query_string = "?$select=" + ",".join(plan.selects) + "&$top=5000"
     # Every column a step below names. `multi_value_joins` is the one output
     # column deliberately absent from `m_types` (its join step ascribes the
     # type), and a set built from `m_types` alone would leave that one column
@@ -1247,7 +1248,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "    // the reporting account needs read access to this list.",
         "    Source = OData.Feed(",
         '        SiteUrl & "/_api/web/siteuserinfolist/items"',
-        f'            & "?$select={select}",',
+        f'            & "?$select={select}&$top=5000",',
         "        null,",
         '        [Implementation = "2.0"]',
         "    ),",
