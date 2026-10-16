@@ -27,7 +27,7 @@ jobs:
     if: needs.gate.outputs.run == 'true'
     permissions:
       contents: read
-    uses: $/.github/workflows/ci.yml
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
   alert:
     needs: [gate, test]
     # A gate that errors alerts too, so the schedule cannot stop in silence.
