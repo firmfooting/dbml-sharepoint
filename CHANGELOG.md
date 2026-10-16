@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.21.0...v0.21.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **build:** stamp SOURCE_DATE_EPOCH as the schema time whenever it is set ([#870](https://github.com/firmfooting/dbml-sharepoint/issues/870)) ([4a5abca](https://github.com/firmfooting/dbml-sharepoint/commit/4a5abca0ebe850ead28b432cb510f7c3a46edbe5))
+* **model:** refuse a repeated key in a formatter JSON file ([#869](https://github.com/firmfooting/dbml-sharepoint/issues/869)) ([fedd0b2](https://github.com/firmfooting/dbml-sharepoint/commit/fedd0b29952974098b97749f623b2d09754d1738))
+* **verify:** seed dates at the offset in force on each date, and create calculated scratch columns last ([#868](https://github.com/firmfooting/dbml-sharepoint/issues/868)) ([8c33bc2](https://github.com/firmfooting/dbml-sharepoint/commit/8c33bc2f9d9bb7d51aaccaad7ade59a81fe4369e))
+* **wizard:** refuse an extension that requires its project CLI before scaffolding ([#871](https://github.com/firmfooting/dbml-sharepoint/issues/871)) ([daeb1d2](https://github.com/firmfooting/dbml-sharepoint/commit/daeb1d2bc7247020fa6576ab73a2042405306dc3))
+
+
+### Performance Improvements
+
+* cache the parsed blueprint catalogue by path and mtime ([#867](https://github.com/firmfooting/dbml-sharepoint/issues/867)) ([1bb712b](https://github.com/firmfooting/dbml-sharepoint/commit/1bb712b2a56c22148ff852e500dc588d4d678144))
+
 ## [0.21.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.20.1...v0.21.0) (2026-10-16)
 
 
