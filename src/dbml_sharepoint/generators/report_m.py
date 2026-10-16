@@ -1290,7 +1290,7 @@ def _render_users_m(*, site_url: str | None = None, application: str = APPLICATI
         "    // the reporting account needs read access to this list.",
         "    Source = GetAll(",
         '        "siteuserinfolist/items",',
-        f"        {_query_m({'$select': _m_string(select), '$top': chr(34) + '5000' + chr(34)})}",
+        f"        {_query_m({'$select': _m_string(select), '$top': _m_string('5000')})}",
         "    ),",
         # The users list is read like any other list and answers like one, so
         # a site whose user information list the reporting account can see but

@@ -2937,10 +2937,11 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     enums = {e.name for e in schema.enums}
     by_table = {t.name: {c.name: c for c in t.columns} for t in schema.tables}
-    checked = 0
+    checked = parsed = 0
     for name, text in generate_powerquery(schema, bundle, "default").items():
         entity = name[:-3].removeprefix(bundle.mapping.prefix)
-        for select in re.findall(r"\?\$select=([^\"]+)", text):
+        for select in re.findall(r'#"\$select" = "([^"]+)"', text):
+            parsed += 1
             for path in [p for p in select.split(",") if "/" in p]:
                 lookup, target_column = path.split("/", 1)
                 col = by_table.get(entity, {}).get(lookup)
@@ -2954,7 +2955,7 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
                     f"{family}/{name} selects {path!r}, which SharePoint "
                     f"refuses with HTTP 400, failing the whole query"
                 )
-    assert checked or family, family
+    assert parsed, f"{family}: nothing parsed from the Query records"
 
 
 def test_explicit_titles_escape_m_odata_and_sql_delimiters(tmp_path: Path) -> None:

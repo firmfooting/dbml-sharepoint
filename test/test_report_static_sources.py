@@ -26,7 +26,7 @@ from dbml_sharepoint.model.parser import parse_dbml
 
 BLUEPRINTS = engine_blueprints()
 _SOURCE = re.compile(r"(?<![\w.])(OData\.Feed|Web\.Contents|SharePoint\.\w+)\(")
-_STATIC_URL = re.compile(r'(SiteUrl\s*&\s*)?"(?:[^"]|"")*"')
+_BASE_URL = re.compile(r'SiteUrl\s*&\s*"(?:[^"]|"")*"')
 
 
 def _code(query: str) -> str:
@@ -77,16 +77,15 @@ def _bad_options(query: str) -> list[str]:
     bad = []
     for options in _web_contents_options(query):
         flat = re.sub(r'"(?:[^"]|"")*"', '""', options)
-        depth, closes_early, top = 0, False, ""
+        depth, closes_early = 0, False
         for i, char in enumerate(flat):
             depth += char in "[({"
             depth -= char in "])}"
-            if depth == 0 and i < len(flat) - 1:
-                closes_early = True
-            if depth == 1:
-                top += char
+            closes_early |= depth == 0 and i < len(flat) - 1
         one_record = flat.startswith("[") and flat.endswith("]") and not closes_early
-        if not one_record or "&" in top or re.search(r"\bif\b|\w\(", top):
+        # No `&`, `if` or `(` anywhere in a field value: a call, a group or a
+        # concatenation is dynamic however deep it sits.
+        if not one_record or re.search(r"&|\bif\b|\(", flat):
             bad.append(options)
     return bad
 
@@ -99,7 +98,18 @@ def _data_source_urls(query: str) -> list[str]:
 
 
 def _bad(query: str) -> list[str]:
-    return [url for url in _data_source_urls(query) if not _STATIC_URL.fullmatch(url)]
+    """Sources whose URL is not `SiteUrl & "<literal>"` (or `SiteUrl` itself for
+    `SharePoint.*`), so a hard-coded other host is refused."""
+    code = _code(query)
+    bad = []
+    for match in _SOURCE.finditer(code):
+        url = _first_argument(code, match.end()).strip()
+        ok = url == "SiteUrl" if match.group(1).startswith("SharePoint.") else (
+            _BASE_URL.fullmatch(url) is not None
+        )
+        if not ok:
+            bad.append(url)
+    return bad
 
 
 def test_the_checker_rejects_options_that_are_not_one_record_literal() -> None:
@@ -110,16 +120,20 @@ def test_the_checker_rejects_options_that_are_not_one_record_literal() -> None:
     assert _bad_options('Web.Contents("a", [Query = q] & (if p = "" then [] else [A = 1]))') != []
     assert _bad_options("Web.Contents(\"a\", Record.AddField([], \"A\", 1))") != []
     assert _bad_options('Web.Contents("a", opts)') != []
+    assert _bad_options('Web.Contents("a", [RelativePath = Text.From(p), Query = q])') != []
+    assert _bad_options('Web.Contents("a", [Headers = [A = Text.Trim(h)]])') != []
 
 
 def test_the_checker_separates_static_from_dynamic_urls() -> None:
     """The guard is only worth having if it fires on the shapes that were refused."""
-    assert _bad('x = Web.Contents("https://a/_api/web", [A = 1])') == []
+    assert _bad('x = Web.Contents("https://a/_api/web", [A = 1])') != []
+    assert _bad('x = Web.Contents("https://a" & SiteUrl, [A = 1])') != []
+    assert _bad("SharePoint.Files(SiteUrl, [ApiVersion = 15])") == []
+    assert _bad('SharePoint.Files("https://a", [ApiVersion = 15])') != []
     assert _bad('x = Web.Contents(SiteUrl & "/_api/web", [A = 1])') == []
     assert _bad("Web.Contents(url, [A = 1])") != []
     assert _bad("Web.Contents(SiteUrl & path)") != []
-    assert _bad('SharePoint.Files(SiteUrl, [ApiVersion = 15])') != []
-    assert _bad('// Web.Contents(url)\nWeb.Contents("https://a")') == []
+    assert _bad('// Web.Contents(url)\nWeb.Contents(SiteUrl & "/a")') == []
     assert _data_source_urls('Web.Contents("a,(b""c", [])') == ['"a,(b""c"']
 
 
@@ -215,9 +229,11 @@ def test_every_data_source_in_a_shipped_family_is_static(family: str) -> None:
     assert seen
 
 
-def test_every_read_goes_through_get_and_paging_moves_only_the_query() -> None:
+def test_every_read_goes_through_get_and_paging_moves_only_the_query(
+    tmp_path: Path,
+) -> None:
     schema, bundle = pack(
-        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+        tmp_path, _PAIR_DBML, _PAIR_MAPPING,
     )
     text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
     # No call reaches the network except through Get / GetAll.
@@ -235,7 +251,7 @@ def test_every_read_goes_through_get_and_paging_moves_only_the_query() -> None:
     ("Bob's List", "Bob%27%27s%20List"),
 ])
 def test_a_list_title_is_percent_encoded_once_in_the_relative_path(
-    title: str, encoded: str,
+    title: str, encoded: str, tmp_path: Path,
 ) -> None:
     from dataclasses import replace
 
@@ -243,7 +259,7 @@ def test_a_list_title_is_percent_encoded_once_in_the_relative_path(
     from dbml_sharepoint.analysis.reporting.plan import build_plans
     from dbml_sharepoint.generators.report_m import _render_m
 
-    schema, bundle = pack(Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING)
+    schema, bundle = pack(tmp_path, _PAIR_DBML, _PAIR_MAPPING)
     plans = build_plans(schema, bundle, "default")
     bases = {query_name(plan.list_title): plan for plan in plans}
     text = _render_m(replace(plans[0], list_title=title), bases)
@@ -252,11 +268,11 @@ def test_a_list_title_is_percent_encoded_once_in_the_relative_path(
     assert "%25" not in text
 
 
-def test_a_list_with_no_rows_still_gets_every_declared_column() -> None:
+def test_a_list_with_no_rows_still_gets_every_declared_column(tmp_path: Path) -> None:
     """A list with no rows answers with no columns; the step straight after the
     read adds each declared one, before the typing step names it."""
     schema, bundle = pack(
-        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+        tmp_path, _PAIR_DBML, _PAIR_MAPPING,
     )
     text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
     assert text.index("Source = GetAll(") < text.index("Ensured = List.Accumulate(")
@@ -266,10 +282,12 @@ def test_a_list_with_no_rows_still_gets_every_declared_column() -> None:
 
 
 @pytest.mark.parametrize("spelling", ["odata.nextLink", "@odata.nextLink"])
-def test_a_page_carries_a_next_link_under_either_spelling(spelling: str) -> None:
+def test_a_page_carries_a_next_link_under_either_spelling(
+    spelling: str, tmp_path: Path,
+) -> None:
     """One helper reads the link, trying each spelling, and paging asks only it."""
     schema, bundle = pack(
-        Path(__import__("tempfile").mkdtemp()), _PAIR_DBML, _PAIR_MAPPING,
+        tmp_path, _PAIR_DBML, _PAIR_MAPPING,
     )
     text = _code(generate_powerquery(schema, bundle, "default")["APP_Risk.pq"])
     helper = text.split("NextLink = ", 1)[1].split("),", 1)[0]
