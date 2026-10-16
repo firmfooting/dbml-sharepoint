@@ -1390,13 +1390,20 @@ def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
         raise WizardError(
             f"the {solution.id} template's release could not be loaded: {exc}",
         ) from exc
-    if solution.distribution == CORE_DISTRIBUTION:
-        # Core's own are built end to end by its CI, so their findings are already known.
-        return
     try:
         extension = resolve_extension(bundle.mapping.extension)
     except UnknownExtensionError as exc:
         raise WizardError(f"the {solution.id} template names {exc}") from exc
+    if extension.requires_project_cli:
+        # `execute_build` refuses this after the project is written, so refuse first, in its words.
+        raise WizardError(
+            f"the {solution.id} template's extension {extension.name!r} requires its "
+            "project-specific CLI; the generic `dbml-sharepoint build` command cannot supply "
+            "its required project inputs. Use the extension's project CLI instead.",
+        )
+    if solution.distribution == CORE_DISTRIBUTION:
+        # Core's own are built end to end by its CI, so their findings are already known.
+        return
     errors = [f for f in validate_all(schema, bundle, extension) if f.severity == "error"]
     if errors:
         shown = "; ".join(f"{f.code}: {f.message}" for f in errors[:3])
