@@ -28,7 +28,7 @@ own write policy (#171).
 ### `render_reporting`
 
 ```python
-def render_reporting(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> dict[str, str]
+def render_reporting(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint', query_files: bool = True) -> dict[str, str]
 ```
 
 The whole reporting pack as {relative path: content}, nothing written.
@@ -58,7 +58,7 @@ text.
 ### `emit_reporting`
 
 ```python
-def emit_reporting(out: Path, schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> list[str]
+def emit_reporting(out: Path, schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint', query_files: bool = True) -> list[str]
 ```
 
 Write the reporting pack under ``out/reporting/`` and return the
@@ -67,5 +67,7 @@ POSIX relpaths written, for checksums.txt.
 Shared by the core and extension CLIs so the shipped reporting artifact
 set cannot drift between them. :func:`render_reporting` is the
 composition; this is the write policy, and it writes nothing until
-every artifact has rendered.
+every artifact has rendered. ``query_files=False`` skips the
+``powerquery/`` files (``_ModelInfo.pq`` and the dictionary queries
+included); they are still rendered, so a refusal still comes first.
 

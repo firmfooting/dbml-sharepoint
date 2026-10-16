@@ -60,12 +60,13 @@ def _parse_reporting(block: object) -> ReportingOptions:
     # typo: the key existed, and the author needs to know where it went.
     if "time_zone" in section:
         raise UnknownMappingKeyError(REMOVED_TIME_ZONE_KEY_MESSAGE)
-    switches = ("system_columns", "users_table")
+    switches = ("system_columns", "users_table", "query_files")
     _reject_unknown_keys(section, set(switches), "reporting")
     # YAML reads "yes" and 1 as truthy, so anything but a real boolean
     # would switch the feature on by accident and never say so.
     return ReportingOptions(**{
-        name: strict_bool(section, name, "reporting", default=False) for name in switches
+        name: strict_bool(section, name, "reporting", default=name == "query_files")
+        for name in switches
     })
 
 

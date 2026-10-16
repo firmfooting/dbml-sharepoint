@@ -680,10 +680,11 @@ PermissionsConfig(levels: list[dbml_sharepoint.model.mapping_types.CustomPermiss
 class ReportingOptions:
     system_columns: bool = False
     users_table: bool = False
+    query_files: bool = True
 ```
 
 The `reporting:` section: what the reporting pack adds beyond the
-schema's own columns. Everything defaults off, so a pack regenerated
+schema's own columns. Every switch defaults to leaving the pack as it was, so a pack regenerated
 from an unchanged mapping keeps its shape.
 
 ### `DerivedColumn`
