@@ -227,10 +227,21 @@ def load_json_value(base_dir: Path, value: object, context: str) -> dict[str, ob
             raise MappingSourceError(
                 f"{context}: {value!r} is not valid UTF-8: {exc}",
             ) from exc
+        repeats: dict[int, str] = {}
+
+        def pairs(items: list[tuple[str, object]]) -> dict[str, object]:
+            result = dict(items)
+            if len(result) < len(items):
+                names = [name for name, _ in items]
+                repeats[id(result)] = next(n for n in names if names.count(n) > 1)
+            return result
+
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(text, object_pairs_hook=pairs)
         except json.JSONDecodeError as exc:
             raise MappingValueError(f"{context}: {value!r} is not valid JSON: {exc}") from exc
+        if repeats:
+            _refuse_repeated_key(parsed, repeats, f"{context}: {value!r}", "$")
         if (declared := as_json_object(parsed)) is None:
             raise MappingShapeError(f"{context}: {value!r} must contain a JSON object")
         return dict[str, object](declared)
@@ -238,6 +249,23 @@ def load_json_value(base_dir: Path, value: object, context: str) -> dict[str, ob
         f"{context}: expected a relative .json path or an inline mapping, "
         f"got {type(value).__name__}",
     )
+
+
+def _refuse_repeated_key(node: object, repeats: dict[int, str], where: str, path: str) -> None:
+    """Raise for the first object in `node` whose parse saw a name twice, naming its path."""
+    if isinstance(node, dict):
+        if (key := repeats.get(id(node))) is not None:
+            raise MappingValueError(
+                f"{where}: the key {key!r} is set more than once in the object at {path}; "
+                "JSON leaves a repeat undefined, so keep one",
+            )
+        members: dict[object, object] = node
+        for name, member in members.items():
+            _refuse_repeated_key(member, repeats, where, f"{path}.{name}")
+    elif isinstance(node, list):
+        items: list[object] = node
+        for index, item in enumerate(items):
+            _refuse_repeated_key(item, repeats, where, f"{path}[{index}]")
 
 
 def _json_keys_are_text(value: object, context: str) -> None:
