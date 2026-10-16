@@ -472,3 +472,42 @@ def test_a_long_manifest_summary_is_capped_for_the_table_only(
     assert len(solution.summary) <= catalogue._SUMMARY_MAX
     assert solution.summary.endswith(catalogue._ELLIPSIS)
     assert solution.detail == sentence
+
+
+def test_the_catalogue_is_parsed_once_and_re_read_after_an_edit_add_or_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_family(tmp_path, "one")
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    builds: list[Path] = []
+    real_build = catalogue._build
+
+    def counting_build(family: Path, source: BlueprintRoot) -> catalogue.Solution:
+        builds.append(family)
+        return real_build(family, source)
+
+    monkeypatch.setattr(catalogue, "_build", counting_build)
+
+    assert [s.id for s in available_solutions()] == ["one"]
+    assert [s.id for s in available_solutions()] == ["one"]
+    assert builds == [tmp_path / "one"]
+
+    mapping = tmp_path / "one" / "20-configure" / "mapping.yaml"
+    mapping.write_text('prefix: "X_"\nentities:\n  Thing: {}\n  Other: {}\n', encoding="utf-8")
+    assert available_solutions()[0].lists == ("Thing", "Other")
+
+    write_family(tmp_path, "two")
+    assert [s.id for s in available_solutions()] == ["one", "two"]
+
+    (tmp_path / "two" / BLUEPRINT_MANIFEST).unlink()
+    (tmp_path / "two" / "20-configure" / "release.yaml").unlink()
+    assert [s.id for s in available_solutions()] == ["one"]
+
+
+def test_a_caller_cannot_change_what_the_next_call_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_family(tmp_path, "one")
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    available_solutions().clear()
+    assert [s.id for s in available_solutions()] == ["one"]
