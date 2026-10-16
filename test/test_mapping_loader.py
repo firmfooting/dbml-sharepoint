@@ -1228,6 +1228,22 @@ def test_column_formatting_inline_and_path(tmp_path: Path) -> None:
     assert formatting["SortOrder"] == {"elmType": "span"}
 
 
+def test_a_formatter_file_that_repeats_a_key_is_refused_with_its_path(tmp_path: Path) -> None:
+    (tmp_path / "twice.json").write_text(
+        '{"elmType": "div", "children": [{"txtContent": "a", "txtContent": "b"}]}',
+        encoding="utf-8",
+    )
+    write_mapping(tmp_path, _views_yaml("""
+        column_formatting:
+          Project:
+            Status: twice.json
+    """))
+    _refuses(
+        tmp_path / "m.yaml", MappingValueError,
+        r"twice\.json.*'txtContent' is set more than once.*\$\.children\[0\]",
+    )
+
+
 def test_column_formatting_absent_defaults_empty() -> None:
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
     assert bundle.mapping.column_formatting == {}
