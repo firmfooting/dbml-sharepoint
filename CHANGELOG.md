@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.20.0...v0.20.1) (2026-10-16)
+
+
+### Documentation
+
+* refresh the live findings catalogue ([#714](https://github.com/firmfooting/dbml-sharepoint/issues/714)) ([c8983fc](https://github.com/firmfooting/dbml-sharepoint/commit/c8983fc210c67dc1d72305c281acc363bcb8e497))
+
 ## [0.20.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.19.0...v0.20.0) (2026-10-16)
 
 
