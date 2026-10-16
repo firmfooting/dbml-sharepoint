@@ -65,8 +65,10 @@ from dbml_sharepoint.bundle import (
 from dbml_sharepoint.catalogue import (
     BROWSE_ALL,
     CORE_DISTRIBUTION,
+    LICENSE_UNSTATED,
     MAPPING_RELPATH,
     NEVER_COPIED,
+    ORIGIN_UNSTATED,
     PLACEHOLDER_SITE_URL,
     PLACEHOLDER_TIME_ZONE,
     RELEASE_RELPATH,
@@ -1378,6 +1380,12 @@ def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
     A blueprint from another package is not held to core's template gates, so
     its schema and mapping are also validated together, as the build would.
     """
+    # A `Solution` built by hand without its provenance; discovery always has both.
+    if solution.license == LICENSE_UNSTATED or solution.origin == ORIGIN_UNSTATED:
+        raise WizardError(
+            f"the {solution.id} template does not state its licence and origin, "
+            "so it is not copied into a project.",
+        )
     try:
         schema = parse_dbml(solution.schema_path)
     except CONFIG_ERRORS as exc:

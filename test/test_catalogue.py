@@ -511,3 +511,22 @@ def test_a_caller_cannot_change_what_the_next_call_returns(
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     available_solutions().clear()
     assert [s.id for s in available_solutions()] == ["one"]
+
+
+def test_solution_and_journey_built_without_the_new_fields_fail_closed() -> None:
+    """Constructors written before #697 still work, and the defaults claim
+    nothing: not core's distribution (the wizard validates a non-core
+    schema), and not a licence or origin that could pass for a real one."""
+    solution = catalogue.Solution(
+        id="x", title="X", summary="s", detail="s", lists=("A",), prefix="X_",
+        root=Path("unused"),
+    )
+    journey = catalogue.Journey(
+        id="j", title="J", summary="s", solution_ids=("x",), path=Path("unused"),
+    )
+    assert solution.distribution == catalogue.DISTRIBUTION_UNSTATED
+    assert solution.distribution != catalogue.CORE_DISTRIBUTION
+    assert journey.distribution != catalogue.CORE_DISTRIBUTION
+    assert solution.license == catalogue.LICENSE_UNSTATED == "NOASSERTION"
+    assert solution.origin == catalogue.ORIGIN_UNSTATED != catalogue.ORIGIN_OWN
+    assert catalogue._ORIGIN_DERIVED.fullmatch(solution.origin) is None

@@ -114,6 +114,17 @@ ORIGIN_OWN = "firmfooting"
 _ORIGIN_DERIVED = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*-(released|held)")
 
 
+#: What a `Solution` or `Journey` built without its provenance says, so a
+#: caller written before #697 still constructs. None of these is a value a
+#: manifest can carry (`origin` and `distribution` are never matched, and
+#: the licence must equal the distribution's), and none reads as open or as
+#: core's own: the wizard refuses an unstated licence or origin before any
+#: copy, and an unstated distribution is not core, so its schema is validated.
+DISTRIBUTION_UNSTATED = "unstated"
+LICENSE_UNSTATED = "NOASSERTION"  # SPDX for "no licence information given"
+ORIGIN_UNSTATED = "unstated"
+
+
 class UnknownSolutionError(LookupError):
     """Named solution does not exist. Carries the available names.
 
@@ -158,11 +169,11 @@ class Solution:
     prefix: str
     root: Path
     #: The distribution whose blueprint root holds this blueprint.
-    distribution: str
+    distribution: str = DISTRIBUTION_UNSTATED
     #: The SPDX licence the blueprint declares, equal to its distribution's.
-    license: str
+    license: str = LICENSE_UNSTATED
     #: Who designed it: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
-    origin: str
+    origin: str = ORIGIN_UNSTATED
 
     @property
     def schema_path(self) -> Path:
@@ -195,7 +206,7 @@ class Journey:
     solution_ids: tuple[str, ...]
     path: Path
     #: The distribution whose blueprint root holds this journey file.
-    distribution: str
+    distribution: str = DISTRIBUTION_UNSTATED
 
 
 @dataclass(frozen=True)

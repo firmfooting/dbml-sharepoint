@@ -110,6 +110,24 @@ NEVER_COPIED = ('build', 'reports', '__pycache__')
 ORIGIN_OWN = 'firmfooting'
 ```
 
+### `DISTRIBUTION_UNSTATED`
+
+```python
+DISTRIBUTION_UNSTATED = 'unstated'
+```
+
+### `LICENSE_UNSTATED`
+
+```python
+LICENSE_UNSTATED = 'NOASSERTION'
+```
+
+### `ORIGIN_UNSTATED`
+
+```python
+ORIGIN_UNSTATED = 'unstated'
+```
+
 ### `UnknownSolutionError`
 
 Named solution does not exist. Carries the available names.
@@ -138,9 +156,9 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
-    distribution: str
-    license: str
-    origin: str
+    distribution: str = 'unstated'
+    license: str = 'NOASSERTION'
+    origin: str = 'unstated'
 ```
 
 One shipped list family.
@@ -158,7 +176,7 @@ class Journey:
     summary: str
     solution_ids: tuple[str, ...]
     path: Path
-    distribution: str
+    distribution: str = 'unstated'
 ```
 
 One curated reading order over the families.

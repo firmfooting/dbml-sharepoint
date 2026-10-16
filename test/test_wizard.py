@@ -4264,3 +4264,23 @@ def test_a_template_whose_extension_requires_its_project_cli_is_refused_before_w
     assert wizard.run_wizard(console) == 1
     assert "requires its project-specific CLI" in _collapsed(console)
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("field", ["license", "origin"])
+def test_a_template_built_without_its_provenance_is_refused_before_any_copy(
+    tmp_path: Path, field: str,
+) -> None:
+    """Old-style construction works, but an unstated licence or origin is
+    never copied into a project."""
+    stated = _fake_family(tmp_path)
+    bare = Solution(
+        id=stated.id, title=stated.title, summary=stated.summary,
+        detail=stated.detail, lists=stated.lists, prefix=stated.prefix,
+        root=stated.root,
+    )
+    with pytest.raises(wizard.WizardError, match="does not state its licence"):
+        wizard._read_facts(bare)
+    # Either field alone is enough to refuse.
+    half = replace(stated, **{field: getattr(bare, field)})
+    with pytest.raises(wizard.WizardError, match="does not state its licence"):
+        wizard._read_facts(half)
