@@ -796,6 +796,25 @@ def test_cli_report_rejects_unknown_site_role(tmp_path: Path) -> None:
 # --- Reporting integration (display names, ordinals, HTML flags) ------------
 
 
+def test_internal_names_option_drops_the_rename_step() -> None:
+    """`reporting.internal_names` keeps the schema's names in the Power Query
+    output; off, the same mapping renames to display titles."""
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    assert bundle.mapping.reporting.internal_names is False
+    internal = replace(bundle, mapping=replace(
+        bundle.mapping, reporting=ReportingOptions(internal_names=True),
+    ))
+    project = generate_powerquery(schema, internal, "default")["APP_Project.pq"]
+    assert "RenamedForModel" not in project
+    assert "Table.RenameColumns" not in project
+    assert "SortOrder" in project
+    off = generate_powerquery(schema, bundle, "default")["APP_Project.pq"]
+    assert "RenamedForModel = Table.RenameColumns(" in off
+
+
 def test_powerquery_renames_columns_to_display_titles() -> None:
     """The Power BI model must speak the same language as the forms and
     views staff see: with display names on, each query ends with a

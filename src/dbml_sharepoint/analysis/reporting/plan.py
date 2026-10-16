@@ -904,7 +904,10 @@ def build_plans(
             for name in LIBRARY_REPORT_COLUMNS:
                 _plan_scalar(plan, name, LIBRARY_REPORT_TYPES)
                 plan.system_outputs.append(name)
-        if bundle.mapping.display_name_mode is not None:
+        if (
+            bundle.mapping.display_name_mode is not None
+            and not bundle.mapping.reporting.internal_names
+        ):
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
             # auto-splits ("RiskOwnerTitle" -> "Risk Owner Title").

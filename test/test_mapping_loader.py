@@ -3132,6 +3132,23 @@ def test_reporting_users_table_must_be_a_boolean(tmp_path: Path) -> None:
     _refuses(tmp_path / "m.yaml", MappingShapeError, "users_table")
 
 
+def test_reporting_internal_names_parsed(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          internal_names: true
+    """))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.reporting.internal_names is True
+
+
+def test_reporting_internal_names_must_be_a_boolean(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          internal_names: "yes"
+    """))
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "internal_names")
+
+
 def test_renamed_from_defaults_empty_and_parses(tmp_path: Path) -> None:
     write_mapping(tmp_path, """
         entities:

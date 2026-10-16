@@ -681,6 +681,7 @@ class ReportingOptions:
     system_columns: bool = False
     users_table: bool = False
     query_files: bool = True
+    internal_names: bool = False
 ```
 
 The `reporting:` section: what the reporting pack adds beyond the
