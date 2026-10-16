@@ -225,11 +225,11 @@ argue for it explicitly.
 
 ## Review guidelines
 
-Files under `test/fixtures/expected/**`, `website/docs/api/**` and
-`website/docs/reference/findings.md` are produced by generators. Do not review
-them line by line. Review the generator, template or docstring change that
-moved them, and confirm the generated files were regenerated, not hand-edited:
-`uv run python test/regen_golden.py` for the deploy golden,
-`uv run python website/scripts/generate_api.py` for the API reference and
-`uv run python website/scripts/generate_findings.py` for the findings
-reference.
+Files under `website/docs/api/**` and `website/docs/reference/findings.md` are
+produced by generators. Do not review them line by line. Review the generator,
+template or docstring change that moved them, and confirm the generated files
+were regenerated, not hand-edited: `uv run python
+website/scripts/generate_api.py` for the API reference and `uv run python
+website/scripts/generate_findings.py` for the findings reference. The fixtures
+under `test/fixtures/expected/` are not on this list: review their diff like
+code, as the golden section above says.
