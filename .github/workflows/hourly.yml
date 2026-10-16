@@ -1,0 +1,39 @@
+# The full suite on main, once an hour and only when main has moved since the
+# last green scheduled run (the gate, from firmfooting/.github). It replaces the
+# run on every push to main. A failed run opens or updates one issue; a green
+# run closes it. `workflow_dispatch` forces a run whatever the last SHA was.
+name: Hourly
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hourly
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  gate:
+    permissions:
+      actions: read
+    uses: firmfooting/.github/.github/workflows/full-run-gate.yml@911769085a2c83dac47dd74303aef90c85252039 # PR #6, re-pin to the release tag
+    with:
+      workflow: hourly.yml
+  test:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ci.yml
+  alert:
+    needs: [gate, test]
+    # A gate that errors alerts too, so the schedule cannot stop in silence.
+    if: always() && github.ref == 'refs/heads/main' && (needs.gate.result == 'failure' || needs.test.result == 'success' || needs.test.result == 'failure')
+    permissions:
+      issues: write
+    uses: firmfooting/.github/.github/workflows/full-run-alert.yml@911769085a2c83dac47dd74303aef90c85252039 # PR #6, re-pin to the release tag
+    with:
+      result: ${{ needs.gate.result == 'failure' && 'failure' || needs.test.result }}
