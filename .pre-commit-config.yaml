@@ -56,6 +56,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: changed-tests-pin
+        name: vendored changed-test runner matches its pinned SHA-256
+        entry: python3 .github/changed_tests.py --verify
+        language: system
+        files: ^\.github/changed[-_]tests\.(py|json)$
+        pass_filenames: false
       - id: ruff
         name: ruff (lint)
         entry: uv run ruff check --force-exclude
