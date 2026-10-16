@@ -10,7 +10,10 @@ deployed lists.
 
 ## Contents
 
-- **One Power Query (M) file per list**, plus dictionary, model-info and
+- **One Power Query (M) file per list** (omitted when
+  [`reporting.query_files`](../reference/mapping.md#query_files) is `false` or
+  the build runs with `--no-query-files`; the rest of the pack is still
+  written), plus dictionary, model-info and
   user-added-column audit queries, and `_Users.pq` when the mapping's
   [`reporting.users_table`](../reference/mapping.md#reporting) is on.
   Paste each one into a blank query in Power BI or Excel and load it.

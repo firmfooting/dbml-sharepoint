@@ -962,7 +962,10 @@ that list.
 `_ModelInfo.pq` and the dictionary queries. Default `true`. The queries are
 still rendered in memory and returned by the public API, the SQL views, guide
 and dictionary are still written, and `checksums.txt` lists only the files
-written. `build --no-query-files` overrides the setting for one run.
+written. A rebuild into the same output directory does not remove query files
+written by an earlier build, and `checksums.txt` no longer lists them, so delete
+`reporting/powerquery/` yourself. `build --no-query-files` overrides the setting
+for one run.
 
 ### The site's time zone is not declared here
 
