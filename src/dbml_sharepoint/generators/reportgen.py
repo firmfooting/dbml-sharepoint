@@ -62,6 +62,7 @@ def render_reporting(
     site_url: str | None = None,
     time_zone: str | None = None,
     application: str = APPLICATION_NAME,
+    query_files: bool = True,
 ) -> dict[str, str]:
     """The whole reporting pack as {relative path: content}, nothing written.
 
@@ -116,7 +117,7 @@ def render_reporting(
     )
     pack[REPORT_GUIDE] = generate_reporting_md(
         schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
-        application=application,
+        application=application, query_files=query_files,
     )
     pack[REPORT_DICTIONARY] = generate_data_dictionary(
         schema, bundle, site_role, resolved=resolved,
@@ -159,6 +160,7 @@ def emit_reporting(
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
         site_url=site_url, time_zone=time_zone, application=application,
+        query_files=query_files,
     )
     relpaths: list[str] = []
     for relpath, content in pack.items():

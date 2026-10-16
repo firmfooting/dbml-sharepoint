@@ -154,6 +154,12 @@ _REPORTING_ROW: tuple[str, str] = (
      "reporting onboarding."),
 )
 
+_REPORTING_ROW_NO_QUERIES: tuple[str, str] = (
+    f"{REPORT_DIR}/",
+    (f"SQL views, {REPORT_GUIDE} and the data dictionary for reporting "
+     "onboarding."),
+)
+
 _VERIFY_ROW: tuple[str, str] = (
     VERIFY_SCRIPT,
     (f"Verification: paste AFTER {DEPLOY_SCRIPT}. Checks the clock cells "
@@ -272,6 +278,7 @@ def write_index(
     out: Path,
     *,
     reporting: bool = False,
+    query_files: bool = True,
     demo: bool = False,
     verify: bool = False,
     env_provenance: EnvProvenance = NO_ENV_FILE,
@@ -292,7 +299,7 @@ def write_index(
     if demo:
         rows.append(_DEMO_ROW)
     if reporting:
-        rows.append(_REPORTING_ROW)
+        rows.append(_REPORTING_ROW if query_files else _REPORTING_ROW_NO_QUERIES)
     lines = [
         "# Deployment bundle index",
         "",
@@ -496,6 +503,9 @@ def emit_bundle(
             ),
         )
         relpaths.append(DEMO_SCRIPT)
+    query_files = (
+        mapping_bundle.mapping.reporting.query_files and not no_query_files
+    )
     relpaths += emit_reporting(
         out, schema, mapping_bundle, site_role,
         resolved=resolved,
@@ -507,12 +517,11 @@ def emit_bundle(
         # travels the same way.
         site_url=site_url, application=application,
         time_zone=time_zone,
-        query_files=(
-            mapping_bundle.mapping.reporting.query_files and not no_query_files
-        ),
+        query_files=query_files,
     )
     write_index(
-        out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance,
+        out, reporting=True, query_files=query_files, demo=seed, verify=verify,
+        env_provenance=env_provenance,
         carries_identities=bool(identities),
     )
     relpaths.append("index.md")

@@ -207,7 +207,7 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
+def write_index(out: Path, *, reporting: bool = False, query_files: bool = True, demo: bool = False, verify: bool = False, env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.

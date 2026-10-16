@@ -126,8 +126,12 @@ def generate_reporting_md(
     site_url: str | None = None,
     time_zone: str | None = None,
     application: str = APPLICATION_NAME,
+    query_files: bool = True,
 ) -> str:
     """Usage instructions + the Power BI relationship table.
+
+    ``query_files=False`` is for a bundle that wrote no ``.pq`` files: the
+    guide then never directs the reader to one.
 
     ``site_url`` must be passed whenever the queries beside this guide were
     built with it: the setup step it documents is the difference between
@@ -182,7 +186,7 @@ def generate_reporting_md(
         "",
         "## Power Query (M): Power BI Desktop / Excel",
         "",
-        setup_step,
+        *((setup_step,
         ("2. For each `.pq` file: **Get Data -> Blank Query -> Advanced "
          "Editor**, paste the file contents, and rename the query to the "
          "filename without its .pq extension. Keep any encoded characters or digest suffix."),
@@ -191,6 +195,10 @@ def generate_reporting_md(
         "",
         ("Each query returns a typed table with lookup and person columns "
          "already expanded to a join key (`...Id`) plus a display column."),
+        ) if query_files else (
+        ("No query files were written for this bundle. The queries are "
+         "available from the API."),
+        )),
         "",
         "## Reporting on several sites at once",
         "",
@@ -288,7 +296,8 @@ def generate_reporting_md(
         ("**Multi-value choice columns are a landing contract, not a "
          "transform.** The Power Query queries join a set into one text cell "
          f'separated by `\"{MULTI_VALUE_JOIN}\"`, in a step written into the '
-         "`.pq` file. The SQL views do not: they `CAST` whatever the extract "
+         f"{'`.pq` file' if query_files else 'query'}. The SQL views do not: "
+         "they `CAST` whatever the extract "
          "landed, as `NVARCHAR(MAX)` so nothing is truncated in silence. "
          "Your extract must therefore land such a column as text, and the "
          "text it lands is the text your reports will read: SharePoint's "
@@ -344,12 +353,14 @@ def generate_reporting_md(
         "## Data dictionary page (in-report)",
         "",
         ("The dictionary also ships as loadable data so every report can "
-         "carry its own documentation page: load `_DataDictionary.pq` and "
+         + ("carry its own documentation page: load `_DataDictionary.pq` and "
          "`_ModelInfo.pq` alongside the list queries (they are static "
          "`#table` literals with no connection and no refresh cost), add a report "
          "page with a table visual over `_DataDictionary` sorted by "
          "`SortOrder`, and a card or table over `_ModelInfo` for the "
          "release/schema provenance. SQL consumers get the same rows as "
+         if query_files else "carry its own documentation page. SQL consumers get the rows as "
+         ) +
          f"`vw_{bundle.mapping.prefix}DataDictionary` and "
          f"`vw_{bundle.mapping.prefix}ModelInfo` (built from embedded "
          "VALUES, with no landing table needed)."),
@@ -358,10 +369,13 @@ def generate_reporting_md(
         "",
         "## User-added column audit",
         "",
-        ("Load `_UserAddedColumns.pq` alongside the dictionary queries. It "
-         "reads each list's fields collection live on every refresh and "
-         "returns the visible, deletable columns the schema does not "
-         "declare. Expected EMPTY. Any row is a column added outside this "
+        (("Load `_UserAddedColumns.pq` alongside the dictionary queries. It "
+          "reads each list's fields collection live on every refresh and "
+          "returns the visible, deletable columns the schema does not "
+          "declare. " if query_files else
+          "The audit returns the visible, deletable columns the schema does "
+          "not declare. ")
+         + "Expected EMPTY. Any row is a column added outside this "
          "generation: investigate it before trusting the model. "
          "Extension-expanded cross-site columns (if any) can appear; "
          "recognise them once. SQL consumers get "

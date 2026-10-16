@@ -24,10 +24,13 @@ in ``guide.md``.
 ### `generate_reporting_md`
 
 ```python
-def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> str
+def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint', query_files: bool = True) -> str
 ```
 
 Usage instructions + the Power BI relationship table.
+
+``query_files=False`` is for a bundle that wrote no ``.pq`` files: the
+guide then never directs the reader to one.
 
 ``site_url`` must be passed whenever the queries beside this guide were
 built with it: the setup step it documents is the difference between

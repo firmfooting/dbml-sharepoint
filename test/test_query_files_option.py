@@ -96,3 +96,14 @@ def test_the_api_still_returns_every_query_with_the_setting_off(tmp_path: Path) 
 def test_a_non_boolean_setting_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="query_files"):
         load_mapping(_mapping(tmp_path, '"no"'))
+
+
+def test_a_bundle_without_query_files_never_points_at_one(tmp_path: Path) -> None:
+    off = _build(tmp_path / "off", "false")
+    for name in ("index.md", "reporting/guide.md"):
+        text = (off / name).read_text(encoding="utf-8")
+        assert ".pq" not in text
+        assert "Power Query M" not in text
+    on = _build(tmp_path / "on", None)
+    assert "Power Query M" in (on / "index.md").read_text(encoding="utf-8")
+    assert "paste the file contents" in (on / "reporting/guide.md").read_text(encoding="utf-8")

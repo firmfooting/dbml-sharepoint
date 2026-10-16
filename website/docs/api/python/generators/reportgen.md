@@ -28,7 +28,7 @@ own write policy (#171).
 ### `render_reporting`
 
 ```python
-def render_reporting(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> dict[str, str]
+def render_reporting(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint', query_files: bool = True) -> dict[str, str]
 ```
 
 The whole reporting pack as {relative path: content}, nothing written.
