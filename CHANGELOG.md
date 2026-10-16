@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.20.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.19.0...v0.20.0) (2026-10-16)
+
+
+### Features
+
+* **reporting:** let a build skip writing the query files ([#852](https://github.com/firmfooting/dbml-sharepoint/issues/852)) ([2259741](https://github.com/firmfooting/dbml-sharepoint/commit/225974117d56bfe05abeb6ed743321959a0805b1))
+
+
+### Performance Improvements
+
+* **reporting:** read list items 5000 a page ([#854](https://github.com/firmfooting/dbml-sharepoint/issues/854)) ([c68ff12](https://github.com/firmfooting/dbml-sharepoint/commit/c68ff120d0b0260a87193eb858b4f09558b76083))
+
 ## [0.19.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.18.0...v0.19.0) (2026-10-15)
 
 
