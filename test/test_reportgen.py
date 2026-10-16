@@ -81,6 +81,16 @@ def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
     assert "SiteUrl & " in task
 
 
+def test_powerquery_reads_items_five_thousand_a_page() -> None:
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert task.count("$top=5000") == 1
+    assert task.index("$top=5000") < task.index("&$expand=")
+    schema, bundle = _users_on()
+    users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
+    assert users.count("$top=5000") == 1
+
+
 def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
@@ -1792,7 +1802,7 @@ def test_system_columns_ride_the_person_and_datetime_arms() -> None:
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     # After the schema's own columns, in the order Created By, Created,
     # Modified By, Modified.
-    assert ',AuthorId,Author/Title,Created,EditorId,Editor/Title,Modified"' in task
+    assert ',AuthorId,Author/Title,Created,EditorId,Editor/Title,Modified&$top=5000"' in task
     assert ',Author,Editor"' in task
     for typed in (
         '{"AuthorId", Int64.Type}', '{"AuthorTitle", type text}',
