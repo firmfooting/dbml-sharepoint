@@ -1,7 +1,7 @@
 {
   "version": 1,
   "runner_source": "firmfooting/.github:tools/changed_tests.py",
-  "runner_sha256": "d6531118c9a3a74604a78dfaa098a494ebe143ff291766cb656086d349c6a477",
+  "runner_sha256": "97da9a01a9b3411e00ad97bdf988e46b6ff7add2a150ef3697312abaf9aed2d8",
   "suites": [
     {
       "name": "dbml-sharepoint",
