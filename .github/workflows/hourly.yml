@@ -19,7 +19,7 @@ jobs:
   gate:
     permissions:
       actions: read
-    uses: firmfooting/.github/.github/workflows/full-run-gate.yml@911769085a2c83dac47dd74303aef90c85252039 # PR #6, re-pin to the release tag
+    uses: firmfooting/.github/.github/workflows/full-run-gate.yml@b42e6a19ea7bb68439f4d9a632f16f4fd6ab7338 # v1.6.0
     with:
       workflow: hourly.yml
   test:
@@ -34,6 +34,6 @@ jobs:
     if: always() && github.ref == 'refs/heads/main' && (needs.gate.result == 'failure' || needs.test.result == 'success' || needs.test.result == 'failure')
     permissions:
       issues: write
-    uses: firmfooting/.github/.github/workflows/full-run-alert.yml@911769085a2c83dac47dd74303aef90c85252039 # PR #6, re-pin to the release tag
+    uses: firmfooting/.github/.github/workflows/full-run-alert.yml@b42e6a19ea7bb68439f4d9a632f16f4fd6ab7338 # v1.6.0
     with:
       result: ${{ needs.gate.result == 'failure' && 'failure' || needs.test.result }}
