@@ -111,7 +111,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name, retired_spec in retired_cols.items():
             col_at = replace(at, column=col_name)
             if col_name not in rendered:
-                # Its own code, not the generic COLUMN_NOT_RENDERED: the
+                # Its own code, not the form_visibility and column_validation ones: the
                 # consequence differs (deleting the DBML declaration leaves
                 # the column live on the site forever), and so does the fix.
                 findings.append(Finding(
@@ -323,7 +323,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # the DBML declaration spelled out.
                 if not retired:
                     findings.append(Finding(
-                        FindingCode.COLUMN_NOT_RENDERED,
+                        FindingCode.FORM_VISIBILITY_COLUMN_NOT_RENDERED,
                         f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
                         location=fv_at,
                     ))
@@ -376,7 +376,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             if column not in rendered:
                 findings.append(Finding(
-                    FindingCode.COLUMN_NOT_RENDERED,
+                    FindingCode.COLUMN_VALIDATION_COLUMN_NOT_RENDERED,
                     f"{ctx}: {column!r} is not a rendered column of {cv_entity}.",
                     location=cv_at,
                 ))

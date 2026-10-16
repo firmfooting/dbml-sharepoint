@@ -157,7 +157,7 @@ def test_view_field_references_must_be_rendered_columns() -> None:
     )
     # fields, sort and group_by are one rule; the clause and the column it
     # names survive only in the prose, so the names are the value here.
-    unrendered = messages(errors, FindingCode.COLUMN_NOT_RENDERED)
+    unrendered = messages(errors, FindingCode.VIEW_FIELD_NOT_RENDERED)
     assert len(unrendered) == 3, unrendered
     for name in ("Nope", "AlsoMissing", "GoneToo"):
         assert any(name in m for m in unrendered), name
@@ -1254,7 +1254,7 @@ def test_display_override_must_target_rendered_column() -> None:
     # says these two came from display_names.
     unknown = only(errors, FindingCode.UNKNOWN_ENTITY)
     assert unknown.location == Location(Section.DISPLAY_NAMES, entity="Widget")
-    unrendered = only(errors, FindingCode.COLUMN_NOT_RENDERED)
+    unrendered = only(errors, FindingCode.DISPLAY_NAME_OVERRIDE_NOT_RENDERED)
     assert unrendered.location == Location(Section.DISPLAY_NAMES, entity="Project")
     assert "Nope" in unrendered.message
 

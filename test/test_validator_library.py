@@ -64,7 +64,7 @@ def test_a_library_view_and_header_may_name_the_file() -> None:
         views={"Docs": [ViewDef(title="Files", fields=["FileLeafRef"], default=True)]},
         form_formatting={"Docs": FormFormatting(header=_FILE_NAME_HEADER)},
     )
-    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(findings, FindingCode.VIEW_FIELD_NOT_RENDERED)
     none_of(findings, FindingCode.FORMATTER_FIELD_NOT_RENDERED)
 
 
@@ -76,7 +76,7 @@ def test_a_list_view_and_header_may_not_name_the_file() -> None:
         views={"Docs": [ViewDef(title="Files", fields=["FileLeafRef"], default=True)]},
         form_formatting={"Docs": FormFormatting(header=_FILE_NAME_HEADER)},
     )
-    only(findings, FindingCode.COLUMN_NOT_RENDERED)
+    only(findings, FindingCode.VIEW_FIELD_NOT_RENDERED)
     only(findings, FindingCode.FORMATTER_FIELD_NOT_RENDERED)
 
 
@@ -98,7 +98,7 @@ def test_a_library_field_set_may_name_the_file(tmp_path: Path) -> None:
                   fields: ["@identity"]
         """,
     )
-    none_of(validate_against_mapping(schema, bundle), FindingCode.COLUMN_NOT_RENDERED)
+    none_of(validate_against_mapping(schema, bundle), FindingCode.FIELD_SET_COLUMN_NOT_RENDERED)
 
 
 def test_a_list_field_set_may_not_name_the_file(tmp_path: Path) -> None:
@@ -120,7 +120,7 @@ def test_a_list_field_set_may_not_name_the_file(tmp_path: Path) -> None:
     )
     assert [
         f for f in validate_against_mapping(schema, bundle)
-        if f.code is FindingCode.COLUMN_NOT_RENDERED
+        if f.code is FindingCode.FIELD_SET_COLUMN_NOT_RENDERED
     ], "a list field set naming FileLeafRef must be refused"
 
 
