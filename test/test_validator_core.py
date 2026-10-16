@@ -3151,7 +3151,7 @@ def test_a_display_name_override_on_a_column_named_title_elsewhere_is_kept(
         ),
     )
 
-    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(findings, FindingCode.DISPLAY_NAME_OVERRIDE_NOT_RENDERED)
 
 
 def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
@@ -3167,7 +3167,7 @@ def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
             lookup_projections={"Risk": {"Owner": ["Title"]}},
         ),
     )
-    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(findings, FindingCode.DISPLAY_NAME_OVERRIDE_NOT_RENDERED)
 
 
 def test_a_display_name_override_at_the_sp_limit_is_accepted() -> None:

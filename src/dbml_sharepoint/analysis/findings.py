@@ -173,7 +173,15 @@ class FindingCode(StrEnum):
     CALCULATED_FORMULA_TOO_LONG = "calculated_formula_too_long", "error"
     CALCULATED_FORMULA_UNKNOWN_COLUMN = "calculated_formula_unknown_column", "error"
     CALCULATED_FORMULA_UNSUPPORTED_OPERAND = "calculated_formula_unsupported_operand", "error"
-    COLUMN_NOT_RENDERED = "column_not_rendered", "error"
+    COLUMN_VALIDATION_COLUMN_NOT_RENDERED = (
+        "column_validation_column_not_rendered", "error",
+    )
+    DISPLAY_NAME_OVERRIDE_NOT_RENDERED = "display_name_override_not_rendered", "error"
+    FIELD_SET_COLUMN_NOT_RENDERED = "field_set_column_not_rendered", "error"
+    FORM_VISIBILITY_COLUMN_NOT_RENDERED = (
+        "form_visibility_column_not_rendered", "error",
+    )
+    VIEW_FIELD_NOT_RENDERED = "view_field_not_rendered", "error"
     COMPOSITE_INDEX_UNSUPPORTED = "composite_index_unsupported", "error"
     CROSS_SITE_COLUMN_CANNOT_BE_UNIQUE = "cross_site_column_cannot_be_unique", "error"
     CROSS_SITE_COLUMN_HAS_NO_REF = "cross_site_column_has_no_ref", "error"

@@ -188,7 +188,7 @@ def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
     # location, so the declaration is picked out by where it is.
     at_set = Location(Section.FIELD_SETS, entity="Project", sub="header")
     declared = only(
-        [f for f in errors if f.location == at_set], FindingCode.COLUMN_NOT_RENDERED,
+        [f for f in errors if f.location == at_set], FindingCode.FIELD_SET_COLUMN_NOT_RENDERED,
     )
     assert "Nope" in declared.message
     # 'Title' is a real column; naming it here would send the author to fix
@@ -206,7 +206,7 @@ def test_view_referencing_an_undeclared_field_set_is_error() -> None:
     f = only(errors, FindingCode.UNKNOWN_FIELD_SET_REFERENCE)
     assert "@headr" in f.message
     # One precise error, not that plus a confusing "not a rendered column".
-    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(errors, FindingCode.FIELD_SET_COLUMN_NOT_RENDERED)
 
 def test_field_set_name_cannot_contain_the_reference_marker() -> None:
     errors = _project_errors(field_sets={"Project": {"hea@der": ["Title"]}})
@@ -499,13 +499,13 @@ def test_group_by_need_not_be_one_of_the_views_own_fields() -> None:
     errors = _project_errors(
         views=_view("By status", "Title", group_by=ViewGroupBy(fields=["Status"])),
     )
-    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(errors, FindingCode.VIEW_FIELD_NOT_RENDERED)
 
 def test_group_by_on_an_unknown_column_is_still_refused() -> None:
     errors = _project_errors(
         views=_view("By ghost", "Title", group_by=ViewGroupBy(fields=["Ghost"])),
     )
-    f = only(errors, FindingCode.COLUMN_NOT_RENDERED)
+    f = only(errors, FindingCode.VIEW_FIELD_NOT_RENDERED)
     assert "Ghost" in f.message
 
 def test_group_by_in_the_views_fields_is_accepted() -> None:
@@ -514,7 +514,7 @@ def test_group_by_in_the_views_fields_is_accepted() -> None:
             "By status", "Title", "Status", group_by=ViewGroupBy(fields=["Status"]),
         ),
     )
-    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
+    none_of(errors, FindingCode.VIEW_FIELD_NOT_RENDERED)
 
 def test_a_body_section_hidden_from_every_form_is_refused() -> None:
     """The section renders as a heading with nothing under it. Asserted of a

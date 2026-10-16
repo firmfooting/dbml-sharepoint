@@ -111,7 +111,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # ordinary length and collision rules below are what govern it.
                 if col_name not in rendered:
                     findings.append(Finding(
-                        FindingCode.COLUMN_NOT_RENDERED,
+                        FindingCode.DISPLAY_NAME_OVERRIDE_NOT_RENDERED,
                         f"display_names.overrides[{entity_name}]: {col_name!r} "
                         f"is not a rendered column of {entity_name}.",
                         location=at_overrides,

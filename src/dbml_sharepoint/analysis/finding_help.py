@@ -231,9 +231,21 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.COLUMN_NAME_TOO_LONG: (
         "A column's internal name exceeds SharePoint's length limit."
     ),
-    FindingCode.COLUMN_NOT_RENDERED: (
-        "A `form_visibility` or `column_validation` entry names a "
-        "column the list does not render."
+    FindingCode.COLUMN_VALIDATION_COLUMN_NOT_RENDERED: (
+        "A `column_validation` entry names a column the list does not render."
+    ),
+    FindingCode.DISPLAY_NAME_OVERRIDE_NOT_RENDERED: (
+        "A `display_names.overrides` entry names a column the list does not render."
+    ),
+    FindingCode.FIELD_SET_COLUMN_NOT_RENDERED: (
+        "A `field_sets` entry names a column the list does not render."
+    ),
+    FindingCode.FORM_VISIBILITY_COLUMN_NOT_RENDERED: (
+        "A `form_visibility` entry names a column the list does not render."
+    ),
+    FindingCode.VIEW_FIELD_NOT_RENDERED: (
+        "A view's `fields`, `sort` or `group_by` names a column the list "
+        "does not render."
     ),
     FindingCode.COLUMN_VALIDATION_ON_A_RETIRED_COLUMN: (
         "A save rule sits on a retired column. Retirement hides it from "

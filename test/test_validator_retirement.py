@@ -52,7 +52,11 @@ from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
 from dbml_sharepoint.model.conditions import Leaf
-from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+from dbml_sharepoint.model.mapping_types import (
+    ColumnValidation,
+    EntitySection,
+    FormVisibility,
+)
 
 #: The severity enum these fixtures retire columns from.
 _RAG = """
@@ -151,6 +155,32 @@ def test_column_validation_cannot_reference_another_column() -> None:
         Section.COLUMN_VALIDATION, entity="Board", column="Status",
     )
     assert "['Owner']" in f.message
+
+
+def test_form_visibility_and_column_validation_on_a_ghost_column_have_own_codes() -> None:
+    """Each section names its own code, so a consumer keying on the code can
+    tell which declaration is at fault."""
+    schema = make_schema(make_table("Board", make_column("Title"), note="Board fixture."))
+    bundle = make_bundle(
+        entities=["Board"],
+        form_visibility={"Board": EntitySection(columns={
+            "Ghost": FormVisibility(new=False, existing=False),
+        })},
+        column_validation={"Board": EntitySection(columns={
+            "Ghost": ColumnValidation(
+                when=Leaf(field="Ghost", op="is_not_null"), message="Needs a value.",
+            ),
+        })},
+    )
+    findings = validate_against_mapping(schema, bundle)
+    fv = only(findings, FindingCode.FORM_VISIBILITY_COLUMN_NOT_RENDERED)
+    assert fv.location is not None
+    assert fv.location.section is Section.FORM_VISIBILITY
+    assert "Ghost" in fv.message
+    cv = only(findings, FindingCode.COLUMN_VALIDATION_COLUMN_NOT_RENDERED)
+    assert cv.location is not None
+    assert cv.location.section is Section.COLUMN_VALIDATION
+    assert "Ghost" in cv.message
 
 
 def test_column_validation_on_a_yes_no_column_is_refused() -> None:

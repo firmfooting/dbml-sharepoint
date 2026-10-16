@@ -501,7 +501,7 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
             for col_name in set_columns:
                 if col_name not in set_rendered:
                     findings.append(Finding(
-                        FindingCode.COLUMN_NOT_RENDERED,
+                        FindingCode.FIELD_SET_COLUMN_NOT_RENDERED,
                         f"{ctx}: references {col_name!r}, which is not a "
                         f"rendered column of {entity_name}.",
                         location=at_set,
@@ -723,7 +723,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for part, name in referenced:
                 if name not in view_rendered:
                     findings.append(Finding(
-                        FindingCode.COLUMN_NOT_RENDERED,
+                        FindingCode.VIEW_FIELD_NOT_RENDERED,
                         f"{ctx}: {part} references {name!r}, which is not a "
                         f"rendered column of {entity_name}.",
                         location=at_view,
