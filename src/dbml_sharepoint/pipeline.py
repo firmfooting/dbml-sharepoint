@@ -451,7 +451,7 @@ def execute_build(
     fixed = _build_instant(source_date_epoch)
     generated_at = (fixed or dt.datetime.now(dt.UTC)).isoformat(timespec="seconds")
     mtime = dt.datetime.fromtimestamp(schema.stat().st_mtime, dt.UTC)
-    source_mtime = (min(mtime, fixed) if fixed else mtime).isoformat(timespec="seconds")
+    source_mtime = (fixed or mtime).isoformat(timespec="seconds")
 
     manifest_md = generate_manifest(
         schema_json=schema_json,
