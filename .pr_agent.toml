@@ -1,0 +1,7 @@
+# Generated output crowds the reviewer's token budget; review the generator instead.
+[ignore]
+glob = [
+    "test/fixtures/expected/**",
+    "website/docs/api/**",
+    "website/docs/reference/findings.md",
+]

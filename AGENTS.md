@@ -222,3 +222,14 @@ Anything that writes must read back and verify. Anything uncertain must fail
 closed with a named error. Undocumented SharePoint surfaces need live proof and
 the strictest guards in the codebase. A pull request that weakens a guard has to
 argue for it explicitly.
+
+## Review guidelines
+
+Files under `test/fixtures/expected/**`, `website/docs/api/**` and
+`website/docs/reference/findings.md` are produced by generators. Do not review
+them line by line. Review the generator, template or docstring change that
+moved them, and confirm the generated files were regenerated, not hand-edited:
+`uv run python test/regen_golden.py` for the deploy golden,
+`uv run python website/scripts/generate_api.py` for the API reference and
+`uv run python website/scripts/generate_findings.py` for the findings
+reference.
