@@ -189,7 +189,7 @@ Behaviour worth knowing:
 - `--dry-run` still writes `deploy-manifest.md`, so you can read the
   findings and the deployment plan. It is the JS that is withheld.
 - `SOURCE_DATE_EPOCH`, when set, fixes `Generated at` to that instant and
-  clamps the recorded schema time to it, so two builds of the same inputs
+  records that instant as the schema time too, so two builds of the same inputs
   are byte-identical.
 - An extension that requires its own project CLI causes `build` to exit
   with instructions rather than emitting a half-configured bundle.

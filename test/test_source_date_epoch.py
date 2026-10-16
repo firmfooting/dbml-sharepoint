@@ -1,5 +1,6 @@
 """`SOURCE_DATE_EPOCH` makes two builds of the same inputs byte-identical."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,26 @@ def test_the_epoch_clamps_a_newer_schema_time(
     _build_simple(tmp_path / "a")
     deploy = (tmp_path / "a" / "deploy.js.txt").read_text(encoding="utf-8")
     assert "(mtime: 1970-01-01T00:00:01+00:00)" in deploy
+
+
+def test_the_epoch_stamps_an_older_schema_time_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", str(EPOCH))
+    schema = tmp_path / "simple.dbml"
+    schema.write_bytes((FIXTURES / "simple.dbml").read_bytes())
+    os.utime(schema, (1000, 1000))
+    execute_build(
+        schema=schema,
+        mapping=FIXTURES / "sharepoint-mapping.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        time_zone="UTC",
+        site_role="default",
+        out=tmp_path / "a",
+    )
+    deploy = (tmp_path / "a" / "deploy.js.txt").read_text(encoding="utf-8")
+    assert "(mtime: 2025-10-01T00:00:00+00:00)" in deploy
 
 
 def test_the_keyword_beats_the_environment(
