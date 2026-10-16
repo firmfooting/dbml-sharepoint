@@ -824,6 +824,7 @@ def build_plans(
                     # does not do; the ids resolve against the target list's
                     # own query, which the same bundle emits.
                     plan.selects.append(f"{sp.name}Id")
+                    # Ids only, never expanded: see sp.rest.lookup-projection.multi-null-member.
                     plan.multi_value_joins.append((f"{sp.name}Id", False))
                     plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
                 case "UserMulti":
@@ -834,6 +835,7 @@ def build_plans(
                     # not flattened here. The empty-value shape is measured
                     # only for the Power Automate connector (P48), not here.
                     plan.selects.append(f"{sp.name}Id")
+                    # Ids only, never expanded: see sp.rest.person-projection.multi-null-member.
                     plan.multi_value_joins.append((f"{sp.name}Id", False))
                     plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
                 case _:
