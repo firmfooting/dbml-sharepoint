@@ -10,12 +10,11 @@ change without its evidence changing with it, and no cell can be emitted
 that the table does not know about.
 """
 from itertools import product
-from pathlib import Path
 
 import pytest
+from _paths import REPO_ROOT
 from _ratchet import Ratchet
 
-import dbml_sharepoint
 from dbml_sharepoint.analysis import clock_cells
 from dbml_sharepoint.analysis.clock_cells import (
     CELLS,
@@ -41,7 +40,6 @@ from dbml_sharepoint.analysis.condition_rendering import (
 from dbml_sharepoint.analysis.typemap import DATE_TYPES
 from dbml_sharepoint.model.conditions import Group, Leaf
 
-REPO = Path(dbml_sharepoint.__file__).resolve().parents[2]
 RENDER = {VALIDATION: to_validation, CAML: to_caml, EXPRESSION: to_expression}
 COMPARISONS = ("leq", "lt", "gt", "geq", "eq", "neq")
 #: The spellings the test renders for each sentinel. Two offsets, one each
@@ -192,9 +190,9 @@ def test_measured_cells_agree_with_the_independent_record() -> None:
 def test_every_measurement_names_a_file_that_exists() -> None:
     for cell in CELLS:
         if cell.evidence is not None:
-            assert (REPO / cell.evidence.probe).is_file(), (cell.id, cell.evidence.probe)
+            assert (REPO_ROOT / cell.evidence.probe).is_file(), (cell.id, cell.evidence.probe)
             assert cell.evidence.measured[:4].isdigit(), cell.id
-    assert (REPO / clock_cells.DEFAULT_EVIDENCE.probe).is_file()
+    assert (REPO_ROOT / clock_cells.DEFAULT_EVIDENCE.probe).is_file()
 
 
 def test_the_lagging_clock_cell_is_the_only_one_left() -> None:

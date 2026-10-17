@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _paths import PACKAGE
+from _paths import PACKAGE, scanned
 
 _IMPORT_PROBE = (
     "import importlib, sys\n"
@@ -73,7 +73,7 @@ def test_generators_import_composition_from_form_rendering() -> None:
         }
         assert "compose_visibility" in rendering_names, relative
 
-    for path in PACKAGE.rglob("*.py"):
+    for path in scanned(PACKAGE):
         imports = _imports(path)
         assert not any(
             node.module == "dbml_sharepoint.analysis.forms"

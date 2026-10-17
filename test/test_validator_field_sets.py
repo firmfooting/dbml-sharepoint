@@ -10,7 +10,7 @@ from _model import column as make_column
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import blocks, pack
-from _paths import PACKAGE
+from _paths import PACKAGE, scanned
 from _validator_helpers import _project_errors, _project_inputs
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
@@ -459,7 +459,7 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
     names = {"calculated_text", "calculated_number", "calculated_date"}
     src = PACKAGE
     offenders: list[str] = []
-    for path in sorted(src.rglob("*.py")):
+    for path in scanned(src):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Set | ast.List | ast.Tuple):

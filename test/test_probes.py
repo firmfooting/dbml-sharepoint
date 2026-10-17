@@ -183,7 +183,9 @@ def test_no_tracked_file_under_manual_names_a_tenant() -> None:
     """No committed file in test/manual may carry a real tenant host or a
     real address, which is what a probe transcript is made of."""
     offenders: list[str] = []
-    for path in _tracked_manual_files():
+    tracked = _tracked_manual_files()
+    assert tracked, "git tracks no file under test/manual, so nothing was scanned"
+    for path in tracked:
         text = path.read_text(encoding="utf-8", errors="replace")
         offenders += [
             f"{path.name}: {host}"

@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 import pytest
-from _paths import PACKAGE
+from _paths import MANUAL, PACKAGE, scanned
 
 TEMPLATES = PACKAGE / "templates"
 
@@ -193,7 +193,7 @@ def test_every_committed_writer_pins_lf() -> None:
     """
     offenders = [
         f"{source.relative_to(PACKAGE).as_posix()}:{line}"
-        for source in sorted(PACKAGE.rglob("*.py"))
+        for source in scanned(PACKAGE)
         for line in _writers_missing_lf(source.read_text(encoding="utf-8"))
     ]
     assert not offenders, (
@@ -246,7 +246,7 @@ def test_the_threshold_probe_measures_the_guard_this_tool_emits() -> None:
     """
     from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
 
-    probe = (PACKAGE.parent.parent / "test" / "manual" / "threshold-index-probe.js")
+    probe = MANUAL / "threshold-index-probe.js"
     assert CAML_VIEW_FILTER_GUARD in probe.read_text(encoding="utf-8"), (
         f"{probe.name} does not contain CAML_VIEW_FILTER_GUARD verbatim, so "
         f"its four `scale.threshold.guard*` rows are measuring some other "

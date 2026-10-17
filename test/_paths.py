@@ -33,6 +33,19 @@ def _repo_root() -> Path:
 
 REPO_ROOT = _repo_root()
 
+def scanned(root: Path, pattern: str = "*.py") -> list[Path]:
+    """The files under `root` matching `pattern`, raising if there are none.
+
+    A negative scan over a missing or empty root passes without reading a file.
+    """
+    if not root.is_dir():
+        raise AssertionError(f"scan root {root} is not a directory")
+    found = sorted(root.rglob(pattern))
+    if not found:
+        raise AssertionError(f"scan of {root} for {pattern} matched no file")
+    return found
+
+
 #: Test data committed beside the tests.
 FIXTURES = TEST_DIR / "fixtures"
 

@@ -1,6 +1,6 @@
 """The one marker prefix every provisioned object opens with."""
 
-from pathlib import Path
+from _paths import PACKAGE, scanned
 
 from dbml_sharepoint.analysis import group_description, list_description, provenance
 
@@ -25,11 +25,11 @@ def test_only_provenance_and_prose_spell_the_prefix() -> None:
     `finding_help.py` is exempt by name: it is operator-facing prose that
     quotes the marker to explain a finding, not a second definition of it.
     """
-    root = Path(group_description.__file__).parent
+    root = PACKAGE / "analysis"
     exempt = {"provenance.py", "finding_help.py"}
     offenders = [
         p.name
-        for p in sorted(root.rglob("*.py"))
+        for p in scanned(root)
         if p.name not in exempt
         and "Provisioned by dbml-sharepoint" in p.read_text(encoding="utf-8")
     ]
