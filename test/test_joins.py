@@ -53,9 +53,9 @@ def test_the_bands_are_eleven_and_twelve() -> None:
     """The last two assertions are the GUARD ON THE DERIVATION, not a second
     copy of it. SYSTEM_JOIN_COLUMNS is computed from SYSTEM_COLUMN_TYPES, so
     these pin what that computation must come out as: Created and Modified are
-    absent because they are `datetime`, and that row of the rule is INFERRED
-    rather than measured. Widen JOIN_BEARING_TYPES and this fails, which is the
-    point.
+    absent because they are `datetime`, which `scale.join.created-date-counts-as-join`
+    and `modified-date-counts-as-join` measured. Widen JOIN_BEARING_TYPES and
+    this fails, which is the point.
 
     Written `sorted(X) == [...]` rather than `X == frozenset({...})` because
     ruff reads an uppercase name as the constant side and flags the latter

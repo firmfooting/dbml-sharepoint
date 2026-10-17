@@ -358,9 +358,8 @@ def _join_finding(
     # clean. The two Finding(...) groups DO interpolate and keep their prefixes.
     shared = (
         "Every Lookup and Person column costs one join, including Created By "
-        "(Author) and Modified By (Editor); Created and Modified are inferred "
-        "to cost nothing, from their datetime type rather than a measurement, "
-        "and a cross-site reference costs nothing because it expands to a "
+        "(Author) and Modified By (Editor); Created and Modified cost "
+        "nothing, and a cross-site reference costs nothing because it expands to a "
         "Choice + URL pair."
     )
     if count > JOIN_LIMIT:

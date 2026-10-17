@@ -30,6 +30,8 @@ each one replaced follows it because the recorded transcripts quote the mnemonic
     created-by-counts-as-join     (JOINSYS)  Author: at the ceiling, REFUSED
     modified-by-counts-as-join    (JOINEDT)  Editor: at the ceiling, REFUSED
     projected-field-costs-a-join  (JOINPRJ)  at the ceiling, SERVED and READ BACK
+    created-date-counts-as-join   (JOINCRT)  Created: at the ceiling, SERVED
+    modified-date-counts-as-join  (JOINMOD)  Modified: at the ceiling, SERVED
 
 Each suspect was tested at the ceiling PLUS EXACTLY ONE column, because that is
 the only shape that discriminates: against a ceiling of 12, adding one column to
@@ -38,11 +40,11 @@ revision made that mistake and reported Person as not counting. A lookup holding
 NO DATA still counts. All 14 probe columns were empty and the ceiling was still
 12.
 
-`Created` and `Modified` are NOT counted, and that row is INFERRED rather than
-measured: they are `datetime`, and only Author and Editor are person-typed in
-SYSTEM_COLUMN_TYPES. Counting all five members of SYSTEM_COLUMNS would be wrong
-by two on every list. Closing it needs two more entries in the probe's
-`suspects` array; see issue #44.
+`Created` and `Modified` are NOT counted, measured by `created-date-counts-as-join`
+and `modified-date-counts-as-join`: at the ceiling plus one of them the view was
+served and the column was present in the returned row. They are `datetime`, and
+only Author and Editor are person-typed in SYSTEM_COLUMN_TYPES. Counting all five
+members of SYSTEM_COLUMNS would be wrong by two on every list.
 
 A CROSS-SITE reference costs nothing: it is expanded into a Choice + URL pair, so
 no Lookup exists to join through. Same exclusion as the lookup ShowField work,
@@ -118,13 +120,11 @@ JOIN_LIMIT = 12
 JOIN_WARN_AT = 11
 
 # Appended to every generated `All Items` view without being asked for, and the
-# two nobody counts. DERIVED, not written out: `column_projection` already
-# records that Author and Editor are `person` while Created and Modified
-# are `datetime`, and a second hand-written copy of that fact is exactly what
-# goes stale. `Created` and `Modified` fall out of this expression on their own,
-# which is the INFERRED half of the rule, never measured; see the module
-# docstring. `test/test_joins.py::test_the_bands_are_eleven_and_twelve` pins
-# what this must evaluate to.
+# two nobody counts. DERIVED, not written out: a second hand-written copy of
+# the column types is exactly what goes stale. `Created` and `Modified` fall
+# out of this expression on their own, and the `scale.join` rows
+# `created-date-counts-as-join` and `modified-date-counts-as-join` measured that
+# they cost nothing. `test_the_bands_are_eleven_and_twelve` pins the result.
 SYSTEM_JOIN_COLUMNS = frozenset(
     name for name, col_type in SYSTEM_COLUMN_TYPES.items()
     if col_type in JOIN_BEARING_TYPES

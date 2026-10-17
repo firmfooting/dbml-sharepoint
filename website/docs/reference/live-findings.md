@@ -9,11 +9,11 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 145. Findings: 414. Captures superseded: 1.
+Runs: 149. Findings: 427. Captures superseded: 1.
 
-Probes: 104. Probed: 78. Not yet probed: 26.
+Probes: 104. Probed: 79. Not yet probed: 25.
 
-Checks with a probe result, not settled: 412 of 1848. Checks with a reviewed capture, not settled: 9 of 50.
+Checks with a probe result, not settled: 425 of 1958. Checks with a reviewed capture, not settled: 9 of 50.
 
 ## formula — 9 of 11 probes with evidence, 67 findings
 
@@ -183,18 +183,21 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 
 Not yet probed: `list-settings-probe.js`, `multilookup-probe.js`, `unique-transition-probe.js`, `calculated-date-rest-probe.js`, `version-editor-email-probe.js`.
 
-## text — 4 of 5 probes with evidence, 2 findings
+## text — 4 of 5 probes with evidence, 5 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
+| [text.col-fmt.markers-render-on-page](findings/formatter-xml-20261016-358d4563-text-col-fmt-markers-render-on-page) | machine | open | formatter-xml/20261016-358d4563 | — |
+| [text.form-fmt.markers-render-on-page](findings/formatter-xml-20261016-358d4563-text-form-fmt-markers-render-on-page) | machine | open | formatter-xml/20261016-358d4563 | — |
+| [text.view-fmt.markers-render-on-page](findings/formatter-xml-20261016-358d4563-text-view-fmt-markers-render-on-page) | machine | open | formatter-xml/20261016-358d4563 | — |
 | [text.group-desc.length-ceiling](findings/group-description-20260828-initial-text-group-desc-length-ceiling) | machine | failed | group-description/20260828-initial | — |
 | [text.role-desc.length-ceiling](findings/role-definition-20260903-sandbox-text-role-desc-length-ceiling) | machine | failed | role-definition/20260903-sandbox | — |
 
-64 further checks in this surface are settled.
+96 further checks in this surface are settled.
 
 Not yet probed: `item-text-roundtrip-probe.js`.
 
-## access — 7 of 9 probes with evidence, 36 findings
+## access — 8 of 9 probes with evidence, 37 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -229,17 +232,18 @@ Not yet probed: `item-text-roundtrip-probe.js`.
 | [field.lookup.calculated-display-field](findings/lookup-acl-20260919-b2fb1755-field-lookup-calculated-display-field) | machine | open | lookup-acl/20260919-b2fb1755 | — |
 | [field.lookup.empty-label-linked-readback](findings/lookup-acl-20260919-b2fb1755-field-lookup-empty-label-linked-readback) | machine | open | lookup-acl/20260919-b2fb1755 | — |
 | [field.lookup.picker-omits-empty-label](findings/lookup-acl-20260919-b2fb1755-field-lookup-picker-omits-empty-label) | machine | open | lookup-acl/20260919-b2fb1755 | — |
+| [access.list-acl.control-unknown-principal-refused](findings/operator-safety-grant-20261016-0627527a-access-list-acl-control-unknown-principal-refused) | machine | failed | operator-safety-grant/20261016-0627527a | — |
 | [access.role-binding.web-scope-by-group](findings/reader-bindings-20260902-reader-run-access-role-binding-web-scope-by-group) | machine | open | reader-bindings/20260902-reader-run | — |
 | [access.role-binding.control-web-roleassignments-readable](findings/reader-bindings-20260903-void-differential-access-role-binding-control-web-roleassignments-readable) | machine | failed | reader-bindings/20260903-void-differential | — |
 | [access.role-binding.web-scope-by-group](findings/reader-bindings-20260903-void-differential-access-role-binding-web-scope-by-group) | machine, visible | void | reader-bindings/20260903-void-differential | reader |
 | [access.principal.person-column-ids-resolve](findings/siteuserinfolist-20260902-initial-access-principal-person-column-ids-resolve) | machine | open | siteuserinfolist/20260902-initial | — |
 | [access.principal.person-column-ids-resolve](findings/siteuserinfolist-20260919-23666adc-access-principal-person-column-ids-resolve) | machine | open | siteuserinfolist/20260919-23666adc | — |
 
-82 further checks in this surface are settled.
+88 further checks in this surface are settled.
 
-Not yet probed: `operator-safety-grant-probe.js`, `last-binding-removal-probe.js`.
+Not yet probed: `last-binding-removal-probe.js`.
 
-## scale — 2 of 2 probes with evidence, 24 findings
+## scale — 2 of 2 probes with evidence, 33 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -267,8 +271,17 @@ Not yet probed: `operator-safety-grant-probe.js`, `last-binding-removal-probe.js
 | [scale.threshold.guarded-comparison-unindexed-text](findings/threshold-index-20260827-272-guard-scale-threshold-guarded-comparison-unindexed-text) | machine | open | threshold-index/20260827-272-guard | — |
 | [view.filter-editor.negated-clause-rows](findings/threshold-index-20260827-272-guard-view-filter-editor-negated-clause-rows) | machine | open | threshold-index/20260827-272-guard | — |
 | [view.filter-editor.plain-clause-rows](findings/threshold-index-20260827-272-guard-view-filter-editor-plain-clause-rows) | machine | open | threshold-index/20260827-272-guard | — |
+| [scale.index.caml-isnotnull-unindexed-datetime](findings/threshold-index-20261017-6bdd7e60-scale-index-caml-isnotnull-unindexed-datetime) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [scale.index.target-status-filter](findings/threshold-index-20261017-6bdd7e60-scale-index-target-status-filter) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [scale.threshold.guarded-comparison-unindexed-text](findings/threshold-index-20261017-6bdd7e60-scale-threshold-guarded-comparison-unindexed-text) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.filter-editor.negated-clause-rows](findings/threshold-index-20261017-6bdd7e60-view-filter-editor-negated-clause-rows) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.filter-editor.plain-clause-rows](findings/threshold-index-20261017-6bdd7e60-view-filter-editor-plain-clause-rows) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.threshold-render.indexed-filter](findings/threshold-index-20261017-6bdd7e60-view-threshold-render-indexed-filter) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.threshold-render.indexed-filter-guarded](findings/threshold-index-20261017-6bdd7e60-view-threshold-render-indexed-filter-guarded) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.threshold-render.unindexed-filter](findings/threshold-index-20261017-6bdd7e60-view-threshold-render-unindexed-filter) | machine | open | threshold-index/20261017-6bdd7e60 | — |
+| [view.threshold-render.unindexed-filter-guarded](findings/threshold-index-20261017-6bdd7e60-view-threshold-render-unindexed-filter-guarded) | machine | open | threshold-index/20261017-6bdd7e60 | — |
 
-49 further checks in this surface are settled.
+103 further checks in this surface are settled.
 
 ## search — 1 of 1 probes with evidence, 5 findings
 
@@ -512,7 +525,7 @@ Not yet probed: `operator-safety-grant-probe.js`, `last-binding-removal-probe.js
 | [library.large-list.preindex-group-by-unindexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-preindex-group-by-unindexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
 | [library.search.discovery-on-library](findings/library-view-search-20260904-sandbox-library-search-discovery-on-library) | machine | open | library-view-search/20260904-sandbox | — |
 
-600 further checks in this surface are settled.
+605 further checks in this surface are settled.
 
 Not yet probed: `library-guards-probe.js`, `folder-create-refusal-probe.js`, `folder-under-schema-probe.js`, `library-builtin-view-probe.js`, `library-header-token-probe.js`, `library-sharing-probe.js`, `library-lookup-write-probe.js`, `file-move-probe.js`, `file-properties-while-open-probe.js`.
 

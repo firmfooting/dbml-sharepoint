@@ -252,7 +252,7 @@ def _site_entry(
 def test_a_site_read_extracts_every_visible_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """Hidden lists and catalogues are the platform's own, not the site's
     data, so a site read skips them and reads the rest by the id the
-    enumeration returned. GetList refused a path holding a space live."""
+    enumeration returned, so the read does not depend on path resolution."""
     config = _config()
     other_path = f"{WEB}/Lists/Action Register"
     other_id = "aaaaaaaa-0000-0000-0000-000000000002"
