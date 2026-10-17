@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from _catalogue_fixtures import CORE_LICENSE, manifest_text, without
-from _paths import REPO_ROOT, SOLUTION_TEMPLATES
+from _paths import REPO_ROOT, SOLUTION_TEMPLATES, scanned
 
 from dbml_sharepoint.catalogue import (
     BLUEPRINT_MANIFEST,
@@ -205,6 +205,7 @@ def test_the_manifest_file_is_blueprint_toml() -> None:
 
 
 def test_no_shipped_blueprint_keeps_the_old_manifest_name() -> None:
+    assert scanned(SOLUTION_TEMPLATES, "blueprint.toml")
     assert not sorted(SOLUTION_TEMPLATES.glob("*/pack.toml"))
 
 

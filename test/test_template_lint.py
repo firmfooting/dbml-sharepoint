@@ -27,6 +27,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from _paths import REPO_ROOT
 from jinja2 import Environment, TemplateSyntaxError, meta, nodes
 
 from dbml_sharepoint.analysis.phases import DEPLOY_GROUPS
@@ -34,7 +35,6 @@ from dbml_sharepoint.model.parser import Table, TableIndex
 from dbml_sharepoint.templating import TEMPLATES_DIR, ScriptEnvironment, script_env
 
 SRC_DIR = TEMPLATES_DIR.parent
-REPO_ROOT = TEMPLATES_DIR.parents[2]
 
 ALL_TEMPLATES = sorted(
     p.relative_to(TEMPLATES_DIR).as_posix() for p in TEMPLATES_DIR.rglob("*.j2")

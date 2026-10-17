@@ -49,7 +49,9 @@ def test_every_command_named_in_markdown_outside_the_docs_site_exists() -> None:
     assert commands, "the CLI declares no subcommands, so this pins nothing"
     named = re.compile(r"`dbml-sharepoint ([a-z][a-z-]*)")
     unknown = []
-    for name in _tracked_markdown():
+    tracked = _tracked_markdown()
+    assert len(tracked) > 20, tracked
+    for name in tracked:
         unknown.extend(
             f"{name}: dbml-sharepoint {match.group(1)}"
             for match in named.finditer((REPO_ROOT / name).read_text(encoding="utf-8"))

@@ -9,7 +9,7 @@ from typing import get_args
 import pytest
 from _findings import only
 from _packs import pack
-from _paths import FIXTURES, PACKAGE
+from _paths import FIXTURES, PACKAGE, scanned
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.resolve import resolve
@@ -432,7 +432,7 @@ def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None
     """
     offenders: list[str] = []
     inspected = 0
-    for path in sorted(PACKAGE.rglob("*.py")):
+    for path in scanned(PACKAGE):
         if path.name == "typemap.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))

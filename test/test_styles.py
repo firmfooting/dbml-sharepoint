@@ -4,9 +4,9 @@ import copy
 import datetime as dt
 import json
 import re
-from pathlib import Path
 
 import pytest
+from _paths import PACKAGE, scanned
 
 from dbml_sharepoint.analysis import styles
 from dbml_sharepoint.analysis.formatter_values import ScalarValue
@@ -517,10 +517,10 @@ def test_no_check_module_names_a_registered_style() -> None:
     `calculated_type_for_style` dict of their own, so a sixth style expanded
     and deployed with no validation and nothing said so.
     """
-    checks = Path(styles.__file__).parent / "checks"
+    checks = PACKAGE / "analysis" / "checks"
     offenders = {
         module.name: sorted(named)
-        for module in sorted(checks.glob("*.py"))
+        for module in scanned(checks)
         if (named := _style_literals(module.read_text(encoding="utf-8")))
     }
     assert offenders == {}

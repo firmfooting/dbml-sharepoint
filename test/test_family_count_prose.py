@@ -129,7 +129,9 @@ def test_no_tracked_prose_states_the_family_count() -> None:
     should have to go hunting for the number.
     """
     offenders = []
-    for path in _tracked_prose():
+    prose = _tracked_prose()
+    assert len(prose) > 100, prose
+    for path in prose:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         flat, starts = _flatten(lines)
         for match in FAMILY_COUNT.finditer(flat):

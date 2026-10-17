@@ -11,7 +11,7 @@ import inspect
 
 import pytest
 from _findings import none_of, only
-from _paths import PACKAGE
+from _paths import PACKAGE, scanned
 
 from dbml_sharepoint.analysis.findings import (
     Finding,
@@ -153,7 +153,7 @@ def test_every_finding_site_carries_a_location() -> None:
 
     offenders: list[str] = []
     sites = 0
-    for path in sorted(PACKAGE.rglob("*.py")):
+    for path in scanned(PACKAGE):
         if path.name in _LOCATION_INCOMPLETE:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -181,10 +181,10 @@ def test_severity_is_declared_exactly_once() -> None:
     bodies. Two spellings of one type is how they drift."""
     import ast
 
-    from _paths import PACKAGE
+    from _paths import PACKAGE, scanned
 
     declared = []
-    for path in PACKAGE.rglob("*.py"):
+    for path in scanned(PACKAGE):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         declared.extend(
             path.name
@@ -279,7 +279,7 @@ def test_every_code_can_actually_be_produced() -> None:
     # whether the rule FIRES is a runtime question, and the paragraph above
     # says so.
     referenced: set[str] = set()
-    for path in PACKAGE.rglob("*.py"):
+    for path in scanned(PACKAGE):
         if path.name in declarations_not_uses:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))

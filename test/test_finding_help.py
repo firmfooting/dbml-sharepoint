@@ -17,7 +17,7 @@ see every class of damage rather than the one somebody thought of.
 import inspect
 import re
 
-from _paths import PACKAGE, REPO_ROOT, TEST_DIR
+from _paths import PACKAGE, REPO_ROOT, TEST_DIR, scanned
 from typer.testing import CliRunner
 
 from dbml_sharepoint.analysis.checks._default_formulas import (
@@ -174,7 +174,7 @@ def test_no_construction_site_states_a_severity() -> None:
     import ast
 
     offenders = []
-    for path in (*sorted(PACKAGE.rglob("*.py")), *sorted(TEST_DIR.rglob("*.py"))):
+    for path in (*scanned(PACKAGE), *scanned(TEST_DIR)):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not (
                 isinstance(node, ast.Call)
