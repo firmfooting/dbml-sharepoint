@@ -109,7 +109,7 @@ def _named(message: str) -> list[str]:
     Assert against this, never against the whole message, whenever a test cares
     whether a column name is present or absent. `_join_finding` appends a shared
     sentence reading "...including Created By (Author) and Modified By (Editor);
-    Created and Modified are inferred to cost nothing...", so
+    Created and Modified cost nothing...", so
     `"Created" not in f.message` and `"Author" in f.message` are BOTH vacuous.
     The first can never pass and the second passes even if the column was never
     counted. The parenthesised list is the only part of the message that varies
@@ -161,7 +161,7 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none() -> None:
     Every name assertion goes through `_named`. Asserted against the whole
     message they would all be vacuous. The shared sentence `_join_finding`
     appends says "including Created By (Author) and Modified By (Editor); Created
-    and Modified are inferred to cost nothing", so "Created"/"Modified"/"Author"
+    and Modified cost nothing", so "Created"/"Modified"/"Author"
     are in EVERY join message regardless of what was counted."""
     twelve = [f"P{n}" for n in range(1, 13)]
 
