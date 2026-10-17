@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.22.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.21.1...v0.22.0) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **validator:** split column_not_rendered into one code per section ([#873](https://github.com/firmfooting/dbml-sharepoint/issues/873))
+
+### Features
+
+* **reporting:** add reporting.internal_names to keep schema names in Power Query ([#874](https://github.com/firmfooting/dbml-sharepoint/issues/874)) ([28c82cc](https://github.com/firmfooting/dbml-sharepoint/commit/28c82cc623636f349b1331414d96b1d8f84f29e5))
+* **validator:** split column_not_rendered into one code per section ([#873](https://github.com/firmfooting/dbml-sharepoint/issues/873)) ([274eafd](https://github.com/firmfooting/dbml-sharepoint/commit/274eafd7fd9550c6e07ef6ad2619a97ede59ed99))
+
+
+### Bug Fixes
+
+* **catalogue:** default the provenance fields on Solution and Journey ([#875](https://github.com/firmfooting/dbml-sharepoint/issues/875)) ([ebaca39](https://github.com/firmfooting/dbml-sharepoint/commit/ebaca39409e1924290cf85e8e4d18805cb78d740))
+
+
+### Documentation
+
+* record the owed live probes and drop the hedge on Created and Modified join cost ([#878](https://github.com/firmfooting/dbml-sharepoint/issues/878)) ([1c8bf7f](https://github.com/firmfooting/dbml-sharepoint/commit/1c8bf7fda342b3d1136635acde92a6c9c6ce82a2))
+
 ## [0.21.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.21.0...v0.21.1) (2026-10-16)
 
 
