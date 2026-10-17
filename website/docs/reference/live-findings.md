@@ -9,11 +9,11 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 149. Findings: 427. Captures superseded: 1.
+Runs: 150. Findings: 427. Captures superseded: 1.
 
 Probes: 104. Probed: 79. Not yet probed: 25.
 
-Checks with a probe result, not settled: 425 of 1958. Checks with a reviewed capture, not settled: 9 of 50.
+Checks with a probe result, not settled: 425 of 1976. Checks with a reviewed capture, not settled: 9 of 50.
 
 ## formula — 9 of 11 probes with evidence, 67 findings
 
@@ -179,7 +179,7 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [field.date.shipped-transition-offset-after](findings/site-zone-transitions-20260919-a955cb73-field-date-shipped-transition-offset-after) | machine | failed | site-zone-transitions/20260919-a955cb73 | — |
 | [field.date.shipped-transition-offset-before](findings/site-zone-transitions-20260919-a955cb73-field-date-shipped-transition-offset-before) | machine | failed | site-zone-transitions/20260919-a955cb73 | — |
 
-235 further checks in this surface are settled.
+253 further checks in this surface are settled.
 
 Not yet probed: `list-settings-probe.js`, `multilookup-probe.js`, `unique-transition-probe.js`, `calculated-date-rest-probe.js`, `version-editor-email-probe.js`.
 
