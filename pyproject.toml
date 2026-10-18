@@ -78,7 +78,7 @@ dev = [
   "pyrefly==1.3.2",
   "j2lint>=1.2.0",
   # Enforces the generator import rule; see [tool.importlinter].
-  "import-linter==2.11",
+  "import-linter==2.15",
   # The git-hook runner. Pinned here for the same reason as every other gate:
   # `uv run prek` cannot drift from the version a contributor happens to have.
   "prek>=0.5.3",
