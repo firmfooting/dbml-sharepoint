@@ -288,10 +288,10 @@ def test_a_construction_error_is_a_yaml_error_at_its_node(
     Every tag is refused, which closes the usual way to reach most of them,
     so the int constructor is made to raise each in turn."""
 
-    def fail(constructor: yamlio.UniqueKeyConstructor, node: ScalarNode) -> int:
+    def fail(constructor: yamlio._UniqueKeyConstructor, node: ScalarNode) -> int:
         raise error(f"{constructor.construct_scalar(node)} failed")
 
-    constructors = yamlio.UniqueKeyConstructor.yaml_constructors
+    constructors = yamlio._UniqueKeyConstructor.yaml_constructors
     monkeypatch.setitem(constructors, "tag:yaml.org,2002:int", fail)
     with pytest.raises(ConstructorError) as err:
         yamlio.safe_load(io.StringIO("a: x\nb: 12\n"))
