@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.22.1...v0.23.0) (2026-10-18)
+
+
+### Features
+
+* **yaml:** publish the YAML loader as a public API ([#884](https://github.com/firmfooting/dbml-sharepoint/issues/884)) ([d12d638](https://github.com/firmfooting/dbml-sharepoint/commit/d12d638d2dea90090d684173f7440014343204f0))
+
 ## [0.22.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.22.0...v0.22.1) (2026-10-18)
 
 
