@@ -15,7 +15,7 @@ from _narrow import as_dict
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis import sidecars
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 
 SIDECAR_TITLES = (
     sidecars.RUN_LOG_TITLE,
@@ -33,7 +33,7 @@ def test_a_sidecar_title_has_a_space_and_its_url_slug_does_not(title: str) -> No
 def _family_list_urls() -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for mapping_path in sorted(SOLUTION_TEMPLATES.glob("*/20-configure/mapping.yaml")):
-        raw = as_dict(_yaml.safe_load(mapping_path.read_text(encoding="utf-8")) or {})
+        raw = as_dict(yamlio.safe_load(mapping_path.read_text(encoding="utf-8")) or {})
         prefix = raw.get("prefix", "")
         for entity, spec in as_dict(raw.get("entities") or {}).items():
             fields = as_dict(spec)

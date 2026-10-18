@@ -81,7 +81,7 @@ from dbml_sharepoint.catalogue import (
     terminal_safe,
 )
 from dbml_sharepoint.extension import UnknownExtensionError, resolve_extension
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
     ENV_FILENAME,
@@ -915,15 +915,15 @@ def _drop_chosen_from_previous_prefixes(
     # comment on the line is handled by the parser that will read it back.
     # Blank lines first, so the parser counts lines and columns as the file does.
     try:
-        loaded = _yaml.safe_load("\n" * text.count("\n", 0, match.start()) + match.group(0))
-    except _yaml.TagOrDirectiveError as exc:
+        loaded = yamlio.safe_load("\n" * text.count("\n", 0, match.start()) + match.group(0))
+    except yamlio.TagOrDirectiveError as exc:
         raise WizardError(f"`previous_prefixes:` {exc}") from exc
-    except _yaml.RefusedYAMLError as exc:
+    except yamlio.RefusedYAMLError as exc:
         # The line parses, as valid YAML the loader will not read, such as a reused anchor.
         raise WizardError(
             f"`previous_prefixes:` is refused ({match.group(0).strip()!r}): {exc}",
         ) from exc
-    except _yaml.PARSE_ERRORS as exc:
+    except yamlio.PARSE_ERRORS as exc:
         # A flow list continued onto a second line does not parse from its first.
         raise WizardError(
             f"`previous_prefixes:` does not parse from its own line "
@@ -953,7 +953,7 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
 
     A targeted line rewrite, not a YAML round-trip. Every shipped mapping
     is heavily commented -- the comments are the documentation for the
-    template -- and `_yaml.safe_load` followed by `_yaml.safe_dump` would
+    template -- and `yamlio.safe_load` followed by `yamlio.safe_dump` would
     discard all of them.
 
     Verified through the real loader rather than by re-reading the text:
@@ -1454,7 +1454,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     try:
         with recording_reads() as read:
             bundle = load_mapping(solution.mapping_path)
-    except (OSError, KeyError, ValueError, *_yaml.PARSE_ERRORS) as exc:
+    except (OSError, KeyError, ValueError, *yamlio.PARSE_ERRORS) as exc:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc

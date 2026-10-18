@@ -1,7 +1,7 @@
 # test/test_yaml_refusals.py
 """What the loader reads as YAML 1.2, and the valid YAML it refuses (#686).
 
-`model/_yaml.py` reads plain values as ruamel.yaml reads YAML 1.2, so `yes`
+`model/yamlio.py` reads plain values as ruamel.yaml reads YAML 1.2, so `yes`
 is text and `010` is 10. It refuses an explicit tag, a `%YAML` or `%TAG`
 directive, and the valid YAML `RefusedYAMLError` names, and reports a value
 it cannot construct as a parse error.
@@ -23,7 +23,7 @@ from _packs import DEFAULT_PREFIX, blocks, entities, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint import catalogue
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.errors import MappingError, MappingSourceError
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.project import load_config
@@ -47,7 +47,7 @@ _HEADER = "uses tags or directives the loader refuses:"
 def test_a_plain_value_is_read_as_yaml_1_2(token: str, reading: object) -> None:
     """The spellings the mapping reference names, which a YAML 1.1 reader
     reads otherwise."""
-    value = as_dict(_yaml.safe_load(f"v: {token}\n"))["v"]
+    value = as_dict(yamlio.safe_load(f"v: {token}\n"))["v"]
     assert (type(value), value) == (type(reading), reading)
 
 
@@ -94,9 +94,9 @@ def test_an_explicit_tag_is_refused(text: str, why: str) -> None:
     """A tag reads its value by rules of its own: `!!int "010"` turns quoted
     text into 10, `!!binary` gives bytes and `!!set` a set, none of which a
     reader here takes, and a bare `!` has ruamel.yaml read `'08'` as 8."""
-    with pytest.raises(_yaml.TagOrDirectiveError) as err:
-        _yaml.safe_load(text)
-    assert isinstance(err.value, _yaml.PARSE_ERRORS)
+    with pytest.raises(yamlio.TagOrDirectiveError) as err:
+        yamlio.safe_load(text)
+    assert isinstance(err.value, yamlio.PARSE_ERRORS)
     assert str(err.value) == f"{_HEADER}\n  line 1, column 4: {why}"
 
 
@@ -111,7 +111,7 @@ def test_an_explicit_tag_is_refused(text: str, why: str) -> None:
     ],
 )
 def test_a_str_tag_on_a_scalar_is_text(text: str, value: str) -> None:
-    assert _yaml.safe_load(text) == {"v": value}
+    assert yamlio.safe_load(text) == {"v": value}
 
 
 @pytest.mark.parametrize(
@@ -128,8 +128,8 @@ def test_a_version_or_tag_directive_is_refused(text: str, name: str) -> None:
     """`%YAML 1.1` switches a YAML 1.2 reader back to 1.1's readings, and
     `%TAG` can point `!!` anywhere. ruamel.yaml raises a bare AssertionError
     on `%YAML 1.3` and `%YAML 1.0`."""
-    with pytest.raises(_yaml.TagOrDirectiveError) as err:
-        _yaml.safe_load(text)
+    with pytest.raises(yamlio.TagOrDirectiveError) as err:
+        yamlio.safe_load(text)
     assert str(err.value) == (
         f"{_HEADER}\n  line 1, column 1: the `%{name}` directive is refused, because the "
         "loader reads every file by one fixed set of rules; remove it"
@@ -137,15 +137,15 @@ def test_a_version_or_tag_directive_is_refused(text: str, name: str) -> None:
 
 
 def test_a_reserved_directive_is_ignored_and_loads() -> None:
-    assert _yaml.safe_load("%FOO bar\n---\nv: 1\n") == {"v": 1}
+    assert yamlio.safe_load("%FOO bar\n---\nv: 1\n") == {"v": 1}
 
 
 def test_every_refusal_in_a_document_is_named_in_its_order_up_to_twenty() -> None:
     """One build lists them all, rather than one per run. Past twenty the
     rest are counted, so a file tagged throughout stays readable."""
     text = "".join(f"k{n}: {'!!bool true' if n % 2 else '!!int 1'}\n" for n in range(25))
-    with pytest.raises(_yaml.TagOrDirectiveError) as err:
-        _yaml.safe_load(text)
+    with pytest.raises(yamlio.TagOrDirectiveError) as err:
+        yamlio.safe_load(text)
     lines = str(err.value).splitlines()
     assert lines[0] == _HEADER
     assert [line.split(": the tag")[0] for line in lines[1:21]] == [
@@ -171,7 +171,7 @@ def test_a_tag_is_refused_in_the_mapping_naming_the_file(tmp_path: Path) -> None
     with pytest.raises(MappingError) as err:
         load_mapping(path)
     assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.TagOrDirectiveError)
+    assert isinstance(err.value.__cause__, yamlio.TagOrDirectiveError)
     assert str(err.value) == f"{path.resolve()}: {_HEADER}\n{_found(4, 4)}"
 
 
@@ -237,15 +237,15 @@ def test_a_tag_is_refused_in_a_journey_s_front_matter(
 
 def _refusal(text: str) -> str:
     """The parser's message for `text`, read as a stream so it carries no snippet."""
-    with pytest.raises(_yaml.PARSE_ERRORS) as err:
-        _yaml.safe_load(io.StringIO(text))
+    with pytest.raises(yamlio.PARSE_ERRORS) as err:
+        yamlio.safe_load(io.StringIO(text))
     return str(err.value)
 
 
 def _refused(text: str) -> str:
     """The message for valid YAML `text` the loader refuses, which is its own class."""
-    with pytest.raises(_yaml.RefusedYAMLError) as err:
-        _yaml.safe_load(io.StringIO(text))
+    with pytest.raises(yamlio.RefusedYAMLError) as err:
+        yamlio.safe_load(io.StringIO(text))
     return str(err.value)
 
 
@@ -325,7 +325,7 @@ def test_an_alias_inside_the_collection_it_names_is_refused(
 def test_an_alias_to_a_collection_already_composed_loads(
     text: str, value: dict[str, object],
 ) -> None:
-    assert _yaml.safe_load(text) == value
+    assert yamlio.safe_load(text) == value
 
 
 def test_a_recursive_alias_in_an_extensions_block_is_refused_naming_the_file(
@@ -337,7 +337,7 @@ def test_a_recursive_alias_in_an_extensions_block_is_refused_naming_the_file(
     )
     with pytest.raises(MappingSourceError) as err:
         load_mapping(path)
-    assert type(err.value.__cause__) is _yaml.RefusedYAMLError
+    assert type(err.value.__cause__) is yamlio.RefusedYAMLError
     assert str(err.value) == (
         f"{path.resolve()}: is refused: while composing the collection anchored 'x'\n"
         f'  in "{path.resolve()}", line 5, column 10\n'
@@ -362,7 +362,7 @@ def test_valid_yaml_the_loader_refuses_is_worded_as_refused_not_invalid(
     path = write_mapping(tmp_path, blocks(entities("Risk"), text))
     with pytest.raises(MappingSourceError) as err:
         load_mapping(path)
-    assert type(err.value.__cause__) is _yaml.RefusedYAMLError
+    assert type(err.value.__cause__) is yamlio.RefusedYAMLError
     assert str(err.value).startswith(f"{path.resolve()}: is refused: {problem}")
 
 
@@ -399,7 +399,7 @@ def test_valid_yaml_the_loader_refuses_in_a_journey_is_worded_as_refused(
 
 def test_nesting_is_bounded_before_the_interpreter_s_recursion_limit() -> None:
     """A RecursionError is no parse error, so it escaped every handler."""
-    assert _yaml.safe_load("[" * 100 + "]" * 100) == _nested(100)
+    assert yamlio.safe_load("[" * 100 + "]" * 100) == _nested(100)
     for depth in (101, 5000):
         assert _refused("[" * depth + "]" * depth) == (
             "found a sequence nested deeper than 100 levels\n"
@@ -428,13 +428,13 @@ def test_nesting_is_bounded_through_an_alias() -> None:
     """The value built holds what an anchor names wherever its alias stands,
     so a chain of short aliases nested as deep as it was long. The
     collection named is the one that would stand at level 101."""
-    assert as_dict(_yaml.safe_load(_chain(98)))["a98"] == _nested(99)
+    assert as_dict(yamlio.safe_load(_chain(98)))["a98"] == _nested(99)
     for links in (99, 3000):
         assert _refused(_chain(links)) == (
             "found a sequence nested deeper than 100 levels\n"
             '  in "<file>", line 100, column 12'
         )
-    aliased = _yaml.safe_load("x: &x {k: 1}\ny: " + "[" * 98 + "*x" + "]" * 98)
+    aliased = yamlio.safe_load("x: &x {k: 1}\ny: " + "[" * 98 + "*x" + "]" * 98)
     assert as_dict(aliased)["x"] == {"k": 1}
     assert _refused("x: &x {k: 1}\ny: " + "[" * 99 + "*x" + "]" * 99) == (
         "found a mapping nested deeper than 100 levels\n"
@@ -469,7 +469,7 @@ def test_a_merge_source_is_counted_at_the_level_of_the_mapping_that_merges_it(me
     """Merged pairs join the merging mapping, so a source nesting 99 levels
     merged into a mapping at level 2 builds a document 100 levels deep, the
     bound. One more level is past it."""
-    built = _yaml.safe_load(_source(99) + f"x: {{{merge}}}\n")
+    built = yamlio.safe_load(_source(99) + f"x: {{{merge}}}\n")
     assert _depth_of(built) == 100
     assert _refused(_source(100) + f"x: {{{merge}}}\n").startswith(
         "found a sequence nested deeper than 100 levels\n",
@@ -478,14 +478,14 @@ def test_a_merge_source_is_counted_at_the_level_of_the_mapping_that_merges_it(me
 
 def test_an_alias_after_an_inner_merge_list_is_still_counted_as_a_merge_source() -> None:
     """The inner `<<: [...]` must not reset the outer list's level for `*a`."""
-    built = _yaml.safe_load(_source(99) + "x: {<<: [{<<: [{z: 1}]}, *a]}\n")
+    built = yamlio.safe_load(_source(99) + "x: {<<: [{<<: [{z: 1}]}, *a]}\n")
     assert _depth_of(built) == 100
 
 
 def test_a_merge_source_that_merges_another_is_counted_at_one_level() -> None:
     """`b` stands at level 2 and holds `a`'s pairs, as `x` does in the test above."""
     text = _source(99) + "b: &b {<<: *a}\nx: {<<: *b}\n"
-    assert _depth_of(_yaml.safe_load(text)) == 100
+    assert _depth_of(yamlio.safe_load(text)) == 100
     assert _refused(_source(100) + "b: &b {<<: *a}\n") == _refused(
         _source(100) + "x: {<<: *a}\n",
     ).replace("line 2, column 9", "line 2, column 13")
@@ -523,7 +523,7 @@ def test_a_value_the_loader_cannot_construct_is_a_parse_error(
 def test_an_escape_past_the_last_character_is_a_parse_error() -> None:
     """ruamel.yaml's scanner let chr()'s ValueError escape every handler
     that catches the parser's errors. `\\U0010FFFF`, the last, loads."""
-    assert _yaml.safe_load('v: "\\U0010FFFF"\n') == {"v": chr(0x10FFFF)}
+    assert yamlio.safe_load('v: "\\U0010FFFF"\n') == {"v": chr(0x10FFFF)}
     assert _refusal('v: "\\U00110000"\n') == (
         "while scanning a double-quoted scalar\n"
         '  in "<file>", line 1, column 4\n'
@@ -543,7 +543,7 @@ def test_an_escape_past_the_last_character_is_a_parse_error() -> None:
 def test_an_escape_naming_a_surrogate_is_a_parse_error(escape: str, column: int) -> None:
     """A lone surrogate loads as a string that raises UnicodeEncodeError wherever
     it is later written as UTF-8. U+D7FF and U+E000, either side, load."""
-    assert _yaml.safe_load('v: "\\uD7FF\\uE000"\n') == {"v": "\ud7ff\ue000"}
+    assert yamlio.safe_load('v: "\\uD7FF\\uE000"\n') == {"v": "\ud7ff\ue000"}
     assert _refusal(f'v: "{escape}"\n') == (
         "while scanning a double-quoted scalar\n"
         '  in "<file>", line 1, column 4\n'
@@ -554,7 +554,7 @@ def test_an_escape_naming_a_surrogate_is_a_parse_error(escape: str, column: int)
 
 def test_a_surrogate_escape_is_marked_where_it_stands() -> None:
     """After an escaped backslash, on a later line, and past other text."""
-    assert _yaml.safe_load('v: "\\\\uD800"\n') == {"v": "\\uD800"}
+    assert yamlio.safe_load('v: "\\\\uD800"\n') == {"v": "\\uD800"}
     assert _refusal('v: "ab\\\\uD800 \\\n  cd\\uD800"\n').endswith(
         'found the escape `\\uD800`, which names a surrogate and so no character\n'
         '  in "<file>", line 2, column 5',
@@ -592,7 +592,7 @@ def test_the_writer_keeps_order_width_and_unicode() -> None:
     """The options the extract passed are the writer's own now: keys in the
     order given, one line per long scalar, block style, and text as written."""
     long_text = "word " * 40
-    written = _yaml.safe_dump({
+    written = yamlio.safe_dump({
         "z": 1, "a": [True, None, 2.5, 1e300], "t": long_text, "u": "Café",
         "d": dt.date(2026, 1, 2),
     })
@@ -612,7 +612,7 @@ def test_text_the_writer_writes_reads_back_as_the_same_text(text: str) -> None:
     """Each reads as another value, a merge or a value key under YAML 1.1 or
     1.2 when bare. `extract` writes text from a live list, as values and keys."""
     document = {"v": text, text: 1}
-    assert repr(_yaml.safe_load(_yaml.safe_dump(document))) == repr(document)
+    assert repr(yamlio.safe_load(yamlio.safe_dump(document))) == repr(document)
 
 
 def test_the_writer_double_quotes_a_string_holding_nel() -> None:
@@ -620,9 +620,9 @@ def test_the_writer_double_quotes_a_string_holding_nel() -> None:
     a string holding NEL (U+0085) and broke the line at it, so `a<NEL>b`
     read back as `a b`."""
     document = {"v": "a\x85b", "a\x85b": 1}
-    written = _yaml.safe_dump(document)
+    written = yamlio.safe_dump(document)
     assert written == 'v: "a\\Nb"\n? "a\\Nb"\n: 1\n'
-    assert repr(_yaml.safe_load(written)) == repr(document)
+    assert repr(yamlio.safe_load(written)) == repr(document)
 
 
 def test_a_template_a_parse_refuses_is_skipped_by_the_picker(

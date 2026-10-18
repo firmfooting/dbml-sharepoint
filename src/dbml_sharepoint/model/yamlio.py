@@ -1,5 +1,14 @@
-# src/dbml_sharepoint/model/_yaml.py
-"""The YAML parser every file this package reads goes through.
+# src/dbml_sharepoint/model/yamlio.py
+"""The YAML parser every file this package reads goes through, and the supported way for
+downstream code to read and write YAML.
+
+Public API: `safe_load`, `safe_dump`, `PARSE_ERRORS`, `TagOrDirectiveError` and
+`RefusedYAMLError`. Downstream packages should call these and import neither
+ruamel.yaml nor PyYAML, so their files are read by the rules below: YAML 1.2
+safe load, a repeated key refused, an explicit tag or a `%YAML`/`%TAG`
+directive refused. `safe_dump` writes block style, keys in their order, text as
+written and no line wrapping, and its output reads back through `safe_load`
+unchanged. Names with a leading underscore are internal.
 
 It reads with ruamel.yaml 0.19.1's pure-Python safe loader, which reads
 YAML 1.2: `yes`, `no`, `on` and `off` are text, `010` is 10 and `1:30` is

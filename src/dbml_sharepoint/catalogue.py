@@ -28,7 +28,7 @@ from typing import NamedTuple
 
 from dbml_sharepoint import DISTRIBUTION
 from dbml_sharepoint.jsonvalue import is_text_keyed
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 
 #: One directory per list family. Not `templates/`, which is Jinja.
 SOLUTIONS_DIR = Path(__file__).parent / "solutions"
@@ -522,8 +522,8 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     accepted here that would be refused there.
     """
     try:
-        raw: object = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, *_yaml.PARSE_ERRORS):
+        raw: object = yamlio.safe_load(mapping_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, *yamlio.PARSE_ERRORS):
         return (), ""
     if not isinstance(raw, dict):
         return (), ""
@@ -685,12 +685,12 @@ def _front_matter(text: str, path: Path) -> dict[str, object]:
         raise ValueError(f"{path}: front matter is never closed with '---'") from None
     try:
         # The opening fence parses as a blank line, so the lines the parser names are the file's.
-        loaded = _yaml.safe_load("\n".join(["", *lines[1:end]])) or dict[str, object]()
-    except _yaml.TagOrDirectiveError as exc:
+        loaded = yamlio.safe_load("\n".join(["", *lines[1:end]])) or dict[str, object]()
+    except yamlio.TagOrDirectiveError as exc:
         raise ValueError(f"{path}: front matter {exc}") from exc
-    except _yaml.RefusedYAMLError as exc:
+    except yamlio.RefusedYAMLError as exc:
         raise ValueError(f"{path}: front matter is refused: {exc}") from exc
-    except _yaml.PARSE_ERRORS as exc:
+    except yamlio.PARSE_ERRORS as exc:
         raise ValueError(f"{path}: front matter is not valid YAML: {exc}") from exc
     if not is_text_keyed(loaded):
         raise ValueError(f"{path}: front matter must be a mapping with text keys")

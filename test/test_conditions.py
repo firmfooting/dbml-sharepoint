@@ -35,7 +35,7 @@ from dbml_sharepoint.analysis.conditions import (
     measure_tree,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
@@ -719,7 +719,7 @@ def test_a_zoned_unquoted_yaml_datetime_is_refused_showing_the_zone_as_read() ->
     """The refusal shows the value with `!r`, zone and all. ruamel.yaml names
     the zone `Z` as written, and the loader keeps the unnamed UTC that PyYAML
     read, so the words are the ones this refusal has always had (#686)."""
-    value = as_dict(_yaml.safe_load("v: 2026-07-29T14:30:00Z\n"))["v"]
+    value = as_dict(yamlio.safe_load("v: 2026-07-29T14:30:00Z\n"))["v"]
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
     )

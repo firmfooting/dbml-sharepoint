@@ -38,6 +38,13 @@ What a hook is given, from the parsed inputs:
 - `dbml_sharepoint.model.mapping_types.MappingBundle` is the loaded mapping.
 - `dbml_sharepoint.model.parser.Schema`, `dbml_sharepoint.model.parser.Table`
   and `dbml_sharepoint.model.parser.Column` are the parsed DBML.
+
+Reading and writing YAML, in `dbml_sharepoint.model.yamlio`:
+
+- `dbml_sharepoint.model.yamlio.safe_load` and `safe_dump` read and write YAML by this
+  package's own rules; downstream code uses them in place of ruamel.yaml.
+- `dbml_sharepoint.model.yamlio.RefusedYAMLError` and
+  `dbml_sharepoint.model.yamlio.TagOrDirectiveError` are what a refused document raises.
 """
 
 from importlib.metadata import version as _installed_version

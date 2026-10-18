@@ -43,7 +43,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from dbml_sharepoint.jsonvalue import as_json_object
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model._keys import _require_mapping, _text_key
 from dbml_sharepoint.model.errors import (
     MappingReferenceError,
@@ -151,7 +151,7 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> object:
     an author can act on.
 
     A key written twice in one mapping is a parse failure too, refused by
-    `_yaml.safe_load` rather than read as its last value (#672).
+    `yamlio.safe_load` rather than read as its last value (#672).
     So is an explicit tag such as `!!int`, or a `%YAML` or `%TAG` directive.
     That file is valid YAML, so its refusal names each one rather than
     calling the file invalid. A reused anchor, a collection used as a key,
@@ -173,7 +173,7 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> object:
     _read(path)
     try:
         with path.open(encoding="utf-8") as fh:
-            return _yaml.safe_load(fh)
+            return yamlio.safe_load(fh)
     except OSError as exc:
         reason = exc.strerror or exc
         if named_by is None:
@@ -183,13 +183,13 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> object:
         # The pointer resolved and the file opened, so the declaration is
         # not what is wrong: these bytes are not a document at all.
         raise MappingSourceError(f"{path}: is not valid UTF-8: {exc}") from exc
-    except _yaml.TagOrDirectiveError as exc:
+    except yamlio.TagOrDirectiveError as exc:
         # Valid YAML with a tag or directive; its text says so and names each line.
         raise MappingSourceError(f"{path}: {exc}") from exc
-    except _yaml.RefusedYAMLError as exc:
+    except yamlio.RefusedYAMLError as exc:
         # Valid YAML too, which the loader refuses by its own rule; its text names where.
         raise MappingSourceError(f"{path}: is refused: {exc}") from exc
-    except _yaml.PARSE_ERRORS as exc:
+    except yamlio.PARSE_ERRORS as exc:
         raise MappingSourceError(f"{path}: is not valid YAML: {exc}") from exc
 
 

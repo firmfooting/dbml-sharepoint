@@ -15,7 +15,7 @@ from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
-from dbml_sharepoint.model import _yaml, errors, mapping_types
+from dbml_sharepoint.model import errors, mapping_types, yamlio
 from dbml_sharepoint.model.errors import (
     MappingError,
     MappingReferenceError,
@@ -3762,7 +3762,7 @@ def test_a_mapping_that_does_not_parse_is_a_named_refusal(tmp_path: Path) -> Non
     with pytest.raises(MappingError) as err:
         load_mapping(path)
     assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.PARSE_ERRORS)
+    assert isinstance(err.value.__cause__, yamlio.PARSE_ERRORS)
     assert "line 3" in str(err.value), str(err.value)
     assert "column 1" in str(err.value), str(err.value)
 
@@ -3823,7 +3823,7 @@ def test_a_source_file_that_does_not_parse_is_a_named_refusal(
     with pytest.raises(MappingError) as err:
         load_mapping(path)
     assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.PARSE_ERRORS)
+    assert isinstance(err.value.__cause__, yamlio.PARSE_ERRORS)
     assert "side.yaml" in str(err.value), str(err.value)
 
 
@@ -3883,7 +3883,7 @@ def test_a_key_written_twice_is_a_named_refusal(
     with pytest.raises(MappingError) as err:
         load_mapping(path)
     assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.PARSE_ERRORS)
+    assert isinstance(err.value.__cause__, yamlio.PARSE_ERRORS)
     assert str(err.value) == _repeated_key(path.resolve(), key, mapping_at, first, again)
 
 
@@ -3898,7 +3898,7 @@ def test_a_source_file_with_a_key_written_twice_is_a_named_refusal(
     with pytest.raises(MappingError) as err:
         load_mapping(path)
     assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.PARSE_ERRORS)
+    assert isinstance(err.value.__cause__, yamlio.PARSE_ERRORS)
     assert str(err.value) == _repeated_key(side.resolve(), "policies", (1, 1), 1, (3, 1))
 
 
@@ -5022,7 +5022,7 @@ def test_an_absent_key_takes_the_default_without_a_record(tmp_path: Path) -> Non
 
 
 #: A mapping whose bytes are not UTF-8. Decoding happens inside
-#: `_yaml.safe_load`, past the `OSError` and `YAMLError` handlers, and
+#: `yamlio.safe_load`, past the `OSError` and `YAMLError` handlers, and
 #: `UnicodeDecodeError` is itself a `ValueError`, so it reached a caller
 #: looking exactly like a refusal this loader had composed.
 _NOT_UTF8_MAPPING = (

@@ -1,4 +1,4 @@
-Parts of src/dbml_sharepoint/model/_yaml.py (scan_flow_scalar_non_spaces and
+Parts of src/dbml_sharepoint/model/yamlio.py (scan_flow_scalar_non_spaces and
 _read_code) are copied from ruamel.yaml 0.19.1 (ruamel/yaml/scanner.py) and
 modified. ruamel.yaml is distributed under the following license.
 
