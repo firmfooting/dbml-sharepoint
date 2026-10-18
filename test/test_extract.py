@@ -101,7 +101,7 @@ from dbml_sharepoint.generators.extractgen import (
     slug_from_path,
 )
 from dbml_sharepoint.jsonvalue import JsonValue
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -991,20 +991,20 @@ def test_the_emitted_mapping_and_release_read_back_as_extracted(
     """The loader reads each file back as the document the writer was given,
     so the draft an operator edits starts from exactly what was read."""
     given: list[object] = []
-    dump = _yaml.safe_dump
+    dump = yamlio.safe_dump
 
     def keep(data: object) -> str:
         given.append(data)
         return dump(data)
 
-    monkeypatch.setattr(_yaml, "safe_dump", keep)
+    monkeypatch.setattr(yamlio, "safe_dump", keep)
     written = [
         render_mapping(_extraction()),
         render_release(source=LIVE_KIND, generated_at=GENERATED_AT),
     ]
     assert len(given) == len(written)
     # `repr` also tells 1 from 1.0 and True, and a tuple from a list.
-    assert [repr(_yaml.safe_load(text)) for text in written] == [repr(data) for data in given]
+    assert [repr(yamlio.safe_load(text)) for text in written] == [repr(data) for data in given]
 
 
 def test_the_schema_synthesises_id_and_never_reads_one() -> None:
@@ -1039,7 +1039,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     assert _entity().display_overrides == {}
 
     plain = _decode(field_xml("Text", StaticName="Owner"))
-    assert "display_names" not in as_dict(_yaml.safe_load(
+    assert "display_names" not in as_dict(yamlio.safe_load(
         render_mapping(Extraction(entities=[plain])),
     ))
 
@@ -1047,7 +1047,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
         field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
     )
     assert derived.display_overrides == {}
-    assert as_dict(_yaml.safe_load(
+    assert as_dict(yamlio.safe_load(
         render_mapping(Extraction(entities=[derived])),
     ))["display_names"] == {"mode": "auto"}
 
@@ -1055,7 +1055,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
         field_xml("Text", StaticName="RiskOwner", DisplayName="Accountable person"),
     )
     assert renamed.display_overrides == {"RiskOwner": "Accountable person"}
-    assert as_dict(as_dict(_yaml.safe_load(
+    assert as_dict(as_dict(yamlio.safe_load(
         render_mapping(Extraction(entities=[renamed])),
     ))["display_names"])["overrides"] == {"T": {"RiskOwner": "Accountable person"}}
 

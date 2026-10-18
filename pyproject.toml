@@ -32,7 +32,7 @@ dependencies = [
   # pre-PEP8 aliases, which warn in 3.3 and are due for removal in 4.0.
   # Lift this cap once PyDBML has migrated to the snake_case API.
   "pyparsing>=3.0.0,<3.3",
-  # `model/_yaml.py` subclasses this version's scanner, composer, constructor
+  # `model/yamlio.py` subclasses this version's scanner, composer, constructor
   # and representer, whose internals a minor release may change. Lift the cap
   # and the matching rule in renovate.json once the loader's tests pass on it.
   "ruamel.yaml>=0.19.1,<0.20",
@@ -145,8 +145,8 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # A file parsed elsewhere would miss the repeated-key (#672) and tag (#686) refusals.
-"yaml".msg = "parse YAML through dbml_sharepoint.model._yaml, which refuses a repeated key"
-"ruamel".msg = "parse YAML through dbml_sharepoint.model._yaml, which refuses a repeated key"
+"yaml".msg = "parse YAML through dbml_sharepoint.model.yamlio, which refuses a repeated key"
+"ruamel".msg = "parse YAML through dbml_sharepoint.model.yamlio, which refuses a repeated key"
 
 [tool.ruff.lint.mccabe]
 # A RATCHET, exactly like coverage's `fail_under` and `_reachability`'s
@@ -192,7 +192,7 @@ max-complexity = 50
 # `cli.py` (#171), and seven in `bundle.py` keep that module importable for its
 # packaging helpers without pulling in the whole generation stack.
 "test/**" = ["S101", "PLC0415", "PLR2004", "SLF", "INP"]
-"src/dbml_sharepoint/model/_yaml.py" = ["TID251"]  # the one module that parses YAML
+"src/dbml_sharepoint/model/yamlio.py" = ["TID251"]  # the one module that parses YAML
 "test/test_yaml_loading.py" = ["TID251"]  # the parser's own test, compares it with ruamel.yaml's loader
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print

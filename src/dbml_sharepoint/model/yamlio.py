@@ -1,5 +1,15 @@
-# src/dbml_sharepoint/model/_yaml.py
-"""The YAML parser every file this package reads goes through.
+# src/dbml_sharepoint/model/yamlio.py
+"""The YAML parser every file this package reads goes through, and the supported way for
+downstream code to read and write YAML.
+
+Public API: `safe_load`, `safe_dump`, `PARSE_ERRORS`, `TagOrDirectiveError` and
+`RefusedYAMLError`. Downstream packages should call these and import neither
+ruamel.yaml nor PyYAML, so their files are read by the rules below: YAML 1.2
+safe load, a repeated key refused, an explicit tag or a `%YAML`/`%TAG`
+directive refused. `safe_dump` writes block style, keys in their order, text as
+written and no line wrapping. Mappings, lists, text, numbers, booleans, null and
+dates read back through `safe_load` unchanged; a set or bytes is written with a
+tag, which `safe_load` refuses. Names with a leading underscore are internal.
 
 It reads with ruamel.yaml 0.19.1's pure-Python safe loader, which reads
 YAML 1.2: `yes`, `no`, `on` and `off` are text, `010` is 10 and `1:30` is
@@ -431,7 +441,7 @@ def _kind(node: Node) -> str:
     return "sequence" if isinstance(node, SequenceNode) else "mapping"
 
 
-class UniqueKeyConstructor(SafeConstructor):
+class _UniqueKeyConstructor(SafeConstructor):
     """ruamel.yaml's safe constructor, refusing a repeated key and any construction error.
 
     A key written beside a merge (`<<: *anchor`) is not a repeat. It overrides
@@ -510,7 +520,7 @@ class UniqueKeyConstructor(SafeConstructor):
             first[key] = (key, key_node)
 
 
-UniqueKeyConstructor.add_constructor(_TIME, UniqueKeyConstructor.construct_yaml_timestamp)
+_UniqueKeyConstructor.add_constructor(_TIME, _UniqueKeyConstructor.construct_yaml_timestamp)
 
 
 def _repeat(
@@ -547,7 +557,7 @@ class _Reading(YAML):
         super().__init__(typ="safe", pure=True)
         self.Scanner = _Scanner
         self.Composer = _Composer
-        self.Constructor = UniqueKeyConstructor
+        self.Constructor = _UniqueKeyConstructor
         #: What the parts refused, raised together once the document is composed.
         self.found: list[tuple[StreamMark, str]] = []
 
@@ -577,7 +587,8 @@ def safe_dump(data: object) -> str:
     """`data` as YAML for an operator to edit and diff.
 
     ruamel.yaml's safe writer quotes a string its reader would read as
-    another type, so the output reads back through `safe_load` unchanged.
+    another type, so mappings, lists and scalars read back through
+    `safe_load` unchanged. A set or bytes gets a tag `safe_load` refuses.
     A string holding NEL is double-quoted, which writes it as `\\N`. Keys
     keep their order, text is written as it is, and `width` is effectively
     off: the default wraps a long scalar across lines, which is legal YAML

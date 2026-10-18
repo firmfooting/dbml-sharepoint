@@ -11,7 +11,7 @@ offending key.
 
 import pytest
 
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
@@ -40,7 +40,7 @@ def test_a_mapping_passes_through_unchanged() -> None:
 def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> None:
     """Normalising with `str()` cannot give back what was typed: `2.10:`
     came back as "2.1" and `false:` as "False", so the key is refused instead."""
-    block = _yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
+    block = yamlio.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
     with pytest.raises(MappingShapeError) as err:
         _require_mapping(block, "default_formulas.Risk")
     assert str(err.value) == f"default_formulas.Risk: {read}; quote it"
@@ -50,10 +50,10 @@ def test_a_key_yaml_1_1_read_otherwise_is_judged_as_yaml_1_2_reads_it() -> None:
     """`No:` and `010:` were two of the cases above while YAML 1.1 read them
     as False and 8 (#686). YAML 1.2 reads the text "No", which passes, and
     the number 10, which is refused."""
-    block = _yaml.safe_load("No: =TODAY()\nRisk: {}")
+    block = yamlio.safe_load("No: =TODAY()\nRisk: {}")
     assert _require_mapping(block, "default_formulas.Risk") == block
     with pytest.raises(MappingShapeError) as err:
-        _require_mapping(_yaml.safe_load("010: =TODAY()\nRisk: {}"), "default_formulas.Risk")
+        _require_mapping(yamlio.safe_load("010: =TODAY()\nRisk: {}"), "default_formulas.Risk")
     assert str(err.value) == (
         "default_formulas.Risk: key 10 is not text (YAML read it as int); quote it"
     )
@@ -62,14 +62,14 @@ def test_a_key_yaml_1_1_read_otherwise_is_judged_as_yaml_1_2_reads_it() -> None:
 def test_a_number_key_beside_its_quoted_twin_is_refused_rather_than_merged() -> None:
     """`1:` and `"1":` are two keys to YAML, and `str()` folded them into one,
     so one declaration silently replaced the other."""
-    block = _yaml.safe_load('1: first\n"1": second')
+    block = yamlio.safe_load('1: first\n"1": second')
     with pytest.raises(MappingShapeError, match=r"key 1 is not text"):
         _require_mapping(block, "field_sets.Risk")
 
 
 def test_a_quoted_key_is_text() -> None:
     """Quoting is the fix the refusal names, so it must be enough."""
-    block = _yaml.safe_load('"No": a\n"2.10": b\n"010": c')
+    block = yamlio.safe_load('"No": a\n"2.10": b\n"010": c')
     assert _require_mapping(block, "display_names.overrides.Risk") == {
         "No": "a", "2.10": "b", "010": "c",
     }

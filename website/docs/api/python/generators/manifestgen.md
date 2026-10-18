@@ -1,6 +1,6 @@
 ---
 title: manifestgen
-sidebar_position: 43
+sidebar_position: 44
 ---
 
 # `dbml_sharepoint.generators.manifestgen`

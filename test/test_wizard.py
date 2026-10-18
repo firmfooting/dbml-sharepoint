@@ -44,7 +44,7 @@ from dbml_sharepoint.catalogue import (
     read_catalogue,
 )
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.prefix import previous_object_names
@@ -1066,7 +1066,7 @@ def test_the_prefix_rewrites_change_their_two_lines_and_nothing_else(tmp_path: P
         if was != now
     ]
     assert changed == ['prefix: "VI_"', 'previous_prefixes: ["", "ADOPT_"]']
-    was, now = as_dict(_yaml.safe_load(before)), as_dict(_yaml.safe_load(after))
+    was, now = as_dict(yamlio.safe_load(before)), as_dict(yamlio.safe_load(after))
     assert (now.pop("prefix"), now.pop("previous_prefixes")) == ("", ["ADOPT_"])
     del was["prefix"], was["previous_prefixes"]
     assert now == was

@@ -1,6 +1,6 @@
 ---
 title: permissions
-sidebar_position: 21
+sidebar_position: 22
 ---
 
 # `dbml_sharepoint.analysis.permissions`

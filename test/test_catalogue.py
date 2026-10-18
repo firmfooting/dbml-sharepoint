@@ -28,7 +28,7 @@ from dbml_sharepoint.catalogue import (
     notices,
     read_catalogue,
 )
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 
 
 def test_every_shipped_family_is_offered() -> None:
@@ -103,7 +103,7 @@ def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     assert solution.summary
     assert solution.lists
     assert isinstance(solution.prefix, str)
-    raw = _yaml.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
+    raw = yamlio.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
     assert "prefix" in as_dict(raw), f"{solution.id}: mapping.yaml declares no prefix key"
 
 

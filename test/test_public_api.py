@@ -51,6 +51,7 @@ from dbml_sharepoint.extension import (
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
+from dbml_sharepoint.model.yamlio import RefusedYAMLError, TagOrDirectiveError
 
 #: What an extension author has to be able to import, as the canonical path each
 #: symbol is documented at, asked of the object itself rather than assumed.
@@ -69,6 +70,8 @@ REQUIRED_SYMBOLS = tuple(
         Schema,
         Table,
         Column,
+        RefusedYAMLError,
+        TagOrDirectiveError,
     )
 )
 
@@ -107,7 +110,7 @@ DOCUMENTED_PATH = re.compile(
 #: The size of REQUIRED_SYMBOLS today. Written out rather than derived, so
 #: dropping a symbol from that tuple cannot quietly lower the floor as well.
 #: Never lowered to make a change pass.
-DOCUMENTED_MINIMUM = 12
+DOCUMENTED_MINIMUM = 14
 
 
 class UnreadableAllError(RuntimeError):

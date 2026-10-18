@@ -4,7 +4,7 @@
 ruamel.yaml's own loader checks for a repeated key, but not in a mapping
 that merges another nor inside the merged one, and PyYAML, which read every
 file here until 2026-09, kept the last of two and reported nothing (#672).
-`model/_yaml.py` refuses the repeat, and it only protects the files that are
+`model/yamlio.py` refuses the repeat, and it only protects the files that are
 read with it, so the gate below holds the package and its tests to it.
 
 The loader's other refusals are in `test_yaml_refusals.py`, which imports
@@ -23,13 +23,13 @@ from ruamel.yaml.constructor import ConstructorError
 from ruamel.yaml.nodes import ScalarNode
 
 from dbml_sharepoint import catalogue
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 
 
 def _refusal(text: str) -> str:
     """The parser's message for `text`, read as a stream so it carries no snippet."""
-    with pytest.raises(_yaml.PARSE_ERRORS) as err:
-        _yaml.safe_load(io.StringIO(text))
+    with pytest.raises(yamlio.PARSE_ERRORS) as err:
+        yamlio.safe_load(io.StringIO(text))
     return str(err.value)
 
 
@@ -105,15 +105,15 @@ def test_keys_that_construct_equal_are_one_key(text: str, problem: str) -> None:
 def test_keys_of_different_types_are_distinct() -> None:
     """`1:` and `"1":` are two keys to YAML and to a dict alike. Refusing the
     int is `_text_key`'s job, where the context can be named."""
-    assert _yaml.safe_load('1: a\n"1": b\n') == {1: "a", "1": "b"}
+    assert yamlio.safe_load('1: a\n"1": b\n') == {1: "a", "1": "b"}
 
 
 def test_a_key_beside_a_merge_overrides_it() -> None:
     """The merge-key spec lets a key written beside `<<` override the merged
     one, and the reporting-sample test blueprint's mapping does that."""
-    assert as_dict(_yaml.safe_load("base: &b {x: 1}\nuse: {<<: *b, x: 2}\n"))["use"] == {"x": 2}
+    assert as_dict(yamlio.safe_load("base: &b {x: 1}\nuse: {<<: *b, x: 2}\n"))["use"] == {"x": 2}
     merged = as_dict(
-        _yaml.safe_load("a: &a {x: 1}\nb: &b {y: 1}\nuse: {<<: [*a, *b], x: 2, y: 3}\n"),
+        yamlio.safe_load("a: &a {x: 1}\nb: &b {y: 1}\nuse: {<<: [*a, *b], x: 2, y: 3}\n"),
     )
     assert merged["use"] == {"x": 2, "y": 3}
 
@@ -124,7 +124,7 @@ def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
     reads 1, so neither reading is safe."""
     two_keys = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: *a\n  <<: *b\n"
     listed = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: [*a, *b]\n"
-    assert as_dict(_yaml.safe_load(listed))["use"] == {"x": 1}
+    assert as_dict(yamlio.safe_load(listed))["use"] == {"x": 1}
     assert _refusal(two_keys) == (
         "while constructing a mapping\n"
         '  in "<file>", line 4, column 3\n'
@@ -135,7 +135,7 @@ def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
 
 def test_a_quoted_merge_spelling_is_a_text_key_not_a_second_merge() -> None:
     text = 'a: &a {x: 1}\nuse: {<<: *a, "<<": 2}\n'
-    assert _yaml.safe_load(text) == {"a": {"x": 1}, "use": {"x": 1, "<<": 2}}
+    assert yamlio.safe_load(text) == {"a": {"x": 1}, "use": {"x": 1, "<<": 2}}
 
 
 def test_a_repeat_inside_a_merge_source_is_refused() -> None:
@@ -149,13 +149,13 @@ def test_a_nested_merge_flattened_before_it_is_built_is_not_a_repeat() -> None:
     before `b` is built, leaving `x` twice in its pairs. A check that read
     those pairs again would refuse a document the parser reads correctly."""
     text = "defs:\n  inner:\n    b: &b {<<: &a {x: 1}, x: 3}\nuse: {<<: *b}\n"
-    assert _yaml.safe_load(text) == {"defs": {"inner": {"b": {"x": 3}}}, "use": {"x": 3}}
+    assert yamlio.safe_load(text) == {"defs": {"inner": {"b": {"x": 3}}}, "use": {"x": 3}}
 
 
 def test_a_value_key_loads_as_text() -> None:
     """The parser tags a bare `=` key specially and retags it as text while
     flattening, so it cannot be constructed before that."""
-    assert _yaml.safe_load("=: 1\n") == {"=": 1}
+    assert yamlio.safe_load("=: 1\n") == {"=": 1}
 
 
 @pytest.mark.parametrize(
@@ -185,8 +185,8 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     assert "<<: *spine\n        Title: 300\n" in sample.read_text(encoding="utf-8")
     for path in read:
         text = path.read_text(encoding="utf-8")
-        assert _yaml.safe_load(text) == YAML(typ="safe", pure=True).load(text), path
-    document = as_dict(_yaml.safe_load(sample.read_text(encoding="utf-8")))
+        assert yamlio.safe_load(text) == YAML(typ="safe", pure=True).load(text), path
+    document = as_dict(yamlio.safe_load(sample.read_text(encoding="utf-8")))
     views = as_list(as_dict(document["views"])["Action"])
     done = next(as_dict(view) for view in views if as_dict(view)["title"] == "Done")
     assert done["widths"] == {"Title": 300, "Status": 120, "Minutes": 100, "RelatedRisk": 200}
@@ -231,9 +231,9 @@ def test_every_document_the_tool_reads_round_trips_through_the_writer(path: Path
     """What the loader reads, the writer writes back as a document that
     reads as the same value, so a file `extract` or an edit writes loads."""
     text = path.read_text(encoding="utf-8")
-    loaded = catalogue._front_matter(text, path) if path.suffix == ".md" else _yaml.safe_load(text)
+    loaded = catalogue._front_matter(text, path) if path.suffix == ".md" else yamlio.safe_load(text)
     # `repr` also tells 1 from 1.0 and True, and one key order from another.
-    assert repr(_yaml.safe_load(_yaml.safe_dump(loaded))) == repr(loaded)
+    assert repr(yamlio.safe_load(yamlio.safe_dump(loaded))) == repr(loaded)
 
 
 @pytest.mark.parametrize(
@@ -252,7 +252,7 @@ def test_a_zoned_time_keeps_the_zone_pyyaml_gave_it(zone: str, read: str) -> Non
     PyYAML 6.0.3 did not, as measured on 2026-09-27. A message that shows a
     loaded time with `!r`, as a condition's and a demo row's refusals do,
     would otherwise change its words; this is the value those have shown."""
-    value = as_dict(_yaml.safe_load(f"v: 2026-01-02 03:04:05{zone}\n"))["v"]
+    value = as_dict(yamlio.safe_load(f"v: 2026-01-02 03:04:05{zone}\n"))["v"]
     assert repr(value) == f"datetime.datetime(2026, 1, 2, 3, 4, 5{read})"
 
 
@@ -288,13 +288,13 @@ def test_a_construction_error_is_a_yaml_error_at_its_node(
     Every tag is refused, which closes the usual way to reach most of them,
     so the int constructor is made to raise each in turn."""
 
-    def fail(constructor: _yaml.UniqueKeyConstructor, node: ScalarNode) -> int:
+    def fail(constructor: yamlio._UniqueKeyConstructor, node: ScalarNode) -> int:
         raise error(f"{constructor.construct_scalar(node)} failed")
 
-    constructors = _yaml.UniqueKeyConstructor.yaml_constructors
+    constructors = yamlio._UniqueKeyConstructor.yaml_constructors
     monkeypatch.setitem(constructors, "tag:yaml.org,2002:int", fail)
     with pytest.raises(ConstructorError) as err:
-        _yaml.safe_load(io.StringIO("a: x\nb: 12\n"))
+        yamlio.safe_load(io.StringIO("a: x\nb: 12\n"))
     assert type(err.value.__cause__) is error
     assert str(err.value) == (
         f"cannot construct !!int from '12': {err.value.__cause__}\n"
@@ -308,7 +308,7 @@ def test_a_yaml_library_may_be_imported_only_by_the_parser_and_its_own_test() ->
 
     Ruff's banned-api rule refuses every spelling of an import of either
     library: `ruamel` covers `ruamel.yaml` and its modules. This pins that
-    the rule is on and that only `model/_yaml.py` and this module, which
+    the rule is on and that only `model/yamlio.py` and this module, which
     compares the loader with ruamel.yaml's own, are exempt from it. PyYAML is no longer
     installed, and its ban stays so that it cannot come back unnoticed.
     """
@@ -319,4 +319,21 @@ def test_a_yaml_library_may_be_imported_only_by_the_parser_and_its_own_test() ->
     exempt = sorted(
         pattern for pattern, rules in lint["per-file-ignores"].items() if "TID251" in rules
     )
-    assert exempt == ["src/dbml_sharepoint/model/_yaml.py", "test/test_yaml_loading.py"]
+    assert exempt == ["src/dbml_sharepoint/model/yamlio.py", "test/test_yaml_loading.py"]
+
+
+def test_the_module_docstring_names_every_public_name() -> None:
+    names = ("safe_load", "safe_dump", "PARSE_ERRORS", "TagOrDirectiveError", "RefusedYAMLError")
+    for name in names:
+        assert f"`{name}`" in (yamlio.__doc__ or "")
+        assert hasattr(yamlio, name)
+
+
+def test_the_public_safe_load_refuses_a_repeated_key() -> None:
+    with pytest.raises(ConstructorError, match="duplicate key"):
+        yamlio.safe_load("a: 1\na: 2\n")
+
+
+def test_the_public_safe_dump_reads_back_through_safe_load() -> None:
+    data = {"yes": "no", "n": "010", "list": [1, "x: y"], "nel": "a\x85b"}
+    assert yamlio.safe_load(yamlio.safe_dump(data)) == data

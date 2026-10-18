@@ -4,7 +4,7 @@
 import hashlib
 import inspect
 
-from dbml_sharepoint.model._yaml import _Scanner
+from dbml_sharepoint.model.yamlio import _Scanner
 
 # The copy marks a surrogate escape exactly; on failure, re-diff it against the new source.
 _UPSTREAM_SHA256 = "e4731d7dfdfb215602b5073342a8772ba823c18e02e5b9fe66ae2ccc1fd2f2a8"

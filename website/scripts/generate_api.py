@@ -55,6 +55,7 @@ MODULES: list[tuple[str, str]] = [
     ("model.env_file", "parse dbml-sharepoint.env build defaults"),
     ("model.errors", "the named refusals a mapping reader raises"),
     ("model.conditions", "the shared condition grammar's types and parser"),
+    ("model.yamlio", "read and write YAML by the package's own rules"),
     ("analysis.findings", "what a finding is: code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),
     ("analysis.rendered_columns", "which columns a provisioned list actually has"),

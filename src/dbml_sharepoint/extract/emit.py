@@ -15,7 +15,7 @@ from collections.abc import Mapping
 
 from dbml_sharepoint.extract.decode import DecodedColumn, DecodedEntity, Extraction
 from dbml_sharepoint.jsonvalue import JsonValue
-from dbml_sharepoint.model import _yaml
+from dbml_sharepoint.model import yamlio
 
 #: The prefix an extracted mapping carries until the operator sets theirs.
 #: Not derived from the list title: a prefix names the DEPLOYING project,
@@ -181,7 +181,7 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
         if section:
             document[key] = section
 
-    body = _yaml.safe_dump(document)
+    body = yamlio.safe_dump(document)
     return _MAPPING_HEADER.format(source=extraction.source, prefix=prefix) + body
 
 
@@ -243,4 +243,4 @@ def render_release(*, source: str, generated_at: str) -> str:
             "schema_version on every schema or mapping change after it."
         ),
     }
-    return _yaml.safe_dump(document)
+    return yamlio.safe_dump(document)

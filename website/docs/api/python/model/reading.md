@@ -100,7 +100,7 @@ passed through because it carries the line and column, which is the part
 an author can act on.
 
 A key written twice in one mapping is a parse failure too, refused by
-`_yaml.safe_load` rather than read as its last value (#672).
+`yamlio.safe_load` rather than read as its last value (#672).
 So is an explicit tag such as `!!int`, or a `%YAML` or `%TAG` directive.
 That file is valid YAML, so its refusal names each one rather than
 calling the file invalid. A reused anchor, a collection used as a key,
