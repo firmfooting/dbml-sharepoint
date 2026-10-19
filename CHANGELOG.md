@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.23.0...v0.24.0) (2026-10-19)
+
+
+### Features
+
+* **permissions:** enrol the automation accounts group and add its level ([#886](https://github.com/firmfooting/dbml-sharepoint/issues/886)) ([2de73bd](https://github.com/firmfooting/dbml-sharepoint/commit/2de73bdff6b0aa7fe2f255be7b5a1f31d5df3906))
+
 ## [0.23.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.22.1...v0.23.0) (2026-10-18)
 
 
