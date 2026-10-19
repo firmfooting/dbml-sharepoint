@@ -1817,6 +1817,56 @@ def test_every_deploy_doc_spells_the_time_zone_placeholder_the_same_way() -> Non
     )
 
 
+#: Families allowed to omit the shared reader group. Core ships every family
+#: with it, so this stays empty; a copy of this file elsewhere lists its own.
+READER_GROUP_OMITTED: frozenset[str] = frozenset()
+
+
+def _check_one_reader_group(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
+    if template in omitted:
+        return
+    assert mapping.permissions is not None
+    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
+    assert len(readers) == 1, (
+        f"{template}: expected exactly one enterprise-reader group, "
+        f"got {[g.name for g in readers]}"
+    )
+    assert readers[0].name == "Managed Enterprise Readers"
+
+
+def _check_reader_granted(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
+    if template in omitted:
+        return
+    assert mapping.permissions is not None
+    perms = mapping.permissions
+    reader = next((g for g in perms.groups if "enterprise_reader" in g.enroll), None)
+    assert reader is not None, f"{template}: declares no enterprise-reader group"
+    trims = mapping.declares_item_read_trimming()
+    # A folder policy carries its own complete assignment list exactly as an
+    # override does, so leaving it out here would let a family secure its
+    # folders and quietly cut fleet reporting off from the documents, which
+    # in a library is where every row actually lives.
+    policies = [
+        perms.default_policy, *perms.overrides.values(), *perms.folder_policies.values(),
+    ]
+    for policy in policies:
+        assert policy is not None
+        granted = {
+            a.level for a in policy.assignments
+            if a.principal.kind == "group" and a.principal.name == reader.name
+        }
+        assert granted, f"{template}: policy block grants {reader.name} nothing"
+        if not trims:
+            assert granted == {"Read"}, (
+                f"{template}: policy block grants {reader.name} {granted}, and "
+                "the mapping declares no item read trimming to justify it"
+            )
+
+
 @pytest.mark.parametrize("template", _all_templates())
 def test_every_family_declares_exactly_one_enterprise_reader_group(
     template: str,
@@ -1828,14 +1878,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
     the rendered page, so a missing one looks exactly like a register with
     no rows in it.
     """
-    mapping = _load(template).mapping
-    assert mapping.permissions is not None
-    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
-    assert len(readers) == 1, (
-        f"{template}: expected exactly one enterprise-reader group, "
-        f"got {[g.name for g in readers]}"
-    )
-    assert readers[0].name == "Managed Enterprise Readers"
+    _check_one_reader_group(template, _load(template).mapping)
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -1858,30 +1901,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     trim, and the validator raises `enterprise_reader_on_trimmed_list` beside
     it so the elevation is never silent.
     """
-    mapping = _load(template).mapping
-    assert mapping.permissions is not None
-    perms = mapping.permissions
-    reader = next(g for g in perms.groups if "enterprise_reader" in g.enroll)
-    trims = mapping.declares_item_read_trimming()
-    # A folder policy carries its own complete assignment list exactly as an
-    # override does, so leaving it out here would let a family secure its
-    # folders and quietly cut fleet reporting off from the documents, which
-    # in a library is where every row actually lives.
-    policies = [
-        perms.default_policy, *perms.overrides.values(), *perms.folder_policies.values(),
-    ]
-    for policy in policies:
-        assert policy is not None
-        granted = {
-            a.level for a in policy.assignments
-            if a.principal.kind == "group" and a.principal.name == reader.name
-        }
-        assert granted, f"{template}: policy block grants {reader.name} nothing"
-        if not trims:
-            assert granted == {"Read"}, (
-                f"{template}: policy block grants {reader.name} {granted}, and "
-                "the mapping declares no item read trimming to justify it"
-            )
+    _check_reader_granted(template, _load(template).mapping)
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -2074,11 +2094,18 @@ def test_every_family_declares_the_shared_groups_identically(
     Field-by-field rather than comparing the objects, so a failure names the
     field that drifted instead of dumping two dataclasses at the reader.
     """
-    mapping = _load(template).mapping
+    _check_shared_groups_present(template, _load(template).mapping)
+
+
+def _check_shared_groups_present(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
     assert mapping.permissions is not None
     declared = {g.name: g for g in mapping.permissions.groups}
 
     for name, expected in SHARED_GROUPS.items():
+        if name == "Managed Enterprise Readers" and template in omitted:
+            continue
         assert name in declared, (
             f"{template}: does not declare the shared group {name!r}; "
             f"it declares {sorted(declared)}"
@@ -2140,7 +2167,10 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
     point of writing it now: the first family that does declare it cannot
     invent its own values, and would otherwise have nothing to conform to.
     """
-    mapping = _load(template).mapping
+    _check_optional_shared_groups(template, _load(template).mapping)
+
+
+def _check_optional_shared_groups(template: str, mapping: Mapping) -> None:
     assert mapping.permissions is not None
     declared = {g.name: g for g in mapping.permissions.groups}
 
@@ -2155,6 +2185,7 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
                 f"must use {want!r} -- two families on one site reconcile the "
                 f"same group object."
             )
+
 
 @pytest.mark.parametrize("template", _all_templates())
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
@@ -2488,3 +2519,44 @@ def test_shared_level_is_exempt_from_the_prefix_placeholder() -> None:
     """The sweep's own filter passes the shared name and still flags `RR Anything`."""
     assert _typed_stems({"permission_levels": [{"name": _SHARED_LEVEL}]}) == []
     assert _typed_stems({"permission_levels": [{"name": "RR Anything"}]}) == ["RR Anything"]
+
+
+_OMITS = FIXTURES / "omits-shared-groups"
+
+
+def test_a_family_may_omit_the_enterprise_reader_group(tmp_path: Path) -> None:
+    from dbml_sharepoint.analysis.findings import FindingCode
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+    from dbml_sharepoint.pipeline import execute_build
+
+    execute_build(
+        schema=_OMITS / "schema.dbml",
+        mapping=_OMITS / "mapping.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/ci",
+        time_zone="UTC",
+        site_role="default",
+        out=tmp_path,
+    )
+    assert (tmp_path / "deploy.js.txt").is_file()
+    findings = validate_against_mapping(
+        parse_dbml(_OMITS / "schema.dbml"), load_mapping(_OMITS / "mapping.yaml"),
+    )
+    assert FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED not in {f.code for f in findings}
+
+
+def test_a_family_may_omit_the_automation_accounts_group() -> None:
+    mapping = load_mapping(_OMITS / "mapping.yaml").mapping
+    assert mapping.permissions is not None
+    assert "Managed Automation Accounts" not in {g.name for g in mapping.permissions.groups}
+    _check_optional_shared_groups("omits", mapping)
+
+
+def test_an_omission_must_be_listed() -> None:
+    mapping = load_mapping(_OMITS / "mapping.yaml").mapping
+    for check in (
+        _check_one_reader_group, _check_reader_granted, _check_shared_groups_present,
+    ):
+        with pytest.raises(AssertionError):
+            check("omits", mapping, frozenset())
+        check("omits", mapping, frozenset({"omits"}))

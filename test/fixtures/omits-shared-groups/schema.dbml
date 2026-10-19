@@ -1,0 +1,9 @@
+// A fixture family: it declares neither the shared reader group nor the automation group.
+Project omits_shared_groups { database_type: 'SharePoint Online Lists' }
+
+Table Alpha {
+  Id    int      [pk, increment]
+  Title nvarchar [not null, note: 'The item']
+
+  Note: 'Items.'
+}
