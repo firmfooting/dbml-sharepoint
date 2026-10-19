@@ -96,3 +96,15 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
         "a note", family=family, level_name="Risk Contributor",
     )
     assert composed == marker_for_level(family, "Risk Contributor")
+
+
+def test_tool_owned_level_marker_names_no_family() -> None:
+    name = "Automation Contribute No Delete"
+    assert marker_for_level("risk-register", name) == marker_for_level("other-family", name)
+    assert "risk-register" not in marker_for_level("risk-register", name)
+
+
+def test_family_level_marker_still_names_its_family() -> None:
+    level = "RR Deployments Submit Only"
+    assert "risk-register" in marker_for_level("risk-register", level)
+    assert marker_for_level("risk-register", level) != marker_for_level("other-family", level)

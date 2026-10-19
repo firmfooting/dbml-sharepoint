@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 from _narrow import as_dict, as_list
 from _packs import blocks, entities, write_mapping
-from _paths import SOLUTION_TEMPLATES
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_rendering import (
@@ -56,7 +56,11 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
-from dbml_sharepoint.analysis.role_definition_description import level_description_budget
+from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS
+from dbml_sharepoint.analysis.role_definition_description import (
+    TOOL_OWNED_LEVEL_NAMES,
+    level_description_budget,
+)
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, NUMBER_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
@@ -2105,7 +2109,8 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
         and not str(as_dict(g)["name"]).startswith("{prefix} ")
     ] + [
         as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
-        if not str(as_dict(lvl)["name"]).startswith("{prefix} ")
+        if as_dict(lvl)["name"] not in TOOL_OWNED_LEVEL_NAMES
+        and not str(as_dict(lvl)["name"]).startswith("{prefix} ")
     ]
     assert not typed, (
         f"{template}: these group or level names carry a typed stem instead of "
@@ -2403,3 +2408,66 @@ def test_a_family_declaring_the_accounts_group_enrols_the_automation_identity(
         resolve_identities(
             flags=[], reader_flag=None, file_identities={}, mapping=mapping,
         )
+
+
+# === The tool-owned permission level ========================================
+
+#: The built-in Contribute mask as recorded in `built-in-levels-probe.js`.
+_CONTRIBUTE_HIGH, _CONTRIBUTE_LOW = 432, 1011028719
+_SHARED_LEVEL = "Automation Contribute No Delete"
+_SHARED_LEVEL_FAMILIES = sorted((FIXTURES / "shared-level").glob("*/20-configure/mapping.yaml"))
+
+
+def _contribute_names() -> set[str]:
+    mask = (_CONTRIBUTE_HIGH << 32) | _CONTRIBUTE_LOW
+    return {
+        n for n, bit in BASE_PERMISSIONS.items()
+        if bit and n != "FullMask" and mask & bit == bit
+    }
+
+
+#: Contribute minus the two delete bits, so an automation account can write but not remove.
+PINNED_SHARED_LEVEL_PERMISSIONS = _contribute_names() - {"DeleteListItems", "DeleteVersions"}
+
+
+def _declared_shared_levels(mapping_path: Path) -> list[cabc.Sequence[str]]:
+    mapping = load_mapping(mapping_path).mapping
+    assert mapping.permissions is not None
+    return [lvl.base_permissions for lvl in mapping.permissions.levels if lvl.name == _SHARED_LEVEL]
+
+
+def test_the_pinned_level_is_the_tool_owned_name() -> None:
+    assert {_SHARED_LEVEL} == TOOL_OWNED_LEVEL_NAMES
+
+
+def test_shared_level_pin_excludes_delete() -> None:
+    assert not {"DeleteListItems", "DeleteVersions"} & PINNED_SHARED_LEVEL_PERMISSIONS
+    assert {"AddListItems", "EditListItems"} <= PINNED_SHARED_LEVEL_PERMISSIONS
+
+
+@pytest.mark.parametrize(
+    "mapping_path",
+    [SOLUTION_TEMPLATES / t / "20-configure" / "mapping.yaml" for t in _all_templates()]
+    + _SHARED_LEVEL_FAMILIES,
+    ids=lambda p: p.parent.parent.name,
+)
+def test_two_families_declare_the_shared_level_identically(mapping_path: Path) -> None:
+    """Two families on one site reconcile one role definition, so the last paste would win."""
+    for declared in _declared_shared_levels(mapping_path):
+        assert set(declared) == PINNED_SHARED_LEVEL_PERMISSIONS
+        assert len(declared) == len(set(declared))
+
+
+def test_the_fixture_families_both_declare_the_shared_level() -> None:
+    assert len(_SHARED_LEVEL_FAMILIES) == 2
+    assert all(_declared_shared_levels(p) for p in _SHARED_LEVEL_FAMILIES)
+
+
+def _typed_stems(names: list[str]) -> list[str]:
+    return [n for n in names if n not in TOOL_OWNED_LEVEL_NAMES and not n.startswith("{prefix} ")]
+
+
+def test_shared_level_is_exempt_from_the_prefix_placeholder() -> None:
+    """The sweep's filter passes the shared name and still flags `RR Anything`."""
+    assert _typed_stems([_SHARED_LEVEL]) == []
+    assert _typed_stems(["RR Anything"]) == ["RR Anything"]
