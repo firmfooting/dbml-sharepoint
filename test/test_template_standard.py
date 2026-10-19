@@ -2093,6 +2093,19 @@ def test_every_family_declares_the_shared_groups_identically(
             )
 
 
+def _typed_stems(raw: dict[str, object]) -> list[object]:
+    """Group and level names that type a stem instead of the `{prefix}` placeholder."""
+    return [
+        as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
+        if as_dict(g)["name"] not in SHARED_GROUPS
+        and not str(as_dict(g)["name"]).startswith("{prefix} ")
+    ] + [
+        as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
+        if as_dict(lvl)["name"] not in TOOL_OWNED_LEVEL_NAMES
+        and not str(as_dict(lvl)["name"]).startswith("{prefix} ")
+    ]
+
+
 @pytest.mark.parametrize("template", _all_templates())
 def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str) -> None:
     """The stem is not typed by hand. `{prefix}` expands to the list prefix
@@ -2103,15 +2116,7 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
         (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
         .read_text(encoding="utf-8"),
     ))
-    typed = [
-        as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
-        if as_dict(g)["name"] not in SHARED_GROUPS
-        and not str(as_dict(g)["name"]).startswith("{prefix} ")
-    ] + [
-        as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
-        if as_dict(lvl)["name"] not in TOOL_OWNED_LEVEL_NAMES
-        and not str(as_dict(lvl)["name"]).startswith("{prefix} ")
-    ]
+    typed = _typed_stems(raw)
     assert not typed, (
         f"{template}: these group or level names carry a typed stem instead of "
         f"the {{prefix}} placeholder: {typed}"
@@ -2436,6 +2441,13 @@ def _declared_shared_levels(mapping_path: Path) -> list[cabc.Sequence[str]]:
     return [lvl.base_permissions for lvl in mapping.permissions.levels if lvl.name == _SHARED_LEVEL]
 
 
+def _check_shared_level_declaration(declared: cabc.Sequence[str]) -> None:
+    assert set(declared) == PINNED_SHARED_LEVEL_PERMISSIONS, (
+        f"declares {sorted(set(declared) ^ PINNED_SHARED_LEVEL_PERMISSIONS)} differently"
+    )
+    assert len(declared) == len(set(declared))
+
+
 def test_the_pinned_level_is_the_tool_owned_name() -> None:
     assert {_SHARED_LEVEL} == TOOL_OWNED_LEVEL_NAMES
 
@@ -2454,8 +2466,17 @@ def test_shared_level_pin_excludes_delete() -> None:
 def test_two_families_declare_the_shared_level_identically(mapping_path: Path) -> None:
     """Two families on one site reconcile one role definition, so the last paste would win."""
     for declared in _declared_shared_levels(mapping_path):
-        assert set(declared) == PINNED_SHARED_LEVEL_PERMISSIONS
-        assert len(declared) == len(set(declared))
+        _check_shared_level_declaration(declared)
+
+
+def test_a_divergent_shared_level_declaration_is_refused() -> None:
+    pinned = sorted(PINNED_SHARED_LEVEL_PERMISSIONS)
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration(pinned[1:])
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration([*pinned, "DeleteListItems"])
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration([*pinned, pinned[0]])
 
 
 def test_the_fixture_families_both_declare_the_shared_level() -> None:
@@ -2463,11 +2484,7 @@ def test_the_fixture_families_both_declare_the_shared_level() -> None:
     assert all(_declared_shared_levels(p) for p in _SHARED_LEVEL_FAMILIES)
 
 
-def _typed_stems(names: list[str]) -> list[str]:
-    return [n for n in names if n not in TOOL_OWNED_LEVEL_NAMES and not n.startswith("{prefix} ")]
-
-
 def test_shared_level_is_exempt_from_the_prefix_placeholder() -> None:
-    """The sweep's filter passes the shared name and still flags `RR Anything`."""
-    assert _typed_stems([_SHARED_LEVEL]) == []
-    assert _typed_stems(["RR Anything"]) == ["RR Anything"]
+    """The sweep's own filter passes the shared name and still flags `RR Anything`."""
+    assert _typed_stems({"permission_levels": [{"name": _SHARED_LEVEL}]}) == []
+    assert _typed_stems({"permission_levels": [{"name": "RR Anything"}]}) == ["RR Anything"]
