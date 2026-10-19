@@ -2821,6 +2821,52 @@ def _hidden_link_pack() -> tuple[Schema, MappingBundle]:
     )
 
 
+def _field_link_assess(links_answer: str) -> Json:
+    pack = _hidden_link_pack()
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    branch = (
+        "  if (path.endsWith('/contenttypes')) {\n"
+        "    return respond(200, { d: { results: [{ StringId: '0x0100' }] } });\n"
+        "  }\n"
+        f"  if (path.endsWith('/fieldlinks')) return {links_answer};\n"
+    )
+    return _run_assess(
+        _declared_descriptions(pack),
+        js=_unique_assess_js(pack),
+        harness=_ASSESS_HARNESS.replace(marker, branch + marker, 1),
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("page", [
+    "{ results: Array.from({ length: 500 }, (_, i) => ({ Name: 'L' + i, Hidden: false })) }",
+    "{ results: [{ Name: 'Echo', Hidden: true }], __next: 'https://example.invalid/next' }",
+])
+def test_a_field_link_page_that_may_be_truncated_is_not_assessable(page: str) -> None:
+    summary = _field_link_assess(f"respond(200, {{ d: {page} }})")
+    found = [f for f in summary["findings"] if f["key"].startswith("field_links:")]
+    assert [f["level"].text for f in found] == ["NOT-ASSESSABLE"], summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_process_query_that_answers_ok_with_an_error_is_not_a_pass() -> None:
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    branch = (
+        "  if (path.endsWith('/ProcessQuery')) {\n"
+        "    return respond(200, [{ ErrorInfo: { ErrorMessage: 'refused' } }]);\n"
+        "  }\n"
+    )
+    pack = _hidden_link_pack()
+    summary = _run_assess(
+        _declared_descriptions(pack),
+        js=_unique_assess_js(pack),
+        harness=_ASSESS_HARNESS.replace(marker, branch + marker, 1),
+    )
+    found = [f for f in summary["findings"] if f["key"] == "process_query"]
+    assert [f["level"].text for f in found] == ["WARN"], summary["findings"]
+    assert "refused" in found[0]["detail"].text
+
+
 def test_hidden_field_links_need_the_csom_probe() -> None:
     schema, bundle = _hidden_link_pack()
     keys = {r.key for r in derive_requirements(

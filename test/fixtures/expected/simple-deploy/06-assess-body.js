@@ -721,6 +721,11 @@
         finding(2, key, 'INFO', `Could not read the field links of '${title}'; declared hidden columns were not compared.`);
         continue;
       }
+      // A full page may have ended before the list's links did, so a link missing from it was not compared.
+      if (live.d.results.length >= COLUMN_PAGE_SIZE || (typeof live.d.__next === 'string' && live.d.__next !== '')) {
+        finding(2, key, 'NOT-ASSESSABLE', `The field links of '${title}' came back at their ${COLUMN_PAGE_SIZE}-row page size, so declared hidden columns were not compared.`);
+        continue;
+      }
       const byName = new Map(live.d.results.map((link) => [link.Name, link.Hidden]));
       const drifted = links.filter(([name, hidden]) => byName.has(name) && byName.get(name) !== hidden)
         .map(([name, hidden]) => `${name} is ${byName.get(name) ? 'hidden' : 'shown'}, declared ${hidden ? 'hidden' : 'shown'}`);
@@ -981,7 +986,16 @@
           headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'text/xml', 'X-RequestDigest': digest },
           body,
         });
-        finding(2, 'process_query', r.ok ? 'PASS' : 'WARN', r.ok ? 'CSOM ProcessQuery responds (group owner correction and hidden field links available).' : `ProcessQuery returned HTTP ${r.status}; group owner correction and hidden field links will be degraded.`);
+        // HTTP 200 carries a failed CSOM request as ErrorInfo in the body, the same shape the deploy's processQuery reads.
+        let csomError = null;
+        if (r.ok) {
+          try {
+            const result = await r.json();
+            const info = Array.isArray(result) && result.length > 0 && result[0] && result[0].ErrorInfo;
+            csomError = info ? (info.ErrorMessage || 'unknown error') : null;
+          } catch { csomError = 'an unreadable answer'; }
+        }
+        finding(2, 'process_query', r.ok && csomError === null ? 'PASS' : 'WARN', r.ok && csomError === null ? 'CSOM ProcessQuery responds (group owner correction and hidden field links available).' : `ProcessQuery ${r.ok ? `answered with an error (${csomError})` : `returned HTTP ${r.status}`}; group owner correction and hidden field links will be degraded.`);
       } catch (err) {
         finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); group owner correction and hidden field links will be degraded.`);
       }
