@@ -1620,6 +1620,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "planning would MERGE the shared level into the family's own level. "
         "Remove the entry; a tool-owned level cannot be renamed away from."
     ),
+    FindingCode.TOOL_OWNED_LEVEL_SPELLING: (
+        "A `permission_levels:` entry spells a tool-owned level name with "
+        "different case than the canonical one. SharePoint resolves level "
+        "names case-insensitively, but the family marker is matched exactly, "
+        "so another family would abort on a marker mismatch. Use the "
+        "canonical spelling."
+    ),
     FindingCode.POLYMORPHIC_COLUMN_NOT_RENDERED: (
         "A `polymorphic_patterns:` entry's `field` or `discriminator` "
         "names a column the deploy never creates."

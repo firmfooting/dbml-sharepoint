@@ -413,6 +413,13 @@ def _tool_owned_levels(perms: PermissionsConfig) -> list[Finding]:
                 f"({sorted(set(lvl.base_permissions) ^ hit[1])} differ)",
                 location=_LEVELS,
             ))
+        if hit and lvl.name != hit[0]:
+            findings.append(Finding(
+                FindingCode.TOOL_OWNED_LEVEL_SPELLING,
+                f"permission_levels[{lvl.name!r}]: the tool-owned level must "
+                f"be spelled exactly {hit[0]!r}",
+                location=_LEVELS,
+            ))
         findings.extend(
             Finding(
                 FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,

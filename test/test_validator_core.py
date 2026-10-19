@@ -2934,6 +2934,16 @@ def test_a_tool_owned_level_name_cannot_be_a_rename_source() -> None:
     )
 
 
+def test_a_case_variant_of_a_tool_owned_level_name_is_refused() -> None:
+    only(
+        _owned_findings(
+            name=_SHARED.lower(), perms=sorted(TOOL_OWNED_LEVELS[_SHARED]),
+            renamed_from=[],
+        ),
+        FindingCode.TOOL_OWNED_LEVEL_SPELLING,
+    )
+
+
 @pytest.mark.parametrize("name", [
     "Full Control", "Design", "Edit", "Contribute", "Read", "Limited Access",
     "Web-Only Limited Access", "Approve", "Manage Hierarchy",

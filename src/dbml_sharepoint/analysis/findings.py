@@ -486,6 +486,7 @@ class FindingCode(StrEnum):
         "permission_level_redefines_a_builtin", "error")
     TOOL_OWNED_LEVEL_BITMAP_DIVERGES = "tool_owned_level_bitmap_diverges", "error"
     TOOL_OWNED_LEVEL_RENAME_SOURCE = "tool_owned_level_rename_source", "error"
+    TOOL_OWNED_LEVEL_SPELLING = "tool_owned_level_spelling", "error"
     UNKNOWN_BASE_PERMISSION = "unknown_base_permission", "error"
     UNKNOWN_OWNER_GROUP = "unknown_owner_group", "error"
     UNKNOWN_PERMISSION_LEVEL = "unknown_permission_level", "error"
