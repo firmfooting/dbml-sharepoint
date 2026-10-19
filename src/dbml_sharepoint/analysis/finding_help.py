@@ -1615,10 +1615,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "exactly the canonical permissions listed in the mapping reference."
     ),
     FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE: (
-        "A `permission_levels:` entry lists a tool-owned level name in "
-        "`renamed_from`. That name carries no family marker, so rename "
+        "A `permission_levels:` entry reaches a tool-owned level name as a "
+        "previous name, through `renamed_from` or a `previous_prefixes` "
+        "expansion. That name carries no family marker, so rename "
         "planning would MERGE the shared level into the family's own level. "
-        "Remove the entry; a tool-owned level cannot be renamed away from."
+        "Remove the entry or rename the level; a tool-owned level cannot be "
+        "renamed away from."
     ),
     FindingCode.TOOL_OWNED_LEVEL_SPELLING: (
         "A `permission_levels:` entry spells a tool-owned level name with "

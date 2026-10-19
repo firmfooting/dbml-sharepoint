@@ -2130,7 +2130,7 @@ def _typed_stems(raw: dict[str, object]) -> list[object]:
     """Group and level names that type a stem instead of the `{prefix}` placeholder."""
     return [
         as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
-        if as_dict(g)["name"] not in SHARED_GROUPS
+        if as_dict(g)["name"] not in TOOL_OWNED_GROUPS
         and not str(as_dict(g)["name"]).startswith("{prefix} ")
     ] + [
         as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])

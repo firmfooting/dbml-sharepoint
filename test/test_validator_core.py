@@ -2899,6 +2899,7 @@ _SHARED = "Automation Contribute No Delete"
 
 def _owned_findings(
     *, name: str = _SHARED, perms: list[str], renamed_from: list[str],
+    previous_names: tuple[str, ...] = (),
 ) -> list[Finding]:
     return validate_against_mapping(
         make_schema(make_table("Risk"), project_name="risk_register"),
@@ -2907,7 +2908,7 @@ def _owned_findings(
             permissions=PermissionsConfig(
                 levels=[CustomPermissionLevel(
                     name=name, description="test", base_permissions=perms,
-                    renamed_from=tuple(renamed_from),
+                    renamed_from=tuple(renamed_from), previous_names=previous_names,
                 )],
                 groups=[], default_policy=None, overrides={},
             ),
@@ -2930,6 +2931,17 @@ def test_a_tool_owned_level_with_a_divergent_bitmap_is_refused() -> None:
 def test_a_tool_owned_level_name_cannot_be_a_rename_source() -> None:
     only(
         _owned_findings(name="XX Writers", perms=["ViewListItems"], renamed_from=[_SHARED]),
+        FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
+    )
+
+
+def test_a_previous_prefix_cannot_reach_a_tool_owned_level() -> None:
+    # `{prefix} Contribute No Delete` with previous_prefixes [Automation] expands to the shared name
+    only(
+        _owned_findings(
+            name="XX Contribute No Delete", perms=["ViewListItems"],
+            renamed_from=[], previous_names=(_SHARED,),
+        ),
         FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
     )
 

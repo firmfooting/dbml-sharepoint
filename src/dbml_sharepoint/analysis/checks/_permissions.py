@@ -423,11 +423,13 @@ def _tool_owned_levels(perms: PermissionsConfig) -> list[Finding]:
         findings.extend(
             Finding(
                 FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
-                f"permission_levels[{lvl.name!r}]: renamed_from names the "
-                f"tool-owned level {old!r}, which cannot be renamed away from",
+                f"permission_levels[{lvl.name!r}]: a previous name (renamed_from "
+                f"or previous_prefixes) is the tool-owned level {old!r}, which "
+                f"cannot be renamed away from",
                 location=_LEVELS,
             )
-            for old in lvl.renamed_from
+            # previous_names holds renamed_from and the previous_prefixes expansions
+            for old in dict.fromkeys((*lvl.renamed_from, *lvl.previous_names))
             if old.casefold() in owned
         )
     return findings
