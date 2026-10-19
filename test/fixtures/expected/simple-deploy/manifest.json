@@ -1,6 +1,6 @@
 {
-  "bytes": 484121,
-  "sha256": "217bd592747f879b809acc24758bb9c6d00de869c9588fa0d711524c9bee7abd",
+  "bytes": 491014,
+  "sha256": "915d217f15df4dd5e0c336f550145f98a9b2c6522a61b17f19098f67a1d12f34",
   "segments": [
     "00-header.js",
     "01-site-guard.js",
@@ -29,9 +29,10 @@
     "24-phase-defaults.js",
     "25-phase-views.js",
     "26-phase-forms.js",
-    "27-phase-seal.js",
-    "28-phase-acls.js",
-    "29-phase-seeds.js",
-    "30-exit.js"
+    "27-phase-field-links.js",
+    "28-phase-seal.js",
+    "29-phase-acls.js",
+    "30-phase-seeds.js",
+    "31-exit.js"
   ]
 }

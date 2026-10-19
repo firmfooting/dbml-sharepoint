@@ -22,6 +22,7 @@ from dbml_sharepoint.analysis.column_refs import (
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
 from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
+from dbml_sharepoint.analysis.field_links import hidden_field_links
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -75,6 +76,7 @@ from dbml_sharepoint.generators.schema_types import (
     AclScope,
     FieldBody,
     FieldDefault,
+    FieldLinkRow,
     FieldSpec,
     FormFormattingRow,
     GroupRow,
@@ -647,6 +649,7 @@ def build_schema_json(
     indexed_columns_out: list[IndexedColumn] = []
     views_out: list[ViewRow] = []
     form_formatting_out: list[FormFormattingRow] = []
+    field_links_out: list[FieldLinkRow] = []
     field_defaults_out: list[FieldDefault] = []
 
     # One family per schema, so it is resolved once rather than per list.
@@ -1017,6 +1020,10 @@ def build_schema_json(
                 ),
             })
 
+        field_links = hidden_field_links(bundle.mapping, table_name)
+        if field_links:
+            field_links_out.append({"list": list_title, "hidden": field_links})
+
         column_types = effective_column_types(
             {col.name: col.type for col in table.columns},
             {name for entity_name, name in cross_site_keys if entity_name == table_name},
@@ -1228,6 +1235,7 @@ def build_schema_json(
         "indexed_columns": indexed_columns_out,
         "views": views_out,
         "form_formatting": form_formatting_out,
+        "field_links": field_links_out,
         "field_defaults": field_defaults_out,
         "permission_levels": permission_levels_out,
         "groups": groups_out,

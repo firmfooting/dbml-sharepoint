@@ -718,6 +718,30 @@
       }
     }
 
+    // Calculated columns whose field link carries a Hidden the mapping does
+    // not declare, which the next deploy rewrites.
+    for (const [title, links] of (TARGETS.list_field_links || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      const key = `field_links:${title}`;
+      const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+      const cts = await probeGet(`${listPath}/contenttypes?$select=StringId&$top=${COLUMN_PAGE_SIZE}`);
+      const ct = cts.ok && Array.isArray(cts.d.results)
+        ? cts.d.results.find((c) => c.StringId && c.StringId.startsWith('0x01') && !c.StringId.startsWith('0x0120'))
+        : null;
+      const live = ct ? await probeGet(`${listPath}/contenttypes('${ct.StringId}')/fieldlinks?$select=Name,Hidden&$top=${COLUMN_PAGE_SIZE}`) : null;
+      if (!live || !live.ok || !Array.isArray(live.d.results)) {
+        if (!cts.ok && cts.status === 404) continue;
+        finding(2, key, 'INFO', `Could not read the field links of '${title}'; declared hidden columns were not compared.`);
+        continue;
+      }
+      const byName = new Map(live.d.results.map((link) => [link.Name, link.Hidden]));
+      const drifted = links.filter(([name, hidden]) => byName.has(name) && byName.get(name) !== hidden)
+        .map(([name, hidden]) => `${name} is ${byName.get(name) ? 'hidden' : 'shown'}, declared ${hidden ? 'hidden' : 'shown'}`);
+      if (drifted.length > 0) {
+        finding(2, key, 'INFO', `'${title}': ${drifted.length} field link(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
+      }
+    }
+
     // Columns declared unique that the site holds unconstrained. #550 made a
     // declared `unique` actually deploy its constraint, so a list provisioned
     // before that fix gains it over data that never carried it.

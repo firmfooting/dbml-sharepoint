@@ -146,6 +146,7 @@
       ]
     ]
   ],
+  "list_field_links": [],
   "list_markers": [
     [
       "APP_Project",
@@ -1286,6 +1287,30 @@
         // Said rather than passed over in silence: this check reports drift
         // it saw, and a column it could not see is not a column that matches.
         finding(2, key, 'INFO', `'${title}': ${unseen.length} declared column(s) were not in a column enumeration that came back at its ${COLUMN_PAGE_SIZE}-row page size -- ${unseen.join(', ')}. Whether they display under the declared titles was not compared.`);
+      }
+    }
+
+    // Calculated columns whose field link carries a Hidden the mapping does
+    // not declare, which the next deploy rewrites.
+    for (const [title, links] of (TARGETS.list_field_links || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      const key = `field_links:${title}`;
+      const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+      const cts = await probeGet(`${listPath}/contenttypes?$select=StringId&$top=${COLUMN_PAGE_SIZE}`);
+      const ct = cts.ok && Array.isArray(cts.d.results)
+        ? cts.d.results.find((c) => c.StringId && c.StringId.startsWith('0x01') && !c.StringId.startsWith('0x0120'))
+        : null;
+      const live = ct ? await probeGet(`${listPath}/contenttypes('${ct.StringId}')/fieldlinks?$select=Name,Hidden&$top=${COLUMN_PAGE_SIZE}`) : null;
+      if (!live || !live.ok || !Array.isArray(live.d.results)) {
+        if (!cts.ok && cts.status === 404) continue;
+        finding(2, key, 'INFO', `Could not read the field links of '${title}'; declared hidden columns were not compared.`);
+        continue;
+      }
+      const byName = new Map(live.d.results.map((link) => [link.Name, link.Hidden]));
+      const drifted = links.filter(([name, hidden]) => byName.has(name) && byName.get(name) !== hidden)
+        .map(([name, hidden]) => `${name} is ${byName.get(name) ? 'hidden' : 'shown'}, declared ${hidden ? 'hidden' : 'shown'}`);
+      if (drifted.length > 0) {
+        finding(2, key, 'INFO', `'${title}': ${drifted.length} field link(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
       }
     }
 

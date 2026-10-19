@@ -525,6 +525,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const contentTypeState = (listTitle) => (contentTypes[listTitle] ||= {
       Name: 'Item', StringId: '0x0100AA', ClientFormCustomFormatter: null,
     });
+    // The default content type's field links, shared by every list (the mock
+    // answers one list Id). A ProcessQuery Hidden write lands on the link it
+    // names unless IGNORE_FIELD_LINK_WRITES makes the site discard it.
+    const FIELD_LINKS = [];
+    let IGNORE_FIELD_LINK_WRITES = false;
     const views = {};
     const viewOf = (url) => {
       const match = url.match(/\/views\/getbytitle\('([^']+)'\)/);
@@ -733,6 +738,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         if (url.includes('/viewfields')) return { d: state.ViewFields };
         return { d: state };
       }
+      if (url.includes('/fieldlinks')) return { d: { results: FIELD_LINKS } };
       if (url.includes('/contenttypes')) {
         const state = contentTypeState(listOf(url));
         return url.includes("contenttypes('")
@@ -934,6 +940,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
           if (writtenTitle) LIST_DESCRIPTIONS.set(writtenTitle, parsed.Description);
         }
+      }
+      if ((opts.method || 'GET') === 'POST' && opts.body && u.includes('/ProcessQuery')
+          && !IGNORE_FIELD_LINK_WRITES) {
+        const linkId = [...opts.body.matchAll(/Type="Guid">\{([^}]+)\}/g)].pop()?.[1];
+        const hidden = /Name="Hidden"><Parameter Type="Boolean">(true|false)/.exec(opts.body);
+        const link = FIELD_LINKS.find((candidate) => candidate.Id === linkId);
+        if (link && hidden) link.Hidden = hidden[1] === 'true';
       }
       if ((opts.method || 'GET') === 'POST' && opts.body && u.includes("/contenttypes('")) {
         const parsed = JSON.parse(opts.body);
@@ -4649,6 +4662,82 @@ def test_a_view_that_reads_back_absent_is_reported_by_name(
         ("TitleFirst", "view disappeared during reconciliation"),
     ], summary["errors"]
     assert "view shape probe failed" not in output, output[-4000:]
+
+
+_FIELD_LINK_ID = "55555555-5555-5555-5555-555555555555"
+
+
+def _field_link_run(
+    tmp_path: Path, *, declared: bool, hidden_now: bool, ignore_writes: bool = False,
+) -> tuple[Json, list[Json]]:
+    """Deploy one calculated column against a site whose field link holds `hidden_now`."""
+    table_names = ("Escalation",)
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
+    ) + (
+        f"\nFIELD_LINKS.push({{ Id: '{_FIELD_LINK_ID}', Name: 'ReasonEcho',"
+        f" Hidden: {json.dumps(hidden_now)} }});"
+        f"\nIGNORE_FIELD_LINK_WRITES = {json.dumps(ignore_writes)};\n"
+    )
+    summary, calls, _output = _run_capturing_calls(
+        harness,
+        _declared_deploy_js(
+            tmp_path,
+            "display_names:\n  mode: auto\n"
+            "calculated_formulas:\n  Escalation:\n    ReasonEcho: '=[EscalationReason]&\"\"'\n"
+            + ("form_visibility:\n  Escalation:\n    columns:\n      ReasonEcho: hidden\n"
+               if declared else ""),
+            table_names=table_names,
+            extra_lines=("EscalationReason nvarchar", "ReasonEcho calculated_text"),
+        ),
+    )
+    return summary, [c for c in calls if c["method"] == "POST" and "/ProcessQuery" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_hidden_calculated_column_is_hidden_through_its_field_link(
+    tmp_path: Path,
+) -> None:
+    summary, writes = _field_link_run(tmp_path, declared=True, hidden_now=False)
+    assert summary["errors"] == [], summary["errors"]
+    assert len(writes) == 1, writes
+    body = writes[0]["body"].text
+    assert 'Name="Hidden"><Parameter Type="Boolean">true<' in body
+    assert f"Type=\"Guid\">{{{_FIELD_LINK_ID}}}" in body
+    # Update(false): true is refused on a list content type.
+    update = body.split('Name="Update"', 1)[1].split("</Method>", 1)[0]
+    assert 'ObjectPathId="5"' in update and 'Type="Boolean">false<' in update
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_link_already_at_the_declaration_is_not_written(tmp_path: Path) -> None:
+    summary, writes = _field_link_run(tmp_path, declared=True, hidden_now=True)
+    assert summary["errors"] == [], summary["errors"]
+    assert writes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_removing_the_declaration_shows_the_calculated_column_again(tmp_path: Path) -> None:
+    summary, writes = _field_link_run(tmp_path, declared=False, hidden_now=True)
+    assert summary["errors"] == [], summary["errors"]
+    assert len(writes) == 1, writes
+    assert 'Name="Hidden"><Parameter Type="Boolean">false<' in writes[0]["body"].text
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_link_the_site_does_not_retain_fails_closed(tmp_path: Path) -> None:
+    summary, writes = _field_link_run(
+        tmp_path, declared=True, hidden_now=False, ignore_writes=True,
+    )
+    assert len(writes) == 1, writes
+    failures = [
+        e for e in summary["errors"] if e.get("phase") and e["phase"].text == pn("field_links")
+    ]
+    assert [e["error"].text for e in failures] == [
+        "did not retain the declared Hidden on ReasonEcho",
+    ], summary["errors"]
 
 
 # Two lists with a declared layout, so a ChangeSet that coalesces them is

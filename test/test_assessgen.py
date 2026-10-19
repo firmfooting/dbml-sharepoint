@@ -34,6 +34,7 @@ from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     CustomPermissionLevel,
     EntitySection,
+    FormVisibility,
     LibrarySettings,
     ListPermissionPolicy,
     MappingBundle,
@@ -2801,6 +2802,55 @@ def test_a_refused_enumeration_still_reads_a_404_as_absence() -> None:
             f"refused enumeration turned absent '{title}' into "
             f"{collisions.get(f'collision:{title}')!r} instead of PASS"
         )
+
+
+def _hidden_link_pack() -> tuple[Schema, MappingBundle]:
+    return (
+        make_schema(make_table(
+            "Asset", column("Title", required=True), column("Echo", "calculated_text"),
+            note="Assets.",
+        )),
+        make_bundle(
+            entities=["Asset"],
+            calculated_formulas={"Asset": {"Echo": "=[Title]"}},
+            form_visibility={"Asset": EntitySection(
+                columns={"Echo": FormVisibility(new=False, existing=False)},
+            )},
+        ),
+    )
+
+
+def test_assess_targets_carry_the_hidden_each_calculated_field_link_must_hold() -> None:
+    schema, bundle = _hidden_link_pack()
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assert targets["list_field_links"] == [["APP_Asset", [["Echo", True]]]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("hidden_now", "drifts"), [(False, True), (True, False)])
+def test_assess_reports_a_field_link_that_differs_from_the_declaration(
+    hidden_now: bool, drifts: bool,
+) -> None:
+    pack = _hidden_link_pack()
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    branch = (
+        "  if (path.endsWith('/contenttypes')) {\n"
+        "    return respond(200, { d: { results: [{ StringId: '0x0100' }] } });\n"
+        "  }\n"
+        "  if (path.endsWith('/fieldlinks')) {\n"
+        f"    const row = {{ Name: 'Echo', Hidden: {json.dumps(hidden_now)} }};\n"
+        "    return respond(200, { d: { results: [row] } });\n"
+        "  }\n"
+    )
+    summary = _run_assess(
+        _declared_descriptions(pack),
+        js=_unique_assess_js(pack),
+        harness=_ASSESS_HARNESS.replace(marker, branch + marker, 1),
+    )
+    found = [f for f in summary["findings"] if f["key"].startswith("field_links:")]
+    assert [f["key"].text for f in found] == (["field_links:APP_Asset"] if drifts else [])
+    if drifts:
+        assert "Echo is shown, declared hidden" in found[0]["detail"].text
 
 
 if __name__ == "__main__":  # pragma: no cover

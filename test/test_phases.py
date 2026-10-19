@@ -18,7 +18,8 @@ def test_todays_numbering_is_pinned() -> None:
         "security": "1.4", "enrolment": "1.5", "identity_enrolment": "1.6",
         "logging": "1.7", "unseal": "1.8",
         "lists": "2.1", "folders": "2.2", "lookups": "2.3", "indexes": "2.4",
-        "defaults": "2.5", "views": "3.1", "forms": "3.2", "seal": "4.1",
+        "defaults": "2.5", "views": "3.1", "forms": "3.2", "field_links": "3.3",
+        "seal": "4.1",
         "acls": "4.2", "seeds": "5.1",
     }
     assert phase_number("seal") == "4.1"

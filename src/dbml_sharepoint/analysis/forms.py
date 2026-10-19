@@ -52,11 +52,13 @@ def validate_form_visibility(
     where these messages have always put it.
     """
     findings: list[Finding] = []
-    if is_calculated:
+    if is_calculated and (new or existing or when is not None):
         findings.append(Finding(
             FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN,
             (f"{at.path}: {column!r} is a calculated column -- calculated columns never "
-             f"appear on entry forms, so declaring their visibility is a mistake"),
+             f"appear on the New form, and a 'new'/'existing' split or a 'when' cannot be "
+             f"honoured on the Edit and Display form; declare it 'hidden' to remove it from "
+             f"the form"),
             location=at,
         ))
     if not new and not existing and when is not None:

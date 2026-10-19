@@ -152,10 +152,21 @@ def test_hidden_everywhere_with_a_condition_is_an_error() -> None:
     assert "can never be reached" in found.message
 
 
-def test_calculated_columns_cannot_declare_visibility() -> None:
-    found = _visibility_findings(is_calculated=True)[0]
+def test_a_calculated_column_can_be_declared_hidden() -> None:
+    assert _visibility_findings(is_calculated=True, new=False, existing=False) == []
+
+
+@pytest.mark.parametrize(("new", "existing", "with_when"), [
+    (True, True, False), (False, True, False), (True, False, False), (False, False, True),
+])
+def test_a_calculated_column_cannot_declare_any_other_visibility(
+    new: bool, existing: bool, with_when: bool,
+) -> None:
+    found = _visibility_findings(
+        is_calculated=True, new=new, existing=existing, when=WHEN if with_when else None,
+    )[0]
     assert found.code is FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN
-    assert "calculated" in found.message
+    assert "'hidden'" in found.message
 
 
 def test_a_required_yes_no_column_declared_hidden_is_refused() -> None:

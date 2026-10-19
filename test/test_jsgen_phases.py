@@ -436,18 +436,18 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,
-    # forms, seal, ACLs, seeds. The index and form phases survey TWICE, because
+    # forms, field links, seal, ACLs, seeds. The index and form phases survey TWICE, because
     # each has a read-back that is a second write-region boundary: the objects
     # are read back after the last write lands, so the ownership the pre-write
     # survey proved is no longer current by then and is re-proved for the whole
     # batch rather than per object.
-    assert _call_count(js, "surveyOwnedListsForWrites") == 10
+    assert _call_count(js, "surveyOwnedListsForWrites") == 11
     # 16 counted the unbatched unseal, which re-proved the list before every
     # single field MERGE and so needed only the one call site. Batching a
     # lane's unseals into one ChangeSet removes those intermediate re-proves,
     # so the phase gained a second site after the flush: a marker lost between
     # two parts of one envelope has no next write to abort at.
-    assert _call_count(js, "ownedListIdentity") == 17
+    assert _call_count(js, "ownedListIdentity") == 18
     assert _call_count(js, "ownedFieldIdentity") == 2
     # Every place a phase reads an Id back out of a survey it ran with
     # `allowAbsent` false: the seven pre-write lookups, one per such phase,
@@ -458,7 +458,7 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     # this helper is what says the survey never proved the title. The unseal
     # phase surveys with `allowAbsent` true and branches on absence itself, so
     # it is not among them.
-    assert _call_count(js, "surveyedListId") == 10
+    assert _call_count(js, "surveyedListId") == 11
     code = _without_line_comments(js)
     # The index read-back, the form phase's two (its content-type resolution
     # and its layout read-back), and the assessment's own `probeMany`, which
