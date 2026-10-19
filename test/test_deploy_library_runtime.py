@@ -1913,6 +1913,27 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     assert not any("items(undefined)" in c["url"] for c in calls)
 
 
+def test_exact_reconcile_leaves_folder_grants_when_no_folder_policy(tmp_path: Path) -> None:
+    """`exact` on the library with no `folders` policy writes nothing to a hand-scoped folder.
+
+    The descendant guard names the folder and stops the run, so the folder's own
+    inheritance and role assignments are neither reset nor pruned.
+    """
+    mapping = _FOLDER_ACL_LIBRARY.split("  folders:\n")[0]
+    assert "list_permissions" in mapping and "folders:\n    Escalation" not in mapping
+    summary, calls = _folder_acl_run(
+        tmp_path, mapping=mapping, flags="globalThis.__folderScoped = true;\n",
+    )
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("1 undeclared item/folder unique permission scope(s)" in m for m in messages), \
+        messages
+    assert any("Field operations" in m for m in messages), messages
+    folder_writes = [
+        c["url"] for c in calls if "/items(" in c["url"] and c["method"] != "GET"
+    ]
+    assert folder_writes == [], folder_writes
+
+
 def test_a_no_op_folder_policy_does_not_excuse_an_already_unique_folder(tmp_path: Path) -> None:
     """A policy that writes nothing manages nothing, so the guard still names the folder (#617)."""
     mapping = _FOLDER_ACL_LIBRARY.replace(
