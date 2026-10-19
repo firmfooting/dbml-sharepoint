@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.24.0...v0.24.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **deploy:** redeploy over a library with a platform-sealed Title ([#890](https://github.com/firmfooting/dbml-sharepoint/issues/890)) ([7cefbf1](https://github.com/firmfooting/dbml-sharepoint/commit/7cefbf12ce4a25f53fcdd0d5aad29777341b8a90))
+
 ## [0.24.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.23.0...v0.24.0) (2026-10-19)
 
 
