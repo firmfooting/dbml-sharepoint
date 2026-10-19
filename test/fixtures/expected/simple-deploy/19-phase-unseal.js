@@ -16,11 +16,7 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field]);
     }
-    // Built-in Title is not a declared column, so it is queued explicitly;
-    // a generic list's Title is only ever sealed by something else.
-    // A library is skipped: its platform-sealed Title refuses the unseal
-    // MERGE with HTTP 400, which aborted every redeploy over it. Phase 1
-    // still reconciles that Title, the same on a first provision.
+    // A library's platform-sealed Title refuses the unseal MERGE (HTTP 400), so only generic lists queue it.
     for (const list of SCHEMA.lists) {
       if (list.title_patch && !list.is_library) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }

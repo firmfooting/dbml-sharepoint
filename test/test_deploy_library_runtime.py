@@ -1262,7 +1262,7 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
     ), "a declared Title column was never read during the run"
 
 
-# A library's platform-sealed Title refuses the unseal MERGE (MEASURED 2026-09-13).
+# A library's platform-sealed Title refuses the unseal MERGE (HTTP 400).
 _SEALED_TITLE_REFUSES_UNSEAL_JS = r"""
 const _unsealPassThrough = globalThis.fetch;
 globalThis.fetch = async (url, opts = {}) => {
