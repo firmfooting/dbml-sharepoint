@@ -448,7 +448,6 @@ PINNED: dict[str, list[str]] = {
         "97d9d0453744",
     ],
     "src/dbml_sharepoint/templates/deploy/_maintenance_unseal.js.j2": [
-        "01e0db739ed7",
         "3dc902b756f6",
         "431a769a335e",
     ],
