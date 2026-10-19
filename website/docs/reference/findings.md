@@ -205,7 +205,7 @@ dbml-sharepoint explain unknown_column_type
 | `form_section_field_not_rendered` | error | A form body section names a field the entity does not render. |
 | `form_visibility_column_not_rendered` | error | A `form_visibility` entry names a column the list does not render. |
 | `form_visibility_condition_unreachable` | error | A column is hidden on every form yet carries a `when`, which can never be reached. |
-| `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility. Calculated columns never appear on an entry form. |
+| `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility other than `hidden`. Calculated columns never appear on the New form, and a split or a `when` cannot apply to the content type field link that hides one from the Edit and Display form. |
 | `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column that does not receive formatter updates. Only primary deployed fields accept formatters; generated lookup projections and view-only fields may be referenced by a formatter but cannot be its target. |
 | `formatter_field_not_displayed` | error | A row or displayed column formatter references a real column the view does not display; a formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |

@@ -282,6 +282,33 @@ def _bundle_with_reader_dropped_from(entity_names: Iterable[str]) -> MappingBund
     return bundle
 
 
+def test_the_manifest_lists_the_field_links_it_writes() -> None:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = make_bundle(
+        entities=["Project", "Task"],
+        calculated_formulas={"Project": {"Echo": "=[Title]"}},
+        form_visibility={"Project": EntitySection(
+            columns={"Echo": FormVisibility(new=False, existing=False)},
+        )},
+    )
+    manifest = generate_manifest(
+        resolved=resolve(schema, bundle.mapping),
+        schema_json=build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        ),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        identities=reader_identities(None),
+    )
+    assert "- APP_Project.Echo: hidden" in manifest
+
+
 def _manifest_for_bundle(bundle: MappingBundle, enterprise_reader: str | None) -> str:
     """Render `bundle`'s manifest, built with or without the reader flag."""
     schema = parse_dbml(FIXTURES / "simple.dbml")

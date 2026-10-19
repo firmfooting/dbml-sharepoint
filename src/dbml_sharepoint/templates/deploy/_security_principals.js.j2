@@ -605,48 +605,29 @@
       if (targetOwner.PrincipalType === 8) {
         log('INFO', `Group '${grp.name}' owner is '${currentOwner.Title}'; attempting automated correction to '${targetOwner.Title}' via CSOM ProcessQuery...`);
         digest0 = await getDigest();
-        const csomXml =
-          '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="{{ application_name }}">'
-          + '<Actions>'
-          + '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
-          + '<Method Name="Update" Id="11" ObjectPathId="3" />'
-          + '</Actions>'
-          + '<ObjectPaths>'
-          + '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
+        const pqError = await processQuery(
+          '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
+          + '<Method Name="Update" Id="11" ObjectPathId="3" />',
+          '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
           + '<Property Id="1" ParentId="0" Name="Web" />'
           + '<Property Id="2" ParentId="1" Name="SiteGroups" />'
           + `<Method Id="3" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${governedGroup.Id}</Parameter></Parameters></Method>`
-          + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`
-          + '</ObjectPaths>'
-          + '</Request>';
-        const pqResp = await fetchWithRetry(apiUrl('ProcessQuery'), {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json;odata=verbose',
-            'Content-Type': 'text/xml',
-            'X-RequestDigest': digest0,
-          },
-          body: csomXml,
-        });
-        if (pqResp.ok) {
-          let pqJson = null;
-          try { pqJson = await pqResp.json(); } catch { pqJson = null; }
-          const pqError = Array.isArray(pqJson) && pqJson.length > 0 && pqJson[0] && pqJson[0].ErrorInfo;
-          if (!pqError) {
-            // Re-verify through the same documented read-only probe: the
-            // CSOM response alone is not trusted as success evidence.
-            const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (reReadResp.ok) {
-              const reRead = (await reReadResp.json()).d;
-              ownerCorrected = reRead
-                && reRead.Id === targetOwner.Id
-                && reRead.PrincipalType === targetOwner.PrincipalType;
-            }
-          } else {
-            log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError.ErrorMessage || 'unknown error'}.`);
+          + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`,
+        );
+        if (pqError === null) {
+          // Re-verify through the same documented read-only probe: the
+          // CSOM response alone is not trusted as success evidence.
+          const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (reReadResp.ok) {
+            const reRead = (await reReadResp.json()).d;
+            ownerCorrected = reRead
+              && reRead.Id === targetOwner.Id
+              && reRead.PrincipalType === targetOwner.PrincipalType;
           }
+        } else {
+          log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError}.`);
         }
       }
       if (!ownerCorrected) {

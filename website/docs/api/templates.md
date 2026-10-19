@@ -229,6 +229,12 @@ Runs the site assessment and refuses a verdict the operator has not accepted.
 
 Defaults are included in create-field bodies, but existing columns are skipped in Phase 2.1. Re-applying the declared value makes upgrades idempotent and lets a provisioned constant replace after-create flows.
 
+### `deploy/_field_links.js.j2`
+
+*Phase 3.3 (PRESENTATION): hidden field links*
+
+A calculated column leaves the Edit and Display form only through Hidden on its content type's field link, which REST cannot write (PATCH on SP.FieldLink is refused), so the write is CSOM. The default item content type is the target (a library's Document, a list's Item), as in form formatting. Two-way: an undeclared column is un-hidden.
+
 ### `deploy/_field_reconcile.js.j2`
 
 Included by: `deploy.js.j2`

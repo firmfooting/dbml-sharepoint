@@ -152,10 +152,48 @@ def test_hidden_everywhere_with_a_condition_is_an_error() -> None:
     assert "can never be reached" in found.message
 
 
-def test_calculated_columns_cannot_declare_visibility() -> None:
-    found = _visibility_findings(is_calculated=True)[0]
+def test_a_calculated_column_can_be_declared_hidden() -> None:
+    assert _visibility_findings(is_calculated=True, new=False, existing=False) == []
+
+
+def test_a_required_calculated_column_declared_hidden_is_not_a_required_hidden_column() -> None:
+    """A calculated column never renders on New and deploys optional."""
+    assert _visibility_findings(
+        is_calculated=True, new=False, existing=False, required=True,
+    ) == []
+
+
+def test_only_an_entity_with_a_form_visibility_block_has_field_links_managed() -> None:
+    from dbml_sharepoint.analysis.field_links import hidden_field_links
+    from dbml_sharepoint.model.mapping_types import EntitySection, FormVisibility
+
+    formulas = {"Asset": {"Echo": "=[Title]", "Other": "=[Title]"}}
+    hidden = FormVisibility(new=False, existing=False)
+    unmanaged = make_bundle(entities=["Asset"], calculated_formulas=formulas).mapping
+    assert hidden_field_links(unmanaged, "Asset") == {}
+    exact = make_bundle(
+        entities=["Asset"], calculated_formulas=formulas,
+        form_visibility={"Asset": EntitySection(columns={"Echo": hidden})},
+    ).mapping
+    assert hidden_field_links(exact, "Asset") == {"Echo": True, "Other": False}
+    declared = make_bundle(
+        entities=["Asset"], calculated_formulas=formulas,
+        form_visibility={"Asset": EntitySection(reconcile="declared", columns={"Echo": hidden})},
+    ).mapping
+    assert hidden_field_links(declared, "Asset") == {"Echo": True}
+
+
+@pytest.mark.parametrize(("new", "existing", "with_when"), [
+    (True, True, False), (False, True, False), (True, False, False), (False, False, True),
+])
+def test_a_calculated_column_cannot_declare_any_other_visibility(
+    new: bool, existing: bool, with_when: bool,
+) -> None:
+    found = _visibility_findings(
+        is_calculated=True, new=new, existing=existing, when=WHEN if with_when else None,
+    )[0]
     assert found.code is FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN
-    assert "calculated" in found.message
+    assert "'hidden'" in found.message
 
 
 def test_a_required_yes_no_column_declared_hidden_is_refused() -> None:

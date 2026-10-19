@@ -705,6 +705,35 @@
       }
     }
 
+    // Calculated columns whose field link carries a Hidden the mapping does
+    // not declare, which the next deploy rewrites.
+    for (const [title, links] of (TARGETS.list_field_links || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      const key = `field_links:${title}`;
+      const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+      const cts = await probeGet(`${listPath}/contenttypes?$select=StringId&$top=${COLUMN_PAGE_SIZE}`);
+      const ct = cts.ok && Array.isArray(cts.d.results)
+        ? cts.d.results.find((c) => c.StringId && c.StringId.startsWith('0x01') && !c.StringId.startsWith('0x0120'))
+        : null;
+      const live = ct ? await probeGet(`${listPath}/contenttypes('${ct.StringId}')/fieldlinks?$select=Name,Hidden&$top=${COLUMN_PAGE_SIZE}`) : null;
+      if (!live || !live.ok || !Array.isArray(live.d.results)) {
+        if (!cts.ok && cts.status === 404) continue;
+        finding(2, key, 'INFO', `Could not read the field links of '${title}'; declared hidden columns were not compared.`);
+        continue;
+      }
+      // A full page may have ended before the list's links did, so a link missing from it was not compared.
+      if (live.d.results.length >= COLUMN_PAGE_SIZE || (typeof live.d.__next === 'string' && live.d.__next !== '')) {
+        finding(2, key, 'NOT-ASSESSABLE', `The field links of '${title}' came back at their ${COLUMN_PAGE_SIZE}-row page size, so declared hidden columns were not compared.`);
+        continue;
+      }
+      const byName = new Map(live.d.results.map((link) => [link.Name, link.Hidden]));
+      const drifted = links.filter(([name, hidden]) => byName.has(name) && byName.get(name) !== hidden)
+        .map(([name, hidden]) => `${name} is ${byName.get(name) ? 'hidden' : 'shown'}, declared ${hidden ? 'hidden' : 'shown'}`);
+      if (drifted.length > 0) {
+        finding(2, key, 'INFO', `'${title}': ${drifted.length} field link(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
+      }
+    }
+
     // Columns declared unique that the site holds unconstrained. #550 made a
     // declared `unique` actually deploy its constraint, so a list provisioned
     // before that fix gains it over data that never carried it.
@@ -943,8 +972,8 @@
     }
 
     // CSOM ProcessQuery availability (read-only Current-Web-Title query),
-    // needed for group owner correction when the pack declares groups.
-    if (TARGETS.declares_groups) {
+    // needed for group owner correction and hidden field links.
+    if (TARGETS.declares_groups || (TARGETS.list_field_links || []).length > 0) {
       try {
         const digest = await getDigest();
         const body =
@@ -957,9 +986,18 @@
           headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'text/xml', 'X-RequestDigest': digest },
           body,
         });
-        finding(2, 'process_query', r.ok ? 'PASS' : 'WARN', r.ok ? 'CSOM ProcessQuery responds (group owner correction available).' : `ProcessQuery returned HTTP ${r.status}; owner correction will be degraded.`);
+        // HTTP 200 carries a failed CSOM request as ErrorInfo in the body, the same shape the deploy's processQuery reads.
+        let csomError = null;
+        if (r.ok) {
+          try {
+            const result = await r.json();
+            const info = Array.isArray(result) && result.length > 0 && result[0] && result[0].ErrorInfo;
+            csomError = info ? (info.ErrorMessage || 'unknown error') : null;
+          } catch { csomError = 'an unreadable answer'; }
+        }
+        finding(2, 'process_query', r.ok && csomError === null ? 'PASS' : 'WARN', r.ok && csomError === null ? 'CSOM ProcessQuery responds (group owner correction and hidden field links available).' : `ProcessQuery ${r.ok ? `answered with an error (${csomError})` : `returned HTTP ${r.status}`}; group owner correction and hidden field links will be degraded.`);
       } catch (err) {
-        finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); owner correction will be degraded.`);
+        finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); group owner correction and hidden field links will be degraded.`);
       }
     }
 

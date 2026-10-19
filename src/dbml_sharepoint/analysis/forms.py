@@ -52,11 +52,13 @@ def validate_form_visibility(
     where these messages have always put it.
     """
     findings: list[Finding] = []
-    if is_calculated:
+    if is_calculated and (new or existing or when is not None):
         findings.append(Finding(
             FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN,
             (f"{at.path}: {column!r} is a calculated column -- calculated columns never "
-             f"appear on entry forms, so declaring their visibility is a mistake"),
+             f"appear on the New form, and a 'new'/'existing' split or a 'when' cannot be "
+             f"honoured on the Edit and Display form; declare it 'hidden' to remove it from "
+             f"the form"),
             location=at,
         ))
     if not new and not existing and when is not None:
@@ -66,7 +68,7 @@ def validate_form_visibility(
              f"reached -- drop one or the other"),
             location=at,
         ))
-    if not new and required and not has_default:
+    if not is_calculated and not new and required and not has_default:
         # Statically provable: the gate is false on the New form whatever
         # `when` says, so every create would fail its required check. The
         # equivalent hidden_on_forms case is only a warning today; this is
@@ -77,7 +79,7 @@ def validate_form_visibility(
              f"form, so every save would fail"),
             location=at,
         ))
-    elif when is not None and required and not has_default:
+    elif not is_calculated and when is not None and required and not has_default:
         # NOT provable: whether the predicate holds on the New form depends
         # on what the person types. A warning, per the spec.
         findings.append(Finding(

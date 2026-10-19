@@ -16,6 +16,7 @@ from typing import TypedDict
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
+from dbml_sharepoint.analysis.field_links import hidden_field_links
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.limits import (
     INDEX_CHANGE_CEILING,
@@ -81,6 +82,7 @@ class AssessTargets(TypedDict):
     list_markers: list[tuple[str, str]]
     list_display_titles: list[JsonValue]
     list_unique_columns: list[JsonValue]
+    list_field_links: list[JsonValue]
     list_renames: list[JsonValue]
     level_renames: list[JsonValue]
     group_renames: list[JsonValue]
@@ -109,6 +111,7 @@ class _Collected:
     list_markers: list[tuple[str, str]]
     list_display_titles: list[tuple[str, list[tuple[str, str]]]]
     list_unique_columns: list[tuple[str, list[str]]]
+    list_field_links: list[tuple[str, list[tuple[str, bool]]]]
     list_renames: list[tuple[str, list[tuple[str, str]]]]
     level_renames: list[tuple[str, list[tuple[str, str]]]]
     group_renames: list[tuple[str, list[tuple[str, str]]]]
@@ -149,6 +152,9 @@ def assess_targets(
         "list_markers": t.list_markers,
         "list_display_titles": _named_pairs(t.list_display_titles),
         "list_unique_columns": [[title, list(columns)] for title, columns in t.list_unique_columns],
+        "list_field_links": [
+            [title, [list(link) for link in links]] for title, links in t.list_field_links
+        ],
         "list_renames": _named_pairs(t.list_renames),
         "level_renames": _named_pairs(t.level_renames),
         "group_renames": _named_pairs(t.group_renames),
@@ -231,6 +237,9 @@ def _collect(
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
     unique_columns: list[tuple[str, list[str]]] = []
+    # [[list title, [[calculated column, declared Hidden], ...]], ...]: pairs
+    # for the same reason `markers` is.
+    field_links: list[tuple[str, list[tuple[str, bool]]]] = []
     # [[library title, declared require_checkout], ...] for each library that
     # declares one; an unmanaged library is not asked about.
     library_checkout: list[tuple[str, bool]] = []
@@ -261,6 +270,9 @@ def _collect(
         templates.add(entity.base_template)
         table_names.append(table_name)
         markers.append((bundle.mapping.list_title(table_name), marker_for(family, table_name)))
+        links = hidden_field_links(bundle.mapping, table_name)
+        if links:
+            field_links.append((bundle.mapping.list_title(table_name), list(links.items())))
         table = by_name.get(table_name)
         if table is not None:
             # Declared columns only. A lookup PROJECTION is renamed by the
@@ -326,6 +338,7 @@ def _collect(
         list_markers=markers,
         list_display_titles=display_titles,
         list_unique_columns=unique_columns,
+        list_field_links=field_links,
         list_renames=renames,
         level_renames=level_renames,
         group_renames=group_renames,
@@ -484,10 +497,11 @@ def derive_requirements(
     if t.requires_manage_permissions:
         reqs.append(Requirement("manage_permissions_bit",
                                 "Operator holds ManagePermissions", "BLOCKED"))
-    if t.declares_groups:
+    if t.declares_groups or t.list_field_links:
         reqs.append(Requirement(
             "process_query",
-            "CSOM ProcessQuery available (group owner correction)", "WARN"))
+            "CSOM ProcessQuery available (group owner correction, hidden field links)",
+            "WARN"))
     if t.declares_seal:
         reqs.append(Requirement("sealed_surface",
                                 "SP.Field.Sealed property surface present", "WARN"))

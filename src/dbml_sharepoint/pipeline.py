@@ -103,6 +103,7 @@ _EMPTY_SCHEMA_JSON: SchemaJson = {
     "indexed_columns": [],
     "views": [],
     "form_formatting": [],
+    "field_links": [],
     "field_defaults": [],
     "permission_levels": [],
     "groups": [],

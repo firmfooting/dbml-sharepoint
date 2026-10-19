@@ -1195,8 +1195,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "can never be reached."
     ),
     FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN: (
-        "A calculated column declares form visibility. Calculated "
-        "columns never appear on an entry form."
+        "A calculated column declares form visibility other than "
+        "`hidden`. Calculated columns never appear on the New form, "
+        "and a split or a `when` cannot apply to the content type "
+        "field link that hides one from the Edit and Display form."
     ),
     FindingCode.HIDE_IS_UNNECESSARY: (
         "`hide_from_all_items` is set on an entity whose `All Items` "

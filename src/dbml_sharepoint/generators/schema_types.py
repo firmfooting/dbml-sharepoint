@@ -162,6 +162,11 @@ class FormFormattingRow(TypedDict):
     client_form_custom_formatter: str
 
 
+class FieldLinkRow(TypedDict):
+    list: str
+    hidden: dict[str, bool]
+
+
 class FieldDefault(TypedDict):
     list: str
     field: str
@@ -235,6 +240,7 @@ class SchemaJson(TypedDict):
     indexed_columns: list[IndexedColumn]
     views: list[ViewRow]
     form_formatting: list[FormFormattingRow]
+    field_links: list[FieldLinkRow]
     field_defaults: list[FieldDefault]
     permission_levels: list[PermissionLevelRow]
     groups: list[GroupRow]

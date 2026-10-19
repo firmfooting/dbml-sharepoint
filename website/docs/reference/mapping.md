@@ -1218,11 +1218,28 @@ configured by hand** on anything this tool deploys. A sealed column
 discards the write silently. Declaring it is the supported route, and it is
 the reproducible one.
 
+### Hiding a calculated column
+
+`ColumnName: hidden` is the one declaration a calculated column accepts. It
+removes the column from the Edit and Display form (and the details pane) by
+setting `Hidden` on the default item content type's field link (a library's
+`Document`, a list's `Item`), because `ShowIn*Form` and a form formatter cannot.
+The value still recalculates. The deploy writes the link only where it differs,
+reads it back and fails if it did not take.
+
+The reconcile is two-way for an entity that has a `form_visibility` block:
+a calculated column with no declaration is shown again on the next deploy, and
+`reconcile: declared` limits this to the columns the block lists. An entity
+with no `form_visibility` block is not managed, so its field links are never
+touched. `assess.js` reports a link that differs from the declaration.
+
 ### What the build refuses
 
 - An unknown entity, or a column that is not a rendered column of it.
-- A **calculated** column: calculated columns never appear on entry forms,
-  so declaring their visibility is a mistake.
+- A **calculated** column declared with anything but `hidden` (a `new` or
+  `existing` split, or a `when`): calculated columns never appear on the New
+  form and a condition cannot apply to the field link that hides one from the
+  Edit and Display form.
 - `new: false` *and* `existing: false` combined with `when`: the column is
   hidden everywhere, so the condition can never be reached.
 - A **required column with no default hidden from the New form** (`hidden`,

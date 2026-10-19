@@ -51,6 +51,29 @@
     }
   }
 
+  // One CSOM request, for the writes the REST surface refuses. Null when it
+  // applied, otherwise why not; the caller reads the result back, because a
+  // clean answer is not evidence the change took.
+  async function processQuery(actionsXml, objectPathsXml) {
+    const csomXml =
+      '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint">'
+      + `<Actions>${actionsXml}</Actions><ObjectPaths>${objectPathsXml}</ObjectPaths></Request>`;
+    const resp = await fetchWithRetry(apiUrl('ProcessQuery'), {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json;odata=verbose',
+        'Content-Type': 'text/xml',
+        'X-RequestDigest': await getDigest(),
+      },
+      body: csomXml,
+    });
+    if (!resp.ok) return `HTTP ${resp.status}`;
+    let json = null;
+    try { json = await resp.json(); } catch { json = null; }
+    const info = Array.isArray(json) && json.length > 0 && json[0] && json[0].ErrorInfo;
+    return info ? (info.ErrorMessage || 'unknown error') : null;
+  }
+
   const sharePointGuid = (value, label) => {
     const held = String(value || '');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(held)) {
