@@ -2503,34 +2503,36 @@ near-simultaneous MERGE calls to the same group description even serialise on a
 live tenant. Until that is measured, no guard is built on it: avoid pasting the
 same mapping's deploy script into two tabs at once.
 
-**`Managed Automation Accounts` is reserved, not shipped.** It is the name for
-the identity an automation connects as, such as a Power Automate flow. No
-shipped family declares it, because it carries no site-wide grant, and a
-family declaring it while granting it nothing would create a group with no
-access on every site that family reaches. Declare it in your own `groups:` when
-a flow needs to write, and grant it in `list_permissions` on the lists it
-writes to. Reserving the name is what makes two families that both need it
-reconcile one group object per site rather than one each.
+**`Managed Automation Accounts` is the group for the identity an automation
+connects as**, such as a Power Automate flow. No shipped family declares it,
+because it carries no site-wide grant, and a family declaring it while granting
+it nothing would create a group with no access on every site that family
+reaches. Declare it in your own `groups:` with `enroll: [automation]` when a
+flow needs to write, and grant it in `list_permissions` on the lists it writes
+to. Reserving the name is what makes two families that both need it reconcile
+one group object per site rather than one each.
 
 Why a declared group at all: under `reconcile: exact` a redeploy removes
 undeclared direct grants, so access handed to a flow by hand does not survive
 one. The identity has to sit in a group the mapping declares, holding a level
 the mapping declares.
 
-Two parts of it are yours rather than the tool's. **Membership is manual.**
-There is no `--enterprise-automation` option matching `--enterprise-reader`,
-because resolving a flow's connection identity to a site principal has not been
-measured against a live tenant. Add the identity to the group by hand once: no
-phase adds or removes members of it, so the membership survives redeploys.
-Leave `require_empty_at_deploy` off on it, or the next deploy aborts on
-finding the identity you just added. **The level is yours to choose**, with
-one refusal: the
+**The identity is enrolled by the deploy.** `enroll: [automation]` adds the
+`automation` identity to the group; the group is `additive`, so members you add
+by hand survive redeploys. Leave `require_empty_at_deploy` off on it, or the
+deploy aborts on finding the identity it enrolled. **The level is yours to
+choose**, with one refusal: the
 validator rejects `Full Control` on this group
 (`automation_group_granted_full_control`). That is what `Managed List
 Administrators` already carries on every list, so granting it here hands the
 automation the breadth this group exists to avoid. Which narrower level a flow
-needs, `Contribute`, `Edit` or a level of your own, depends on what it writes,
-and nothing here decides that for you.
+needs, `Contribute`, `Edit` or a level of your own, depends on what it writes.
+
+**`Automation Contribute No Delete` is a tool-owned level.** Its marker names no
+family, so every family that declares it shares one level per site. Core fixes
+its bitmap (Contribute without the delete permissions) and the validator
+refuses any other `base_permissions` for the name, because the last deploy that
+MERGEs it wins. The name also cannot appear in any level's `renamed_from`.
 
 **Why the `Managed` prefix.** These are the only groups the tool names for
 itself rather than for your organisation, so they carry a neutral

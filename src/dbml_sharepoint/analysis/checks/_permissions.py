@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.permissions import (
     DERIVED_BUILT_IN_LEVELS,
 )
 from dbml_sharepoint.analysis.role_definition_description import (
+    TOOL_OWNED_LEVELS,
     level_description_budget,
     marker_for_level,
 )
@@ -397,6 +398,43 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
     return findings
 
 
+def _tool_owned_levels(perms: PermissionsConfig) -> list[Finding]:
+    """A tool-owned level is shared by every family: its bitmap is fixed by core
+    and its marker names no family, so it cannot be a rename source."""
+    findings: list[Finding] = []
+    owned = {n.casefold(): (n, bits) for n, bits in TOOL_OWNED_LEVELS.items()}
+    for lvl in perms.levels:
+        hit = owned.get(lvl.name.casefold())
+        if hit and set(lvl.base_permissions) != hit[1]:
+            findings.append(Finding(
+                FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+                f"permission_levels[{lvl.name!r}]: base_permissions differ from "
+                f"the canonical set for this tool-owned level "
+                f"({sorted(set(lvl.base_permissions) ^ hit[1])} differ)",
+                location=_LEVELS,
+            ))
+        if hit and lvl.name != hit[0]:
+            findings.append(Finding(
+                FindingCode.TOOL_OWNED_LEVEL_SPELLING,
+                f"permission_levels[{lvl.name!r}]: the tool-owned level must "
+                f"be spelled exactly {hit[0]!r}",
+                location=_LEVELS,
+            ))
+        findings.extend(
+            Finding(
+                FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
+                f"permission_levels[{lvl.name!r}]: a previous name (renamed_from "
+                f"or previous_prefixes) is the tool-owned level {old!r}, which "
+                f"cannot be renamed away from",
+                location=_LEVELS,
+            )
+            # previous_names holds renamed_from and the previous_prefixes expansions
+            for old in dict.fromkeys((*lvl.renamed_from, *lvl.previous_names))
+            if old.casefold() in owned
+        )
+    return findings
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     table_names = vc.table_names
@@ -481,6 +519,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_LEVELS,
                 ))
             seen_level_names.setdefault(key, lvl.name)
+
+        findings.extend(_tool_owned_levels(perms))
 
         # permission_levels[*].base_permissions must be known bits.
         for lvl in perms.levels:

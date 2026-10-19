@@ -204,8 +204,10 @@ def _family() -> str:
     return family_for(make_schema(make_table("Risk", "Title", note="Risks.")))
 
 
-def _deploy_js(tmp_path: Path, *, with_assessment: bool = False) -> str:
-    write_mapping(tmp_path, _MAPPING, prefix=None)
+def _deploy_js(
+    tmp_path: Path, *, with_assessment: bool = False, mapping: str = _MAPPING,
+) -> str:
+    write_mapping(tmp_path, mapping, prefix=None)
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     js = generate_deploy_js(
@@ -228,14 +230,14 @@ def _deploy_js(tmp_path: Path, *, with_assessment: bool = False) -> str:
 
 def _run_deploy(
     tmp_path: Path, groups: dict[str, dict[str, object]], levels: dict[str, dict[str, object]],
-    *, with_assessment: bool = False,
+    *, with_assessment: bool = False, mapping: str = _MAPPING,
 ) -> tuple[Json, list[Json], Json]:
     harness = _HARNESS.replace(
         "const GROUPS = {};", f"const GROUPS = {json.dumps(groups)};", 1,
     ).replace(
         "const LEVELS = {};", f"const LEVELS = {json.dumps(levels)};", 1,
     )
-    body = _deploy_js(tmp_path, with_assessment=with_assessment).rstrip()
+    body = _deploy_js(tmp_path, with_assessment=with_assessment, mapping=mapping).rstrip()
     assert body.endswith("})();")
     script = (
         f"{harness}\n({body[:-1]}).then((r) => {{\n"
@@ -380,6 +382,39 @@ def test_the_assessment_reports_the_level_it_will_rename(tmp_path: Path) -> None
     planned = [f for f in findings if f["key"] == "rename_level:GOV Submit Only"]
     assert len(planned) == 1 and planned[0]["level"] == "INFO"
     assert "ADOPT Submit Only" in planned[0]["detail"]
+
+_SHARED_LEVEL = "Automation Contribute No Delete"
+_SHARED_LEVEL_MAPPING = f'''
+    prefix: "GOV_"
+    entities:
+      Risk: {{ kind: List, base_template: 100, site_role: default }}
+    permission_levels:
+      - name: "{_SHARED_LEVEL}"
+        description: "Contribute without delete."
+        base_permissions: [AddListItems, EditListItems, ViewListItems]
+'''
+
+
+def test_a_second_family_adopts_the_shared_level_the_first_stamped(tmp_path: Path) -> None:
+    """The marker names no family, so a level another family created is adopted, not refused."""
+    level: dict[str, dict[str, object]] = {_SHARED_LEVEL: {
+        "Id": OLD_LEVEL_ID, "Name": _SHARED_LEVEL, "High": 0, "Low": 3,
+        "Description": f"x {marker_for_level('some-other-family', _SHARED_LEVEL)}",
+    }}
+    summary, calls, state = _run_deploy(tmp_path, {}, level, mapping=_SHARED_LEVEL_MAPPING)
+    assert not [e for e in summary["errors"] if "permission level" in e["error"]], summary
+    assert any(
+        c["headers"].get("X-HTTP-Method") == "MERGE"
+        and f"roledefinitions/getbyname('{_SHARED_LEVEL}')" in c["url"]
+        for c in calls
+    ), "the shared level was never reconciled"
+    assert not [
+        c for c in calls
+        if c["method"] == "POST" and c["url"].endswith("/_api/web/roledefinitions")
+    ]
+    assert state["levels"][_SHARED_LEVEL]["Id"] == OLD_LEVEL_ID
+
+
 # --- The refusal has to be actionable, not just correct --------------------
 #
 # "Restore that marker" sends an operator to the obvious UI route, and for a

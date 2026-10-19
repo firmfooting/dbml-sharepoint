@@ -313,6 +313,9 @@ dbml-sharepoint explain unknown_column_type
 | `superseded_by_is_itself_retired` | error | A `superseded_by` names a column that is itself retired. |
 | `superseded_by_names_the_retired_column` | error | A `superseded_by` names the retired column itself. |
 | `superseded_by_not_rendered` | error | A `superseded_by` names a column the list does not render. |
+| `tool_owned_level_bitmap_diverges` | error | A `permission_levels:` entry declares a tool-owned level with a `base_permissions` set other than the one core fixes for it. Every family on a site shares that level and the last deploy MERGEs it, so a divergent set would rewrite the grant for all of them. Declare exactly the canonical permissions listed in the mapping reference. |
+| `tool_owned_level_rename_source` | error | A `permission_levels:` entry reaches a tool-owned level name as a previous name, through `renamed_from` or a `previous_prefixes` expansion. That name carries no family marker, so rename planning would MERGE the shared level into the family's own level. Remove the entry or rename the level; a tool-owned level cannot be renamed away from. |
+| `tool_owned_level_spelling` | error | A `permission_levels:` entry spells a tool-owned level name with different case than the canonical one. SharePoint resolves level names case-insensitively, but the family marker is matched exactly, so another family would abort on a marker mismatch. Use the canonical spelling. |
 | `total_column_not_displayed` | error | A `totals` entry names a column that is not one of the view's fields, so SharePoint has no column to put the figure under. |
 | `total_needs_numeric_column` | error | A numeric-only total is declared on a non-numeric column. |
 | `total_on_lookup_column` | error | A total other than `count` is declared on a lookup column, whose stored value is a row id rather than a quantity. |

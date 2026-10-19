@@ -1,0 +1,10 @@
+# A fixture family, not a shipped blueprint: it declares the tool-owned level.
+prefix: "SL_"
+
+entities:
+  Beta: { kind: List, base_template: 100, site_role: default }
+
+permission_levels:
+  - name: "Automation Contribute No Delete"
+    description: "Contribute without delete."
+    base_permissions: [ViewListItems, AddListItems, EditListItems, OpenItems, ViewVersions, ManagePersonalViews, ViewFormPages, Open, ViewPages, CreateSSCSite, BrowseDirectories, BrowseUserInfo, AddDelPrivateWebParts, UpdatePersonalWebParts, UseClientIntegration, UseRemoteAPIs, CreateAlerts, EditMyUserInfo]

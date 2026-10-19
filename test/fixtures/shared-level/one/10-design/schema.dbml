@@ -1,0 +1,9 @@
+// A fixture family: two of these share one prefix and one tool-owned permission level.
+Project shared_level_one { database_type: 'SharePoint Online Lists' }
+
+Table Alpha {
+  Id    int      [pk, increment]
+  Title nvarchar [not null, note: 'The item']
+
+  Note: 'Items.'
+}

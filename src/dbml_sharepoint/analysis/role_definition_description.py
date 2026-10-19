@@ -18,10 +18,10 @@ answer to "did this tool create this level", and nothing on a role
 definition recorded that. The Description is the one level-level string this
 tool already writes, and a human reads it in site permissions.
 
-ONE MARKER SHAPE, NOT TWO. Unlike a site group, no permission level is
-shared across families, so there is no tool-owned name and no `SHARED_MARKER`
-counterpart here; every level belongs to exactly one family and its marker
-always names it.
+TWO MARKER SHAPES. A level belongs to one family and its marker names it,
+except the tool-owned names in `TOOL_OWNED_LEVEL_NAMES`: one level per site,
+declared identically by every family that uses it, so its marker names no
+family and any of those families may adopt it.
 
 FAMILY IDENTITY IS VALIDATED BEFORE THIS RUNS. The normalization fold remains
 for marker compatibility, but the validator admits only its canonical
@@ -67,6 +67,32 @@ from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 #: still fits, which `test_template_standard.py` holds.
 LEVEL_MARKER_GROWTH_RESERVE = 21
 
+#: Levels the tool names for itself, one per site whichever family declares them,
+#: with the one bitmap every declaration must carry (Contribute minus the delete bits).
+TOOL_OWNED_LEVELS: dict[str, frozenset[str]] = {
+    "Automation Contribute No Delete": frozenset({
+        "ViewListItems",
+        "AddListItems",
+        "EditListItems",
+        "OpenItems",
+        "ViewVersions",
+        "ManagePersonalViews",
+        "ViewFormPages",
+        "Open",
+        "ViewPages",
+        "CreateSSCSite",
+        "BrowseDirectories",
+        "BrowseUserInfo",
+        "AddDelPrivateWebParts",
+        "UpdatePersonalWebParts",
+        "UseClientIntegration",
+        "UseRemoteAPIs",
+        "CreateAlerts",
+        "EditMyUserInfo",
+    }),
+}
+TOOL_OWNED_LEVEL_NAMES: frozenset[str] = frozenset(TOOL_OWNED_LEVELS)
+
 
 def marker_for_level(family: str, level_name: str) -> str:
     """The exact marker for one permission level.
@@ -75,7 +101,8 @@ def marker_for_level(family: str, level_name: str) -> str:
     of one family no longer satisfies the second level's gate.
     """
     return provenance.marker_for_object(
-        kind=provenance.LEVEL_KIND, name=level_name, family=family,
+        kind=provenance.LEVEL_KIND, name=level_name,
+        family=None if level_name in TOOL_OWNED_LEVEL_NAMES else family,
     )
 
 

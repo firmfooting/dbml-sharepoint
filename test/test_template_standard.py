@@ -29,10 +29,12 @@ import datetime as dt
 import re
 from dataclasses import dataclass, fields
 from functools import cache
+from pathlib import Path
 
 import pytest
 from _narrow import as_dict, as_list
-from _paths import SOLUTION_TEMPLATES
+from _packs import blocks, entities, write_mapping
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_rendering import (
@@ -54,15 +56,22 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
-from dbml_sharepoint.analysis.role_definition_description import level_description_budget
+from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS
+from dbml_sharepoint.analysis.role_definition_description import (
+    TOOL_OWNED_LEVEL_NAMES,
+    TOOL_OWNED_LEVELS,
+    level_description_budget,
+)
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, NUMBER_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
+from dbml_sharepoint.model.identities import IdentityValue, IdentityValueMissing
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
 from dbml_sharepoint.model.parser import ColumnDefault, Schema, parse_dbml
+from dbml_sharepoint.project import resolve_identities
 
 # This module is the family-standard conformance sweep, and it dominates the
 # suite's case count. Most of its functions are parametrised across the whole
@@ -1809,6 +1818,61 @@ def test_every_deploy_doc_spells_the_time_zone_placeholder_the_same_way() -> Non
     )
 
 
+#: Families allowed to omit the shared reader group. Core ships every family
+#: with it, so this stays empty; a copy of this file elsewhere lists its own.
+READER_GROUP_OMITTED: frozenset[str] = frozenset()
+READER_GROUP_NAME = "Managed Enterprise Readers"
+
+
+def test_core_ships_every_family_with_the_reader_group() -> None:
+    assert frozenset() == READER_GROUP_OMITTED
+
+
+def _check_one_reader_group(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
+    if template in omitted:
+        return
+    assert mapping.permissions is not None
+    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
+    assert len(readers) == 1, (
+        f"{template}: expected exactly one enterprise-reader group, "
+        f"got {[g.name for g in readers]}"
+    )
+    assert readers[0].name == "Managed Enterprise Readers"
+
+
+def _check_reader_granted(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
+    if template in omitted:
+        return
+    assert mapping.permissions is not None
+    perms = mapping.permissions
+    reader = next((g for g in perms.groups if "enterprise_reader" in g.enroll), None)
+    assert reader is not None, f"{template}: declares no enterprise-reader group"
+    trims = mapping.declares_item_read_trimming()
+    # A folder policy carries its own complete assignment list exactly as an
+    # override does, so leaving it out here would let a family secure its
+    # folders and quietly cut fleet reporting off from the documents, which
+    # in a library is where every row actually lives.
+    policies = [
+        perms.default_policy, *perms.overrides.values(), *perms.folder_policies.values(),
+    ]
+    for policy in policies:
+        assert policy is not None
+        granted = {
+            a.level for a in policy.assignments
+            if a.principal.kind == "group" and a.principal.name == reader.name
+        }
+        assert granted, f"{template}: policy block grants {reader.name} nothing"
+        if not trims:
+            assert granted == {"Read"}, (
+                f"{template}: policy block grants {reader.name} {granted}, and "
+                "the mapping declares no item read trimming to justify it"
+            )
+
+
 @pytest.mark.parametrize("template", _all_templates())
 def test_every_family_declares_exactly_one_enterprise_reader_group(
     template: str,
@@ -1820,14 +1884,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
     the rendered page, so a missing one looks exactly like a register with
     no rows in it.
     """
-    mapping = _load(template).mapping
-    assert mapping.permissions is not None
-    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
-    assert len(readers) == 1, (
-        f"{template}: expected exactly one enterprise-reader group, "
-        f"got {[g.name for g in readers]}"
-    )
-    assert readers[0].name == "Managed Enterprise Readers"
+    _check_one_reader_group(template, _load(template).mapping)
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -1850,30 +1907,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     trim, and the validator raises `enterprise_reader_on_trimmed_list` beside
     it so the elevation is never silent.
     """
-    mapping = _load(template).mapping
-    assert mapping.permissions is not None
-    perms = mapping.permissions
-    reader = next(g for g in perms.groups if "enterprise_reader" in g.enroll)
-    trims = mapping.declares_item_read_trimming()
-    # A folder policy carries its own complete assignment list exactly as an
-    # override does, so leaving it out here would let a family secure its
-    # folders and quietly cut fleet reporting off from the documents, which
-    # in a library is where every row actually lives.
-    policies = [
-        perms.default_policy, *perms.overrides.values(), *perms.folder_policies.values(),
-    ]
-    for policy in policies:
-        assert policy is not None
-        granted = {
-            a.level for a in policy.assignments
-            if a.principal.kind == "group" and a.principal.name == reader.name
-        }
-        assert granted, f"{template}: policy block grants {reader.name} nothing"
-        if not trims:
-            assert granted == {"Read"}, (
-                f"{template}: policy block grants {reader.name} {granted}, and "
-                "the mapping declares no item read trimming to justify it"
-            )
+    _check_reader_granted(template, _load(template).mapping)
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -1981,11 +2015,11 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 
 #: The tool-owned group a family declares only when it has something for it.
 #:
-#: Reserved rather than shipped: it carries no site-wide grant, so a family
+#: Optional rather than universal: it carries no site-wide grant, so a family
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is still ONE object per site, so the
-#: values two families would have to agree on are pinned here now, before a
-#: first family invents them.
+#: values two families declaring it must agree on are pinned here. It enrols
+#: the `automation` identity.
 #:
 #: `only_allow_members_view_membership` is TRUE, following the administrators
 #: group rather than the readers group: the membership names the identity an
@@ -1994,8 +2028,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
     "Managed Automation Accounts": {
         "description": (
-            "Automation identities that write to declared lists. Empty by "
-            "default; membership is operator-owned."
+            "Automation identities that write to declared lists. The "
+            "automation identity is enrolled; other members are operator-owned."
         ),
         "owner_group": "Site Owners",
         "allow_members_edit_membership": False,
@@ -2003,7 +2037,7 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "enroll": ("automation",), "enroll_during_run": (), "membership": "additive",
         "legacy_flags": (),
         "renamed_from": [],
         "previous_names": [],
@@ -2066,11 +2100,18 @@ def test_every_family_declares_the_shared_groups_identically(
     Field-by-field rather than comparing the objects, so a failure names the
     field that drifted instead of dumping two dataclasses at the reader.
     """
-    mapping = _load(template).mapping
+    _check_shared_groups_present(template, _load(template).mapping)
+
+
+def _check_shared_groups_present(
+    template: str, mapping: Mapping, omitted: frozenset[str] = READER_GROUP_OMITTED,
+) -> None:
     assert mapping.permissions is not None
     declared = {g.name: g for g in mapping.permissions.groups}
 
     for name, expected in SHARED_GROUPS.items():
+        if name == READER_GROUP_NAME and template in omitted:
+            continue
         assert name in declared, (
             f"{template}: does not declare the shared group {name!r}; "
             f"it declares {sorted(declared)}"
@@ -2085,6 +2126,19 @@ def test_every_family_declares_the_shared_groups_identically(
             )
 
 
+def _typed_stems(raw: dict[str, object]) -> list[object]:
+    """Group and level names that type a stem instead of the `{prefix}` placeholder."""
+    return [
+        as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
+        if as_dict(g)["name"] not in TOOL_OWNED_GROUPS
+        and not str(as_dict(g)["name"]).startswith("{prefix} ")
+    ] + [
+        as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
+        if as_dict(lvl)["name"] not in TOOL_OWNED_LEVEL_NAMES
+        and not str(as_dict(lvl)["name"]).startswith("{prefix} ")
+    ]
+
+
 @pytest.mark.parametrize("template", _all_templates())
 def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str) -> None:
     """The stem is not typed by hand. `{prefix}` expands to the list prefix
@@ -2095,14 +2149,7 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
         (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
         .read_text(encoding="utf-8"),
     ))
-    typed = [
-        as_dict(g)["name"] for g in as_list(raw.get("groups") or [])
-        if as_dict(g)["name"] not in SHARED_GROUPS
-        and not str(as_dict(g)["name"]).startswith("{prefix} ")
-    ] + [
-        as_dict(lvl)["name"] for lvl in as_list(raw.get("permission_levels") or [])
-        if not str(as_dict(lvl)["name"]).startswith("{prefix} ")
-    ]
+    typed = _typed_stems(raw)
     assert not typed, (
         f"{template}: these group or level names carry a typed stem instead of "
         f"the {{prefix}} placeholder: {typed}"
@@ -2122,11 +2169,13 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
     automation to grant declares nothing, which is why presence is not
     asserted here.
 
-    Nothing declares it today, so this passes over an empty set. That is the
-    point of writing it now: the first family that does declare it cannot
-    invent its own values, and would otherwise have nothing to conform to.
+    A family that declares it must use the pinned values, so none can invent
+    its own.
     """
-    mapping = _load(template).mapping
+    _check_optional_shared_groups(template, _load(template).mapping)
+
+
+def _check_optional_shared_groups(template: str, mapping: Mapping) -> None:
     assert mapping.permissions is not None
     declared = {g.name: g for g in mapping.permissions.groups}
 
@@ -2141,6 +2190,7 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
                 f"must use {want!r} -- two families on one site reconcile the "
                 f"same group object."
             )
+
 
 @pytest.mark.parametrize("template", _all_templates())
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
@@ -2371,3 +2421,152 @@ def test_no_shipped_family_uses_a_deprecated_enrolment_flag(template: str) -> No
         load_mapping(root / "20-configure" / "mapping.yaml"),
     )
     assert not [f for f in findings if f.code is FindingCode.DEPRECATED_ENROLMENT_FLAG]
+
+
+def test_a_family_declaring_the_accounts_group_enrols_the_automation_identity(
+    tmp_path: Path,
+) -> None:
+    """The declared group takes the supplied automation value; absent, the build is refused."""
+    pinned = OPTIONAL_SHARED_GROUPS["Managed Automation Accounts"]
+    body = f"""
+    groups:
+      - name: "Managed Automation Accounts"
+        description: "{pinned['description']}"
+        enroll: [automation]
+        membership: additive
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), body), name="mapping.yaml")
+    mapping = load_mapping(tmp_path / "mapping.yaml").mapping
+    assert mapping.permissions is not None
+    assert mapping.permissions.groups[0].enroll == pinned["enroll"]
+
+    flags = ["automation=user:flows@example.com"]
+    resolved = resolve_identities(
+        flags=flags, reader_flag=None, file_identities={}, mapping=mapping,
+    )
+    assert resolved["automation"] == (IdentityValue("user", "flows@example.com"),)
+    with pytest.raises(IdentityValueMissing, match="automation"):
+        resolve_identities(
+            flags=[], reader_flag=None, file_identities={}, mapping=mapping,
+        )
+
+
+# === The tool-owned permission level ========================================
+
+#: The built-in Contribute mask as recorded in `built-in-levels-probe.js`.
+_CONTRIBUTE_HIGH, _CONTRIBUTE_LOW = 432, 1011028719
+_SHARED_LEVEL = "Automation Contribute No Delete"
+_SHARED_LEVEL_FAMILIES = sorted((FIXTURES / "shared-level").glob("*/20-configure/mapping.yaml"))
+
+
+def _contribute_names() -> set[str]:
+    mask = (_CONTRIBUTE_HIGH << 32) | _CONTRIBUTE_LOW
+    return {
+        n for n, bit in BASE_PERMISSIONS.items()
+        if bit and n != "FullMask" and mask & bit == bit
+    }
+
+
+#: Contribute minus the two delete bits, so an automation account can write but not remove.
+PINNED_SHARED_LEVEL_PERMISSIONS = TOOL_OWNED_LEVELS[_SHARED_LEVEL]
+
+
+def test_the_canonical_bitmap_is_contribute_minus_delete() -> None:
+    no_delete = _contribute_names() - {"DeleteListItems", "DeleteVersions"}
+    assert no_delete == PINNED_SHARED_LEVEL_PERMISSIONS
+
+
+def _declared_shared_levels(mapping_path: Path) -> list[cabc.Sequence[str]]:
+    mapping = load_mapping(mapping_path).mapping
+    assert mapping.permissions is not None
+    return [lvl.base_permissions for lvl in mapping.permissions.levels if lvl.name == _SHARED_LEVEL]
+
+
+def _check_shared_level_declaration(declared: cabc.Sequence[str]) -> None:
+    assert set(declared) == PINNED_SHARED_LEVEL_PERMISSIONS, (
+        f"declares {sorted(set(declared) ^ PINNED_SHARED_LEVEL_PERMISSIONS)} differently"
+    )
+    assert len(declared) == len(set(declared))
+
+
+def test_the_pinned_level_is_the_tool_owned_name() -> None:
+    assert {_SHARED_LEVEL} == TOOL_OWNED_LEVEL_NAMES
+
+
+def test_shared_level_pin_excludes_delete() -> None:
+    assert not {"DeleteListItems", "DeleteVersions"} & PINNED_SHARED_LEVEL_PERMISSIONS
+    assert {"AddListItems", "EditListItems"} <= PINNED_SHARED_LEVEL_PERMISSIONS
+
+
+@pytest.mark.parametrize(
+    "mapping_path",
+    [SOLUTION_TEMPLATES / t / "20-configure" / "mapping.yaml" for t in _all_templates()]
+    + _SHARED_LEVEL_FAMILIES,
+    ids=lambda p: p.parent.parent.name,
+)
+def test_two_families_declare_the_shared_level_identically(mapping_path: Path) -> None:
+    """Two families on one site reconcile one role definition, so the last paste would win."""
+    for declared in _declared_shared_levels(mapping_path):
+        _check_shared_level_declaration(declared)
+
+
+def test_a_divergent_shared_level_declaration_is_refused() -> None:
+    pinned = sorted(PINNED_SHARED_LEVEL_PERMISSIONS)
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration(pinned[1:])
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration([*pinned, "DeleteListItems"])
+    with pytest.raises(AssertionError):
+        _check_shared_level_declaration([*pinned, pinned[0]])
+
+
+def test_the_fixture_families_both_declare_the_shared_level() -> None:
+    assert len(_SHARED_LEVEL_FAMILIES) == 2
+    assert all(_declared_shared_levels(p) for p in _SHARED_LEVEL_FAMILIES)
+
+
+def test_shared_level_is_exempt_from_the_prefix_placeholder() -> None:
+    """The sweep's own filter passes the shared name and still flags `RR Anything`."""
+    assert _typed_stems({"permission_levels": [{"name": _SHARED_LEVEL}]}) == []
+    assert _typed_stems({"permission_levels": [{"name": "RR Anything"}]}) == ["RR Anything"]
+
+
+_OMITS = FIXTURES / "omits-shared-groups"
+
+
+def test_a_family_may_omit_the_enterprise_reader_group(tmp_path: Path) -> None:
+    from dbml_sharepoint.analysis.findings import FindingCode
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+    from dbml_sharepoint.pipeline import execute_build
+
+    execute_build(
+        schema=_OMITS / "schema.dbml",
+        mapping=_OMITS / "mapping.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/ci",
+        time_zone="UTC",
+        site_role="default",
+        out=tmp_path,
+    )
+    assert (tmp_path / "deploy.js.txt").is_file()
+    findings = validate_against_mapping(
+        parse_dbml(_OMITS / "schema.dbml"), load_mapping(_OMITS / "mapping.yaml"),
+    )
+    assert FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED not in {f.code for f in findings}
+
+
+def test_a_family_may_omit_the_automation_accounts_group() -> None:
+    mapping = load_mapping(_OMITS / "mapping.yaml").mapping
+    assert mapping.permissions is not None
+    assert "Managed Automation Accounts" not in {g.name for g in mapping.permissions.groups}
+    _check_optional_shared_groups("omits", mapping)
+
+
+def test_an_omission_must_be_listed() -> None:
+    mapping = load_mapping(_OMITS / "mapping.yaml").mapping
+    for check in (
+        _check_one_reader_group, _check_reader_granted, _check_shared_groups_present,
+    ):
+        with pytest.raises(AssertionError):
+            check("omits", mapping, frozenset())
+        check("omits", mapping, frozenset({"omits"}))
