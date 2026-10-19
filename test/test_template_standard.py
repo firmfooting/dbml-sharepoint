@@ -29,9 +29,11 @@ import datetime as dt
 import re
 from dataclasses import dataclass, fields
 from functools import cache
+from pathlib import Path
 
 import pytest
 from _narrow import as_dict, as_list
+from _packs import blocks, entities, write_mapping
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
@@ -60,9 +62,11 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, NUM
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
+from dbml_sharepoint.model.identities import IdentityValue, IdentityValueMissing
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
 from dbml_sharepoint.model.parser import ColumnDefault, Schema, parse_dbml
+from dbml_sharepoint.project import resolve_identities
 
 # This module is the family-standard conformance sweep, and it dominates the
 # suite's case count. Most of its functions are parametrised across the whole
@@ -1985,7 +1989,7 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is still ONE object per site, so the
 #: values two families would have to agree on are pinned here now, before a
-#: first family invents them.
+#: first family invents them. It enrols the `automation` identity.
 #:
 #: `only_allow_members_view_membership` is TRUE, following the administrators
 #: group rather than the readers group: the membership names the identity an
@@ -2003,7 +2007,7 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "enroll": ("automation",), "enroll_during_run": (), "membership": "additive",
         "legacy_flags": (),
         "renamed_from": [],
         "previous_names": [],
@@ -2371,3 +2375,31 @@ def test_no_shipped_family_uses_a_deprecated_enrolment_flag(template: str) -> No
         load_mapping(root / "20-configure" / "mapping.yaml"),
     )
     assert not [f for f in findings if f.code is FindingCode.DEPRECATED_ENROLMENT_FLAG]
+
+
+def test_a_family_declaring_the_accounts_group_enrols_the_automation_identity(
+    tmp_path: Path,
+) -> None:
+    """The declared group takes the supplied automation value; absent, the build is refused."""
+    pinned = OPTIONAL_SHARED_GROUPS["Managed Automation Accounts"]
+    body = f"""
+    groups:
+      - name: "Managed Automation Accounts"
+        description: "{pinned['description']}"
+        enroll: [automation]
+        membership: additive
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), body), name="mapping.yaml")
+    mapping = load_mapping(tmp_path / "mapping.yaml").mapping
+    assert mapping.permissions is not None
+    assert mapping.permissions.groups[0].enroll == pinned["enroll"]
+
+    flags = ["automation=user:flows@example.com"]
+    resolved = resolve_identities(
+        flags=flags, reader_flag=None, file_identities={}, mapping=mapping,
+    )
+    assert resolved["automation"] == (IdentityValue("user", "flows@example.com"),)
+    with pytest.raises(IdentityValueMissing, match="automation"):
+        resolve_identities(
+            flags=[], reader_flag=None, file_identities={}, mapping=mapping,
+        )
