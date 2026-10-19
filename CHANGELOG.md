@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.24.1...v0.25.0) (2026-10-19)
+
+
+### Features
+
+* **forms:** hide a calculated column from the form through its content type field link ([#892](https://github.com/firmfooting/dbml-sharepoint/issues/892)) ([c0cc2e6](https://github.com/firmfooting/dbml-sharepoint/commit/c0cc2e6562cf9c94f12590329126b7ddfccd6035))
+
 ## [0.24.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.24.0...v0.24.1) (2026-10-19)
 
 
