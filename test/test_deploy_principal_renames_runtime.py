@@ -382,6 +382,7 @@ def test_the_assessment_reports_the_level_it_will_rename(tmp_path: Path) -> None
     planned = [f for f in findings if f["key"] == "rename_level:GOV Submit Only"]
     assert len(planned) == 1 and planned[0]["level"] == "INFO"
     assert "ADOPT Submit Only" in planned[0]["detail"]
+
 _SHARED_LEVEL = "Automation Contribute No Delete"
 _SHARED_LEVEL_MAPPING = f'''
     prefix: "GOV_"

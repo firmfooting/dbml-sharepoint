@@ -1820,6 +1820,11 @@ def test_every_deploy_doc_spells_the_time_zone_placeholder_the_same_way() -> Non
 #: Families allowed to omit the shared reader group. Core ships every family
 #: with it, so this stays empty; a copy of this file elsewhere lists its own.
 READER_GROUP_OMITTED: frozenset[str] = frozenset()
+READER_GROUP_NAME = "Managed Enterprise Readers"
+
+
+def test_core_ships_every_family_with_the_reader_group() -> None:
+    assert frozenset() == READER_GROUP_OMITTED
 
 
 def _check_one_reader_group(
@@ -2009,11 +2014,11 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 
 #: The tool-owned group a family declares only when it has something for it.
 #:
-#: Reserved rather than shipped: it carries no site-wide grant, so a family
+#: Optional rather than universal: it carries no site-wide grant, so a family
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is still ONE object per site, so the
-#: values two families would have to agree on are pinned here now, before a
-#: first family invents them. It enrols the `automation` identity.
+#: values two families declaring it must agree on are pinned here. It enrols
+#: the `automation` identity.
 #:
 #: `only_allow_members_view_membership` is TRUE, following the administrators
 #: group rather than the readers group: the membership names the identity an
@@ -2022,8 +2027,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
     "Managed Automation Accounts": {
         "description": (
-            "Automation identities that write to declared lists. Empty by "
-            "default; membership is operator-owned."
+            "Automation identities that write to declared lists. The "
+            "automation identity is enrolled; other members are operator-owned."
         ),
         "owner_group": "Site Owners",
         "allow_members_edit_membership": False,
@@ -2104,7 +2109,7 @@ def _check_shared_groups_present(
     declared = {g.name: g for g in mapping.permissions.groups}
 
     for name, expected in SHARED_GROUPS.items():
-        if name == "Managed Enterprise Readers" and template in omitted:
+        if name == READER_GROUP_NAME and template in omitted:
             continue
         assert name in declared, (
             f"{template}: does not declare the shared group {name!r}; "
@@ -2163,9 +2168,8 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
     automation to grant declares nothing, which is why presence is not
     asserted here.
 
-    Nothing declares it today, so this passes over an empty set. That is the
-    point of writing it now: the first family that does declare it cannot
-    invent its own values, and would otherwise have nothing to conform to.
+    A family that declares it must use the pinned values, so none can invent
+    its own.
     """
     _check_optional_shared_groups(template, _load(template).mapping)
 
