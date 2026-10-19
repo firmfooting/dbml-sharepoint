@@ -1262,6 +1262,46 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
     ), "a declared Title column was never read during the run"
 
 
+# A library's platform-sealed Title refuses the unseal MERGE (HTTP 400).
+_SEALED_TITLE_REFUSES_UNSEAL_JS = r"""
+const _unsealPassThrough = globalThis.fetch;
+globalThis.fetch = async (url, opts = {}) => {
+  const u = String(url);
+  const sent = !opts.body || /\/_api\/\$batch$/.test(u) ? {} : JSON.parse(opts.body);
+  const onTitle = u.includes("getbyinternalnameortitle('Title')")
+    || u.includes("/fields(guid'11111111-1111-1111-1111-111111111111')");
+  if ((opts.method || 'GET') !== 'POST' || !onTitle || sent.Sealed !== false) {
+    return _unsealPassThrough(url, opts);
+  }
+  const payload = { error: { message: { value:
+    'Operation is not valid due to the current state of the object.' } } };
+  return {
+    ok: false, status: 400, headers: { get: () => null },
+    json: async () => payload, text: async () => JSON.stringify(payload),
+  };
+};
+"""
+
+
+def test_redeploy_over_a_library_with_a_sealed_title_passes_the_unseal_phase(
+    tmp_path: Path,
+) -> None:
+    """The library already exists with its built-in Title sealed, and a declared
+    Title column gives it a patch. The unseal lane must not queue that Title,
+    or SharePoint's refusal aborts the run before any structural phase."""
+    summary, calls, _reads = _run(
+        _library_harness() + _SEALED_TITLE_REFUSES_UNSEAL_JS,
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=True),
+    )
+    assert summary.get("aborted").value is None, summary.get("aborted")
+    assert summary["errors"] == [], summary["errors"]
+    assert not any(
+        c["method"] == "POST" and c.get("body") and "Sealed" in c["body"].text
+        and "Title')" in c["url"]
+        for c in calls
+    ), "the unseal lane still queued the library's Title"
+
+
 @pytest.mark.parametrize("root", ["PolicyDocuments", "WrongRoot", None])
 @pytest.mark.parametrize("existing", [True, False])
 def test_declared_library_url_is_created_and_verified(

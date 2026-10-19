@@ -16,39 +16,9 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field]);
     }
-    // The built-in Title is not a declared column, so it was never in this
-    // set, and Phase 1 writes list.title_patch to it. A Title sealed by
-    // anything other than this tool therefore made the run un-completable
-    // and un-repairable: the write failed, and the only maintenance path
-    // that can unseal walked declared columns only. Probed unconditionally
-    // (the loop below writes ONLY if it finds Sealed true), so a normal
-    // site pays one read and nothing changes.
-    //
-    // WHERE A SEALED TITLE ACTUALLY COMES FROM, measured 2026-09-07 by
-    // test/manual/title-seal-probe.js over two sites. It is not something
-    // anyone does to a list. On a generic list every route was refused: both
-    // MERGE spellings with HTTP 400 "Operation is not valid due to the
-    // current state of the object", and a SchemaXml carrying Sealed="TRUE"
-    // answered 204 and changed nothing, which is the silent kind of failure
-    // and the reason that row asserts the readback rather than the status.
-    // The site collection's own Title site column reads Sealed=false, so
-    // nothing descends.
-    //
-    // What the census found, reading all 33 lists of one site: 8 sealed
-    // Titles, every one of them BaseTemplate 101, and all 24 BaseTemplate 100
-    // lists unsealed. The correlation is with 101 specifically rather than
-    // with libraries in general: the site's one BaseTemplate 119 page library
-    // reads unsealed too.
-    //
-    // So this branch is unreachable today, and shut twice over: kind
-    // 'DocumentLibrary' is refused by `document_library_unsupported`, and
-    // `unsupported_base_template` allows only 100, which is the guard that
-    // closes the door the first refusal's own advice would otherwise open.
-    // It stops being unreachable the day issue #14 lands library support.
-    // Keep it. Deleting it would delete the handling for the one template
-    // where a sealed Title is the norm rather than the exception.
+    // A library's platform-sealed Title refuses the unseal MERGE (HTTP 400), so only generic lists queue it.
     for (const list of SCHEMA.lists) {
-      if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
+      if (list.title_patch && !list.is_library) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
     if (sealDeclared.length > 0) {
       // One lane per list: same-list field MERGEs race into save conflicts;
