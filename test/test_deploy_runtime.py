@@ -7756,6 +7756,28 @@ def test_a_marked_group_with_members_is_adopted_silently() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_with_no_enrolment_plan_keeps_a_member_added_by_hand() -> None:
+    """With no identity supplied there is no enrolment plan, so a member added by hand stays.
+
+    The reconcile writes the group's settings and neither removes the extra member nor
+    adds anyone. The additive enrolment path itself is pinned by
+    `test_an_additive_group_warns_about_an_unmanaged_extra_and_keeps_it`.
+    """
+    summary, calls, _ = _group_gate_deploy(
+        _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
+        description="Read-only accounts. "
+            "Provisioned by dbml-sharepoint from simple-test for group Enterprise Reader.",
+        member_pages=[[{"Id": 501}]],
+    )
+    assert not _security_errors(summary), summary
+    assert _group_settings_writes(calls, "Enterprise Reader"), (
+        "the group's settings were never reconciled, so the run proves nothing about its members"
+    )
+    assert not _removals(calls), _removals(calls)
+    assert not _membership_writes(calls), _membership_writes(calls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_group_marked_by_another_family_with_members_is_refused() -> None:
     """The gate must compare the exact marker this declaration expects, not
     the shared prefix every family's marker starts with. A group another
