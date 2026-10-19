@@ -1913,7 +1913,9 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     assert not any("items(undefined)" in c["url"] for c in calls)
 
 
-def test_exact_reconcile_leaves_folder_grants_when_no_folder_policy(tmp_path: Path) -> None:
+def test_exact_reconcile_aborts_on_a_hand_scoped_folder_when_no_folder_policy(
+    tmp_path: Path,
+) -> None:
     """`exact` on the library with no `folders` policy writes nothing to a hand-scoped folder.
 
     The descendant guard names the folder and stops the run, so the folder's own
