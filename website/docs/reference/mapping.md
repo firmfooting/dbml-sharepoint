@@ -2529,9 +2529,10 @@ automation the breadth this group exists to avoid. Which narrower level a flow
 needs, `Contribute`, `Edit` or a level of your own, depends on what it writes.
 
 **`Automation Contribute No Delete` is a tool-owned level.** Its marker names no
-family, so every family that declares it shares one level per site. Every
-family must declare the identical permission bitmap, because the last deploy
-that MERGEs it wins.
+family, so every family that declares it shares one level per site. Core fixes
+its bitmap (Contribute without the delete permissions) and the validator
+refuses any other `base_permissions` for the name, because the last deploy that
+MERGEs it wins. The name also cannot appear in any level's `renamed_from`.
 
 **Why the `Managed` prefix.** These are the only groups the tool names for
 itself rather than for your organisation, so they carry a neutral

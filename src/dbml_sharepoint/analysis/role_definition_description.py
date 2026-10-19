@@ -67,8 +67,31 @@ from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 #: still fits, which `test_template_standard.py` holds.
 LEVEL_MARKER_GROWTH_RESERVE = 21
 
-#: Levels the tool names for itself, one per site whichever family declares them.
-TOOL_OWNED_LEVEL_NAMES: frozenset[str] = frozenset({"Automation Contribute No Delete"})
+#: Levels the tool names for itself, one per site whichever family declares them,
+#: with the one bitmap every declaration must carry (Contribute minus the delete bits).
+TOOL_OWNED_LEVELS: dict[str, frozenset[str]] = {
+    "Automation Contribute No Delete": frozenset({
+        "ViewListItems",
+        "AddListItems",
+        "EditListItems",
+        "OpenItems",
+        "ViewVersions",
+        "ManagePersonalViews",
+        "ViewFormPages",
+        "Open",
+        "ViewPages",
+        "CreateSSCSite",
+        "BrowseDirectories",
+        "BrowseUserInfo",
+        "AddDelPrivateWebParts",
+        "UpdatePersonalWebParts",
+        "UseClientIntegration",
+        "UseRemoteAPIs",
+        "CreateAlerts",
+        "EditMyUserInfo",
+    }),
+}
+TOOL_OWNED_LEVEL_NAMES: frozenset[str] = frozenset(TOOL_OWNED_LEVELS)
 
 
 def marker_for_level(family: str, level_name: str) -> str:

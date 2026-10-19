@@ -41,7 +41,10 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
-from dbml_sharepoint.analysis.role_definition_description import level_description_budget
+from dbml_sharepoint.analysis.role_definition_description import (
+    TOOL_OWNED_LEVELS,
+    level_description_budget,
+)
 from dbml_sharepoint.analysis.validator import validate, validate_against_mapping, validate_all
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -2888,6 +2891,46 @@ def _level_findings(name: str, *, description: str = "test") -> list[Finding]:
                 groups=[], default_policy=None, overrides={},
             ),
         ),
+    )
+
+
+_SHARED = "Automation Contribute No Delete"
+
+
+def _owned_findings(
+    *, name: str = _SHARED, perms: list[str], renamed_from: list[str],
+) -> list[Finding]:
+    return validate_against_mapping(
+        make_schema(make_table("Risk"), project_name="risk_register"),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[CustomPermissionLevel(
+                    name=name, description="test", base_permissions=perms,
+                    renamed_from=tuple(renamed_from),
+                )],
+                groups=[], default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def test_a_tool_owned_level_with_a_divergent_bitmap_is_refused() -> None:
+    canonical = sorted(TOOL_OWNED_LEVELS[_SHARED])
+    only(
+        _owned_findings(perms=[*canonical, "DeleteListItems"], renamed_from=[]),
+        FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+    )
+    none_of(
+        _owned_findings(perms=canonical, renamed_from=[]),
+        FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+    )
+
+
+def test_a_tool_owned_level_name_cannot_be_a_rename_source() -> None:
+    only(
+        _owned_findings(name="XX Writers", perms=["ViewListItems"], renamed_from=[_SHARED]),
+        FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
     )
 
 

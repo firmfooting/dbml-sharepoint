@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.permissions import (
     DERIVED_BUILT_IN_LEVELS,
 )
 from dbml_sharepoint.analysis.role_definition_description import (
+    TOOL_OWNED_LEVELS,
     level_description_budget,
     marker_for_level,
 )
@@ -397,6 +398,34 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
     return findings
 
 
+def _tool_owned_levels(perms: PermissionsConfig) -> list[Finding]:
+    """A tool-owned level is shared by every family: its bitmap is fixed by core
+    and its marker names no family, so it cannot be a rename source."""
+    findings: list[Finding] = []
+    owned = {n.casefold(): (n, bits) for n, bits in TOOL_OWNED_LEVELS.items()}
+    for lvl in perms.levels:
+        hit = owned.get(lvl.name.casefold())
+        if hit and set(lvl.base_permissions) != hit[1]:
+            findings.append(Finding(
+                FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+                f"permission_levels[{lvl.name!r}]: base_permissions differ from "
+                f"the canonical set for this tool-owned level "
+                f"({sorted(set(lvl.base_permissions) ^ hit[1])} differ)",
+                location=_LEVELS,
+            ))
+        findings.extend(
+            Finding(
+                FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE,
+                f"permission_levels[{lvl.name!r}]: renamed_from names the "
+                f"tool-owned level {old!r}, which cannot be renamed away from",
+                location=_LEVELS,
+            )
+            for old in lvl.renamed_from
+            if old.casefold() in owned
+        )
+    return findings
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     table_names = vc.table_names
@@ -481,6 +510,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_LEVELS,
                 ))
             seen_level_names.setdefault(key, lvl.name)
+
+        findings.extend(_tool_owned_levels(perms))
 
         # permission_levels[*].base_permissions must be known bits.
         for lvl in perms.levels:

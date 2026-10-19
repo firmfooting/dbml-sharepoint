@@ -59,6 +59,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS
 from dbml_sharepoint.analysis.role_definition_description import (
     TOOL_OWNED_LEVEL_NAMES,
+    TOOL_OWNED_LEVELS,
     level_description_budget,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
@@ -2467,7 +2468,12 @@ def _contribute_names() -> set[str]:
 
 
 #: Contribute minus the two delete bits, so an automation account can write but not remove.
-PINNED_SHARED_LEVEL_PERMISSIONS = _contribute_names() - {"DeleteListItems", "DeleteVersions"}
+PINNED_SHARED_LEVEL_PERMISSIONS = TOOL_OWNED_LEVELS[_SHARED_LEVEL]
+
+
+def test_the_canonical_bitmap_is_contribute_minus_delete() -> None:
+    no_delete = _contribute_names() - {"DeleteListItems", "DeleteVersions"}
+    assert no_delete == PINNED_SHARED_LEVEL_PERMISSIONS
 
 
 def _declared_shared_levels(mapping_path: Path) -> list[cabc.Sequence[str]]:

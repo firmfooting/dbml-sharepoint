@@ -1607,6 +1607,19 @@ FINDING_HELP: dict[FindingCode, str] = {
         "locale-dependent, so this cannot catch the collision on a "
         "non-English tenant."
     ),
+    FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES: (
+        "A `permission_levels:` entry declares a tool-owned level with a "
+        "`base_permissions` set other than the one core fixes for it. Every "
+        "family on a site shares that level and the last deploy MERGEs it, "
+        "so a divergent set would rewrite the grant for all of them. Declare "
+        "exactly the canonical permissions listed in the mapping reference."
+    ),
+    FindingCode.TOOL_OWNED_LEVEL_RENAME_SOURCE: (
+        "A `permission_levels:` entry lists a tool-owned level name in "
+        "`renamed_from`. That name carries no family marker, so rename "
+        "planning would MERGE the shared level into the family's own level. "
+        "Remove the entry; a tool-owned level cannot be renamed away from."
+    ),
     FindingCode.POLYMORPHIC_COLUMN_NOT_RENDERED: (
         "A `polymorphic_patterns:` entry's `field` or `discriminator` "
         "names a column the deploy never creates."
