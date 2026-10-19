@@ -1918,22 +1918,31 @@ def test_exact_reconcile_aborts_on_a_hand_scoped_folder_when_no_folder_policy(
 ) -> None:
     """`exact` on the library with no `folders` policy writes nothing to a hand-scoped folder.
 
-    The descendant guard names the folder and stops the run, so the folder's own
-    inheritance and role assignments are neither reset nor pruned.
+    The descendant guard names the folder and stops the run, so no
+    destructive ACL write happens first (a list-level break with `clearSubscopes=true`,
+    a reset, or an item role write would erase the folder's grants), and the
+    already-existing folder is not created again.
     """
     mapping = _FOLDER_ACL_LIBRARY.split("  folders:\n")[0]
     assert "list_permissions" in mapping and "folders:\n    Escalation" not in mapping
     summary, calls = _folder_acl_run(
-        tmp_path, mapping=mapping, flags="globalThis.__folderScoped = true;\n",
+        tmp_path, mapping=mapping,
+        flags="globalThis.__folderCreated = true;\nglobalThis.__folderScoped = true;\n",
     )
     messages = [e["error"] for e in summary["errors"]]
     assert any("1 undeclared item/folder unique permission scope(s)" in m for m in messages), \
         messages
     assert any("Field operations" in m for m in messages), messages
-    folder_writes = [
-        c["url"] for c in calls if "/items(" in c["url"] and c["method"] != "GET"
+    # A list-level break with clearSubscopes=false is allowed: it leaves descendant scopes.
+    acl_writes = [
+        c["url"] for c in calls if c["method"] != "GET" and (
+            "clearsubscopes=true" in c["url"].lower()
+            or "resetroleinheritance" in c["url"].lower()
+            or "/folders/add(" in c["url"]
+            or ("/items(" in c["url"] and "role" in c["url"].lower())
+        )
     ]
-    assert folder_writes == [], folder_writes
+    assert acl_writes == [], acl_writes
 
 
 def test_a_no_op_folder_policy_does_not_excuse_an_already_unique_folder(tmp_path: Path) -> None:

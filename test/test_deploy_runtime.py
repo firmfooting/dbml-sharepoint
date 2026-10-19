@@ -7756,11 +7756,12 @@ def test_a_marked_group_with_members_is_adopted_silently() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_redeploy_leaves_members_added_to_an_empty_group() -> None:
-    """A declared group that enrols nobody keeps a member somebody added by hand.
+def test_a_group_with_no_enrolment_plan_keeps_a_member_added_by_hand() -> None:
+    """With no identity supplied there is no enrolment plan, so a member added by hand stays.
 
-    The group is additive (the default), so the reconcile writes its settings
-    and neither removes the extra member nor adds anyone.
+    The reconcile writes the group's settings and neither removes the extra member nor
+    adds anyone. The additive enrolment path itself is pinned by
+    `test_an_additive_group_warns_about_an_unmanaged_extra_and_keeps_it`.
     """
     summary, calls, _ = _group_gate_deploy(
         _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
