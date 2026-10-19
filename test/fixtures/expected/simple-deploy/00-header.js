@@ -91,7 +91,7 @@
     "level_on_fail": "BLOCKED"
   },
   {
-    "description": "CSOM ProcessQuery available (group owner correction)",
+    "description": "CSOM ProcessQuery available (group owner correction, hidden field links)",
     "key": "process_query",
     "level_on_fail": "WARN"
   },

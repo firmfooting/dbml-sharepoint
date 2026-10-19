@@ -4668,9 +4668,14 @@ _FIELD_LINK_ID = "55555555-5555-5555-5555-555555555555"
 
 
 def _field_link_run(
-    tmp_path: Path, *, declared: bool, hidden_now: bool, ignore_writes: bool = False,
+    tmp_path: Path, *, declared: bool | None, hidden_now: bool, ignore_writes: bool = False,
+    drop_on_write: bool = False,
 ) -> tuple[Json, list[Json]]:
-    """Deploy one calculated column against a site whose field link holds `hidden_now`."""
+    """Deploy one calculated column against a site whose field link holds `hidden_now`.
+
+    `declared` None writes no `form_visibility` block at all; False writes one
+    that leaves the calculated column out.
+    """
     table_names = ("Escalation",)
     held = _declared_list_descriptions(tmp_path, table_names=table_names)
     harness = _ADOPTED_HARNESS.replace(
@@ -4680,6 +4685,13 @@ def _field_link_run(
         f"\nFIELD_LINKS.push({{ Id: '{_FIELD_LINK_ID}', Name: 'ReasonEcho',"
         f" Hidden: {json.dumps(hidden_now)} }});"
         f"\nIGNORE_FIELD_LINK_WRITES = {json.dumps(ignore_writes)};\n"
+    ) + (
+        "const writeThenDropLinks = globalThis.fetch;\n"
+        "globalThis.fetch = async (url, opts = {}) => {\n"
+        "  const answer = await writeThenDropLinks(url, opts);\n"
+        "  if (String(url).includes('/ProcessQuery')) FIELD_LINKS.length = 0;\n"
+        "  return answer;\n"
+        "};\n" if drop_on_write else ""
     )
     summary, calls, _output = _run_capturing_calls(
         harness,
@@ -4687,8 +4699,9 @@ def _field_link_run(
             tmp_path,
             "display_names:\n  mode: auto\n"
             "calculated_formulas:\n  Escalation:\n    ReasonEcho: '=[EscalationReason]&\"\"'\n"
-            + ("form_visibility:\n  Escalation:\n    columns:\n      ReasonEcho: hidden\n"
-               if declared else ""),
+            + ("form_visibility:\n  Escalation:\n    columns:\n"
+               f"      {'ReasonEcho: hidden' if declared else 'EscalationReason: visible'}\n"
+               if declared is not None else ""),
             table_names=table_names,
             extra_lines=("EscalationReason nvarchar", "ReasonEcho calculated_text"),
         ),
@@ -4727,9 +4740,32 @@ def test_removing_the_declaration_shows_the_calculated_column_again(tmp_path: Pa
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_entity_with_no_form_visibility_block_has_its_field_links_left_alone(
+    tmp_path: Path,
+) -> None:
+    summary, writes = _field_link_run(tmp_path, declared=None, hidden_now=True)
+    assert summary["errors"] == [], summary["errors"]
+    assert writes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_field_link_the_site_does_not_retain_fails_closed(tmp_path: Path) -> None:
     summary, writes = _field_link_run(
         tmp_path, declared=True, hidden_now=False, ignore_writes=True,
+    )
+    assert len(writes) == 1, writes
+    failures = [
+        e for e in summary["errors"] if e.get("phase") and e["phase"].text == pn("field_links")
+    ]
+    assert [e["error"].text for e in failures] == [
+        "did not retain the declared Hidden on ReasonEcho",
+    ], summary["errors"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_link_missing_from_the_read_back_fails_closed(tmp_path: Path) -> None:
+    summary, writes = _field_link_run(
+        tmp_path, declared=True, hidden_now=False, drop_on_write=True,
     )
     assert len(writes) == 1, writes
     failures = [

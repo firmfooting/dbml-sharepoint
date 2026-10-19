@@ -507,6 +507,19 @@ type (Phase {{ phase_num['forms'] }}); lists without a declaration are never tou
 _(none declared)_
 {% endif %}
 
+## Field links
+
+{% if field_links %}
+{% for link in field_links %}
+- {{ link.list }}.{{ link.name }}: {{ link.state }}
+{% endfor %}
+
+Calculated columns of an entity with a `form_visibility` block have `Hidden` set on
+the default item content type's field link (Phase {{ phase_num['field_links'] }}).
+{% else %}
+_(none declared)_
+{% endif %}
+
 ## Permissions
 
 ### Custom permission levels

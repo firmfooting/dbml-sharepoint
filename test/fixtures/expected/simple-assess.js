@@ -89,7 +89,7 @@
     "level_on_fail": "BLOCKED"
   },
   {
-    "description": "CSOM ProcessQuery available (group owner correction)",
+    "description": "CSOM ProcessQuery available (group owner correction, hidden field links)",
     "key": "process_query",
     "level_on_fail": "WARN"
   },
@@ -1552,8 +1552,8 @@
     }
 
     // CSOM ProcessQuery availability (read-only Current-Web-Title query),
-    // needed for group owner correction when the pack declares groups.
-    if (TARGETS.declares_groups) {
+    // needed for group owner correction and hidden field links.
+    if (TARGETS.declares_groups || (TARGETS.list_field_links || []).length > 0) {
       try {
         const digest = await getDigest();
         const body =
@@ -1566,9 +1566,9 @@
           headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'text/xml', 'X-RequestDigest': digest },
           body,
         });
-        finding(2, 'process_query', r.ok ? 'PASS' : 'WARN', r.ok ? 'CSOM ProcessQuery responds (group owner correction available).' : `ProcessQuery returned HTTP ${r.status}; owner correction will be degraded.`);
+        finding(2, 'process_query', r.ok ? 'PASS' : 'WARN', r.ok ? 'CSOM ProcessQuery responds (group owner correction and hidden field links available).' : `ProcessQuery returned HTTP ${r.status}; group owner correction and hidden field links will be degraded.`);
       } catch (err) {
-        finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); owner correction will be degraded.`);
+        finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); group owner correction and hidden field links will be degraded.`);
       }
     }
 

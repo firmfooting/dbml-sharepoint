@@ -2023,7 +2023,8 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "2\tversion_trim_mode\tNOT-ASSESSABLE\tThe list answered without "
         "VersionPolicies/DefaultTrimMode, so whether service-managed auto-trim overrides the "
         "declared MajorVersionLimit is unknown.\n"
-        "2\tprocess_query\tPASS\tCSOM ProcessQuery responds (group owner correction available).\n"
+        "2\tprocess_query\tPASS\tCSOM ProcessQuery responds "
+        "(group owner correction and hidden field links available).\n"
         "3\tnot_assessable\tNOT-ASSESSABLE\tPower Automate / Power Apps inventory (lives in "
         "Power Platform APIs, no SharePoint REST surface from site context)\n"
         "3\tnot_assessable\tNOT-ASSESSABLE\tAudit settings (SSOM-only; not exposed via CSOM/REST)\n"
@@ -2818,6 +2819,14 @@ def _hidden_link_pack() -> tuple[Schema, MappingBundle]:
             )},
         ),
     )
+
+
+def test_hidden_field_links_need_the_csom_probe() -> None:
+    schema, bundle = _hidden_link_pack()
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
+    assert "process_query" in keys
 
 
 def test_assess_targets_carry_the_hidden_each_calculated_field_link_must_hold() -> None:

@@ -6,7 +6,7 @@ A calculated column cannot be hidden by ShowIn*Form or a formatter, only by
 both read this one answer.
 """
 
-from dbml_sharepoint.model.mapping_types import EntitySection, FormVisibility, Mapping
+from dbml_sharepoint.model.mapping_types import FormVisibility, Mapping
 
 
 def is_hidden(declared: FormVisibility) -> bool:
@@ -16,12 +16,13 @@ def is_hidden(declared: FormVisibility) -> bool:
 def hidden_field_links(mapping: Mapping, entity: str) -> dict[str, bool]:
     """Calculated column -> the `Hidden` its field link must carry.
 
-    An undeclared column is un-hidden (so removing a declaration reverts it),
-    unless the entity reconciles only what it lists.
+    Only an entity with a `form_visibility` block is managed. Inside one, an
+    undeclared column is un-hidden (so removing a declaration reverts it),
+    unless the block reconciles only what it lists.
     """
     section = mapping.form_visibility.get(entity)
     if section is None:
-        section = EntitySection()
+        return {}
     return {
         column: column in section.columns and is_hidden(section.columns[column])
         for column in mapping.calculated_formulas.get(entity, {})

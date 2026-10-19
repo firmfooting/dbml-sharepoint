@@ -68,7 +68,7 @@ def validate_form_visibility(
              f"reached -- drop one or the other"),
             location=at,
         ))
-    if not new and required and not has_default:
+    if not is_calculated and not new and required and not has_default:
         # Statically provable: the gate is false on the New form whatever
         # `when` says, so every create would fail its required check. The
         # equivalent hidden_on_forms case is only a warning today; this is
@@ -79,7 +79,7 @@ def validate_form_visibility(
              f"form, so every save would fail"),
             location=at,
         ))
-    elif when is not None and required and not has_default:
+    elif not is_calculated and when is not None and required and not has_default:
         # NOT provable: whether the predicate holds on the New form depends
         # on what the person types. A warning, per the spec.
         findings.append(Finding(

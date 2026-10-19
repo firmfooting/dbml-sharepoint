@@ -61,7 +61,7 @@
         }
         if (drifted.length > 0) {
           const after = await readLinks();
-          const stale = drifted.filter(([name, hidden]) => after.has(name) && after.get(name).Hidden !== hidden);
+          const stale = drifted.filter(([name, hidden]) => !after.has(name) || after.get(name).Hidden !== hidden);
           if (stale.length > 0) {
             throw new Error(`did not retain the declared Hidden on ${stale.map(([name]) => name).join(', ')}`);
           }

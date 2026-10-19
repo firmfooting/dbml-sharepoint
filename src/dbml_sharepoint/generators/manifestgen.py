@@ -284,6 +284,12 @@ def generate_manifest(
         for row in schema_json["form_formatting"]
     ]
 
+    field_links = [
+        {"list": row["list"], "name": name, "state": "hidden" if hidden else "shown"}
+        for row in schema_json["field_links"]
+        for name, hidden in row["hidden"].items()
+    ]
+
     entity_by_title = {
         bundle.mapping.list_title(name): name
         for name in bundle.mapping.entities if _deployed(name)
@@ -397,6 +403,7 @@ def generate_manifest(
         reconcile_modes=reconcile_modes,
         list_validation=list_validation,
         form_formatting=form_formatting,
+        field_links=field_links,
         retention=retention,
         prefix=bundle.mapping.prefix,
         schema_json=schema_json,

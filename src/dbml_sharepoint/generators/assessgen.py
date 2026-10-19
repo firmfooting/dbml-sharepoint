@@ -497,10 +497,11 @@ def derive_requirements(
     if t.requires_manage_permissions:
         reqs.append(Requirement("manage_permissions_bit",
                                 "Operator holds ManagePermissions", "BLOCKED"))
-    if t.declares_groups:
+    if t.declares_groups or t.list_field_links:
         reqs.append(Requirement(
             "process_query",
-            "CSOM ProcessQuery available (group owner correction)", "WARN"))
+            "CSOM ProcessQuery available (group owner correction, hidden field links)",
+            "WARN"))
     if t.declares_seal:
         reqs.append(Requirement("sealed_surface",
                                 "SP.Field.Sealed property surface present", "WARN"))

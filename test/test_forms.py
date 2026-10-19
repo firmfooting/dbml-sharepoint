@@ -156,6 +156,33 @@ def test_a_calculated_column_can_be_declared_hidden() -> None:
     assert _visibility_findings(is_calculated=True, new=False, existing=False) == []
 
 
+def test_a_required_calculated_column_declared_hidden_is_not_a_required_hidden_column() -> None:
+    """A calculated column never renders on New and deploys optional."""
+    assert _visibility_findings(
+        is_calculated=True, new=False, existing=False, required=True,
+    ) == []
+
+
+def test_only_an_entity_with_a_form_visibility_block_has_field_links_managed() -> None:
+    from dbml_sharepoint.analysis.field_links import hidden_field_links
+    from dbml_sharepoint.model.mapping_types import EntitySection, FormVisibility
+
+    formulas = {"Asset": {"Echo": "=[Title]", "Other": "=[Title]"}}
+    hidden = FormVisibility(new=False, existing=False)
+    unmanaged = make_bundle(entities=["Asset"], calculated_formulas=formulas).mapping
+    assert hidden_field_links(unmanaged, "Asset") == {}
+    exact = make_bundle(
+        entities=["Asset"], calculated_formulas=formulas,
+        form_visibility={"Asset": EntitySection(columns={"Echo": hidden})},
+    ).mapping
+    assert hidden_field_links(exact, "Asset") == {"Echo": True, "Other": False}
+    declared = make_bundle(
+        entities=["Asset"], calculated_formulas=formulas,
+        form_visibility={"Asset": EntitySection(reconcile="declared", columns={"Echo": hidden})},
+    ).mapping
+    assert hidden_field_links(declared, "Asset") == {"Echo": True}
+
+
 @pytest.mark.parametrize(("new", "existing", "with_when"), [
     (True, True, False), (False, True, False), (True, False, False), (False, False, True),
 ])
