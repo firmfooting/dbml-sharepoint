@@ -160,8 +160,7 @@ def test_removed_default_on_a_declared_folder_is_deleted_from_storage() -> None:
 
 
 def test_folder_dropped_from_the_mapping_keeps_its_entries() -> None:
-    # FolderB is declared as a folder but no longer has defaults: its entry goes.
-    # HandMade was never declared as a folder: its entry stays.
+    # FolderB is declared but has no defaults now, so its entry goes; undeclared HandMade stays.
     held = _doc(
         _entry("FolderA", Division="Corporate"), _entry("FolderB", Division="Old"),
         _entry("HandMade", Division="Hand"),

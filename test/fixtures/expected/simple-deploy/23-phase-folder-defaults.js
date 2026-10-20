@@ -1,7 +1,7 @@
   markPhase('Phase 2.3: folder default values');
   // === Phase 2.3: folder default values ===
   log('INFO', 'Starting Phase 2.3: folder default values.');
-  // The stored file applies nothing until the library has the location-based defaults ItemAdded receiver, so register it first.
+  // The stored file applies nothing until the library has the location-based defaults ItemAdded receiver, which is registered once the file is reconciled.
   const DEFAULTS_RECEIVER_CLASS = 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver';
   const DEFAULTS_RECEIVER_ASSEMBLY = 'Microsoft.Office.DocumentManagement, Version=16.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c';
   const ITEM_ADDED = 10001;
@@ -48,8 +48,7 @@
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const xmlUnescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  // Entries are matched as text, not parsed as DOM: the file holds nothing else
-  // of interest and a preserved entry must come back byte for byte.
+  // Entries are matched as text, not parsed as DOM, so a preserved entry comes back byte for byte.
   function parseFolderDefaults(text) {
     const whole = String(text).trim();
     if (whole === '') return [];
