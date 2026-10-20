@@ -8,13 +8,12 @@ from _node import NODE
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.formula.functions import SUPPORTED, function_names
 from dbml_sharepoint.analysis.formula.parse import parse_formula
+from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
-from dbml_sharepoint.analysis.formula.translate import (
-    PENDING_DATES,
-    FormulaRefusal,
-    TranslationContext,
-    translate_column,
-)
+from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
+
+# Their parity cases are in test_formula_dates.py.
+DATE_FUNCTIONS = {"DATE", "YEAR", "MONTH", "DAY"}
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
@@ -24,6 +23,7 @@ KINDS: dict[str, ColumnKind] = {
     "Name": "text",
     "Score": "number",
     "Due": "date",
+    "Created": "date",
 }
 CHOICES = {"Status": ("Open", "Closed"), "Risk": ("Low", "High")}
 # Two offsets from the site zone: the translation must not depend on the browser's zone.
@@ -113,7 +113,7 @@ def test_translation_matches_the_reference(formula: str, result: str) -> None:
 
 def test_every_supported_function_has_a_parity_case() -> None:
     exercised = set().union(*(function_names(parse_formula(f)) for f, _ in PARITY.values()))
-    assert set(SUPPORTED) - exercised == PENDING_DATES
+    assert set(SUPPORTED) - exercised == DATE_FUNCTIONS
 
 
 def test_text_equality_is_case_insensitive() -> None:
@@ -164,9 +164,8 @@ REFUSED = [
     ("[Score]+1", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Score"),
     ("[Qty]+1", "yesno", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "yesno"),
     ("[Qty]>1", "text", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "yes/no"),
-    ("DATE(2026,1,1)", "date", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "DATE"),
-    ("YEAR([Due])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "YEAR"),
-    ("[Due]", "date", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "Due"),
+    ("YEAR([Due])", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Due"),
+    ("[Due]", "date", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Due"),
     ("ROUND([Qty]+0,2)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ROUND"),
     ("LEFT([Name],[Qty])", "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "LEFT"),
     ("ISBLANK([Qty])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ISBLANK"),

@@ -3,7 +3,7 @@
 import itertools
 import math
 from collections.abc import Iterator, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from _format_eval import evaluate_rows
@@ -12,6 +12,7 @@ from _formula_reference import DEFAULT_ZONE, ColumnError, evaluate, instant
 from dbml_sharepoint.analysis.formula.functions import refs
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
+from dbml_sharepoint.analysis.timezones import zone_table
 
 # Text ordering (< >) is unmeasured, so the grid's text values are not evidence for it.
 NUMBERS: tuple[float | None, ...] = (None, 0.0, 1.0, 3.0, 12.0, -2.0)
@@ -36,6 +37,25 @@ DATES: tuple[date | None, ...] = (
     date(2026, 10, 21),
 )
 UNLISTED = "Unlisted value"
+# System date columns hold an instant with a time of day and are never blank.
+SYSTEM_DATES = ("Created", "Modified")
+
+
+def instants(zone: str) -> list[datetime]:
+    """Instants a system date column may hold: either side of local midnight and noon on ordinary
+    days, new year, and the days around each daylight change of 2024 to 2026 in the site zone."""
+    table = zone_table(zone)
+    days = {date(2024, 2, 29), date(2025, 12, 31), date(2026, 1, 1), date(2026, 6, 15)}
+    for at, _ in table.transitions:
+        if 2024 <= at.year <= 2026:
+            local = at.astimezone(ZoneInfo(zone)).date()
+            days |= {local + timedelta(days=n) for n in (-1, 0, 1)}
+    found: list[datetime] = []
+    for day in sorted(days):
+        midnight = datetime(day.year, day.month, day.day, tzinfo=ZoneInfo(zone)).astimezone(UTC)
+        found += [midnight - timedelta(seconds=1), midnight, midnight + timedelta(seconds=1)]
+        found.append(midnight + timedelta(hours=12))
+    return found
 
 
 def _choice_values(listed: tuple[str, ...]) -> list[str | None]:
@@ -45,7 +65,9 @@ def _choice_values(listed: tuple[str, ...]) -> list[str | None]:
 
 
 def grid(
-    columns: Mapping[str, ColumnKind], choices: Mapping[str, tuple[str, ...]]
+    columns: Mapping[str, ColumnKind],
+    choices: Mapping[str, tuple[str, ...]],
+    zone: str = DEFAULT_ZONE,
 ) -> Iterator[dict[str, object]]:
     """Every combination of each column's hard values; a blank appears in each column."""
     domains: list[list[object]] = []
@@ -56,7 +78,7 @@ def grid(
             case "text":
                 domains.append(list(TEXTS))
             case "date":
-                domains.append(list(DATES))
+                domains.append(list(instants(zone)) if name in SYSTEM_DATES else list(DATES))
             case "choice":
                 domains.append(list(_choice_values(choices.get(name, ()))))
     for combo in itertools.product(*domains):
@@ -109,7 +131,7 @@ def error_rows(
     stored = _stored(formula, formulas, kinds)
     return [
         r
-        for r in grid(stored, choices)
+        for r in grid(stored, choices, zone)
         if isinstance(_reference(formula, r, formulas, kinds, zone), ColumnError)
     ]
 
@@ -119,11 +141,16 @@ def _json_row(
 ) -> dict[str, object]:
     # A blank text or choice field reads as '' in a formatter (Learn's `[$Field] == ''` blank test).
     return {
-        k: instant(v, zone)
-        if isinstance(v, date)
-        else ("" if v is None and kinds[k] in ("text", "choice") else v)
-        for k, v in row.items()
+        k: _json_value(v, kinds[k], zone) for k, v in row.items()
     }
+
+
+def _json_value(value: object, kind: ColumnKind, zone: str) -> object:
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, date):
+        return instant(value, zone)
+    return "" if value is None and kind in ("text", "choice") else value
 
 
 def _same(expected: object, got: object, zone: str) -> bool:
@@ -140,8 +167,9 @@ def _same(expected: object, got: object, zone: str) -> bool:
     if isinstance(expected, date):
         if not isinstance(got, str):
             return False
-        moment = datetime.fromisoformat(got).astimezone(UTC)
-        return moment.astimezone(ZoneInfo(zone)).date() == expected
+        # A date result is the instant of site-local midnight, not merely a moment on that day.
+        midnight = datetime(expected.year, expected.month, expected.day, tzinfo=ZoneInfo(zone))
+        return datetime.fromisoformat(got) == midnight
     return got == expected
 
 
@@ -160,7 +188,7 @@ def check_parity(
 
     Rows on which the formula is a column error are skipped (see `error_rows`).
     """
-    rows = list(grid(_stored(formula, formulas, kinds), choices))
+    rows = list(grid(_stored(formula, formulas, kinds), choices, zone))
     expected = [_reference(formula, r, formulas, kinds, zone) for r in rows]
     kept = [(r, e) for r, e in zip(rows, expected, strict=True) if not isinstance(e, ColumnError)]
     assert kept, "every grid row is a column error, so nothing was compared"

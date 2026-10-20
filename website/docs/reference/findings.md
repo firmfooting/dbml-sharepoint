@@ -210,6 +210,7 @@ dbml-sharepoint explain unknown_column_type
 | `form_formula_result_unsupported` | error | A calculated column's result is not text, number or date, or the formula's result does not match the column's declared type. |
 | `form_formula_unparseable` | error | A calculated column's formula cannot be read as a header formula: it does not parse, refers to itself, or mixes types in a way the formatting language cannot reproduce. |
 | `form_formula_volatile` | error | A calculated column's formula calls TODAY or NOW. Its value changes with no column changing, so a header could not match the column. |
+| `form_formula_zone_unsupported` | error | A calculated column's date formula needs the site's time zone, and the zone's daylight rule is not one offset, or two offsets switched on a weekday of a month, over recent enough years. A header could not cross the day at the site's local midnight. |
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
 | `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |
 | `form_section_field_not_rendered` | error | A form body section names a field the entity does not render. |

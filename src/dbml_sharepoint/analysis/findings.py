@@ -535,6 +535,7 @@ class FindingCode(StrEnum):
     FORM_FORMULA_VOLATILE = "form_formula_volatile", "error"
     FORM_FORMULA_COLUMN_UNSUPPORTED = "form_formula_column_unsupported", "error"
     FORM_FORMULA_RESULT_UNSUPPORTED = "form_formula_result_unsupported", "error"
+    FORM_FORMULA_ZONE_UNSUPPORTED = "form_formula_zone_unsupported", "error"
 
     REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form", "error"
     REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = (
