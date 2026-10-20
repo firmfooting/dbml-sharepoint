@@ -232,6 +232,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // {read: n, mode: 'status' | 'null'} makes the n-th ForceCheckout read answer
     // HTTP 404 or an unreported value.
     const FORCE_CHECKOUT_FAULT = null;
+    // EnableFolderCreation and DraftVersionVisibility, one pair for the site.
+    // IGNORE_LIBRARY_PROP_WRITES answers the MERGE 200 and keeps the old values.
+    const IGNORE_LIBRARY_PROP_WRITES = false;
+    const libraryProps = { EnableFolderCreation: true, DraftVersionVisibility: 0 };
     const DROP_LIST_MARKER_AFTER_READS = null;
     const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
     // Drop every list's marker the moment a named phase announces itself. A
@@ -774,6 +778,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
         return { d: { EnableAttachments: attachmentsEnabled } };
       }
+      const propSelect = /\$select=((?:EnableFolderCreation|DraftVersionVisibility)[\w,]*)/
+        .exec(url);
+      if (url.includes('getbytitle') && propSelect) {
+        return { d: Object.fromEntries(propSelect[1].split(',').map(n => [n, libraryProps[n]])) };
+      }
       if (url.includes('getbytitle') && url.includes('ForceCheckout')) {
         globalThis.__forceCheckoutReads = (globalThis.__forceCheckoutReads || 0) + 1;
         if (FORCE_CHECKOUT_FAULT && FORCE_CHECKOUT_FAULT.read === globalThis.__forceCheckoutReads) {
@@ -923,6 +932,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if ((opts.method || 'GET') === 'POST' && opts.body
           && (/getbytitle\('[^/]*'\)$/.test(u) || /lists\(guid'[^']+'\)$/.test(u))) {
         const parsed = JSON.parse(opts.body);
+        for (const name of Object.keys(libraryProps)) {
+          if (parsed[name] !== undefined && !IGNORE_LIBRARY_PROP_WRITES) {
+            libraryProps[name] = parsed[name];
+          }
+        }
         if (parsed.ForceCheckout !== undefined && !IGNORE_FORCE_CHECKOUT_WRITES) {
           forceCheckout = parsed.ForceCheckout;
         }
@@ -1771,6 +1785,8 @@ def _run_adopted_deploy(
     force_checkout_live: bool = True,
     ignore_force_checkout_writes: bool = False,
     force_checkout_fault: Mapping[str, object] | None = None,
+    library_switches: Mapping[str, bool | int] | None = None,
+    ignore_library_prop_writes: bool = False,
 ) -> tuple[Json, list[Json], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -1821,6 +1837,9 @@ def _run_adopted_deploy(
         "const IGNORE_FORCE_CHECKOUT_WRITES = false;",
         f"const IGNORE_FORCE_CHECKOUT_WRITES = {json.dumps(ignore_force_checkout_writes)};",
     ).replace(
+        "const IGNORE_LIBRARY_PROP_WRITES = false;",
+        f"const IGNORE_LIBRARY_PROP_WRITES = {json.dumps(ignore_library_prop_writes)};",
+    ).replace(
         "const FORCE_CHECKOUT_FAULT = null;",
         f"const FORCE_CHECKOUT_FAULT = {json.dumps(force_checkout_fault)};",
     ).replace(
@@ -1846,6 +1865,9 @@ def _run_adopted_deploy(
         deploy_js = deploy_js.replace(
             '"require_checkout": null', f'"require_checkout": {json.dumps(require_checkout)}',
         )
+    for key, value in (library_switches or {}).items():
+        assert f'"{key}": null' in deploy_js
+        deploy_js = deploy_js.replace(f'"{key}": null', f'"{key}": {json.dumps(value)}')
     # The change writer is wrapped so a test can read the rows it was handed.
     shim = "let logChange = (change) => { DEPLOY_CHANGES.push(change); };"
     assert shim in deploy_js
@@ -1897,6 +1919,8 @@ class _AdoptedKnobs(TypedDict, total=False, closed=True):
     force_checkout_live: bool
     ignore_force_checkout_writes: bool
     force_checkout_fault: Mapping[str, object] | None
+    library_switches: Mapping[str, bool | int] | None
+    ignore_library_prop_writes: bool
 
 
 def _force_checkout_run(
@@ -1992,6 +2016,88 @@ def test_an_unmanaged_require_checkout_is_neither_read_nor_written(tmp_path: Pat
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=None, force_checkout_live=True,
     )
+    assert summary.get("aborted").value is None, summary
+    assert reads == 0 and merges == [] and changes == []
+
+
+def _switch_run(
+    tmp_path: Path, **knobs: Unpack[_AdoptedKnobs],
+) -> tuple[Json, list[Json], list[Json], int]:
+    """Summary, the library-setting MERGE bodies, their change rows and the setting reads."""
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path, _declared_list_descriptions(tmp_path), **knobs,
+    )
+    merges = [
+        Json.loads(c["body"].text) for c in calls
+        if c["method"] == "POST" and c["body"]
+        and ("EnableFolderCreation" in c["body"] or "DraftVersionVisibility" in c["body"])
+    ]
+    reads = sum(
+        1 for c in calls
+        if c["method"] == "GET" and ("$select=EnableFolderCreation" in c["url"]
+                                     or "$select=DraftVersionVisibility" in c["url"])
+    )
+    changes = Json.loads(next(
+        ln for ln in output.splitlines() if ln.startswith("__CHANGES__")
+    ).removeprefix("__CHANGES__"))
+    return summary, merges, [c for c in changes if c["kind"] == "list-setting"], reads
+
+
+def _changed_settings(changes: list[Json]) -> list[str]:
+    return [
+        name for name in ("EnableFolderCreation", "DraftVersionVisibility")
+        for c in changes if c["key"].endswith(f":{name}")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_folder_creation_off_is_written_and_read_back(tmp_path: Path) -> None:
+    summary, merges, changes, reads = _switch_run(
+        tmp_path, library_switches={"enable_folder_creation": False},
+    )
+    assert summary.get("errors") == [], summary["errors"]
+    assert [m["EnableFolderCreation"] for m in merges] == [False]
+    assert "DraftVersionVisibility" not in merges[0]
+    assert reads == 2, "a probe and a read-back"
+    assert _changed_settings(changes) == ["EnableFolderCreation"]
+    assert (changes[0]["oldValue"], changes[0]["newValue"]) == ("true", "false")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_unchanged_folder_creation_issues_no_merge(tmp_path: Path) -> None:
+    summary, merges, changes, reads = _switch_run(
+        tmp_path, library_switches={"enable_folder_creation": True, "draft_version_visibility": 0},
+    )
+    assert summary.get("aborted").value is None, summary
+    assert reads == 1 and merges == [] and changes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_only_the_drifted_setting_is_merged(tmp_path: Path) -> None:
+    _, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"enable_folder_creation": True, "draft_version_visibility": 2},
+    )
+    assert [(m["DraftVersionVisibility"], "EnableFolderCreation" in m) for m in merges] == [
+        (2, False),
+    ]
+    assert _changed_settings(changes) == ["DraftVersionVisibility"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_draft_visibility_readback_mismatch_throws(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"draft_version_visibility": 1},
+        ignore_library_prop_writes=True,
+    )
+    assert merges, "the write must have been attempted"
+    assert changes == []
+    (error,) = [e["error"] for e in summary["errors"] if "DraftVersionVisibility" in e["error"]]
+    assert "'APP_Escalation'" in error and "read back 0" in error
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_unmanaged_settings_are_never_read(tmp_path: Path) -> None:
+    summary, merges, changes, reads = _switch_run(tmp_path)
     assert summary.get("aborted").value is None, summary
     assert reads == 0 and merges == [] and changes == []
 

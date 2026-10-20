@@ -126,6 +126,7 @@
   "library_checkout": [],
   "library_folders": [],
   "library_roots": [],
+  "library_switches": [],
   "list_display_titles": [
     [
       "APP_Project",
@@ -1553,6 +1554,17 @@
         finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; the site holds ForceCheckout ${r.d.ForceCheckout}${r.d.ForceCheckout === declared ? '' : ', which the deploy will change'}.`);
       } else {
         finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; its ForceCheckout could not be read (${r.ok ? 'no boolean reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
+      }
+    }
+
+    // EnableFolderCreation and DraftVersionVisibility, read only and INFO for the same reason.
+    for (const [title, setting, prop, declared] of (TARGETS.library_switches || [])) {
+      const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=${prop}`);
+      const key = `library_setting:${title}:${prop}`;
+      if (r.ok && typeof r.d[prop] === typeof declared) {
+        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; the site holds ${prop} ${r.d[prop]}${r.d[prop] === declared ? '' : ', which the deploy will change'}.`);
+      } else {
+        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; its ${prop} could not be read (${r.ok ? 'no value of the declared type reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }
     }
 

@@ -5988,3 +5988,32 @@ def test_settings_with_any_other_key_is_refused(tmp_path: Path) -> None:
 def test_require_checkout_must_be_a_bool(tmp_path: Path) -> None:
     path = _library_settings(tmp_path, "              require_checkout: maybe")
     _refuses(path, MappingShapeError, "require_checkout")
+
+
+def test_settings_accept_enable_folder_creation_false(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              enable_folder_creation: false")
+    settings = load_mapping(path).mapping.entities["Document"].settings
+    assert settings is not None
+    assert settings.enable_folder_creation is False
+    assert settings.require_checkout is None and settings.draft_version_visibility is None
+
+
+@pytest.mark.parametrize("word", ["reader", "author", "approver"])
+def test_settings_accept_each_draft_visibility(tmp_path: Path, word: str) -> None:
+    path = _library_settings(tmp_path, f"              draft_version_visibility: {word}")
+    settings = load_mapping(path).mapping.entities["Document"].settings
+    assert settings is not None
+    assert settings.draft_version_visibility == word
+
+
+@pytest.mark.parametrize("value", ["editor", "1", "[reader]"])
+def test_settings_reject_draft_visibility_outside_reader_author_approver(
+    tmp_path: Path, value: str,
+) -> None:
+    path = _library_settings(tmp_path, f"              draft_version_visibility: {value}")
+    _refuses(path, MappingValueError, "draft_version_visibility")
+
+
+def test_enable_folder_creation_must_be_a_bool(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              enable_folder_creation: maybe")
+    _refuses(path, MappingShapeError, "enable_folder_creation")

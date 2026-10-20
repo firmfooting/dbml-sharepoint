@@ -31,7 +31,11 @@ from dbml_sharepoint.analysis.role_definition_description import marker_for_leve
 from dbml_sharepoint.analysis.typemap import map_column
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import IdentityValue
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import (
+    DRAFT_VISIBILITY_VALUES,
+    LibrarySettings,
+    MappingBundle,
+)
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -90,6 +94,7 @@ class AssessTargets(TypedDict):
     library_folders: list[JsonValue]
     library_roots: list[JsonValue]
     library_checkout: list[JsonValue]
+    library_switches: list[JsonValue]
     list_view_threshold: int
     index_change_ceiling: int
     declares_groups: bool
@@ -119,6 +124,7 @@ class _Collected:
     library_folders: list[tuple[str, list[str]]]
     library_roots: list[tuple[str, str, int, bool]]
     library_checkout: list[tuple[str, bool]]
+    library_switches: list[tuple[str, str, str, bool | int]]
     list_view_threshold: int
     index_change_ceiling: int
     declares_groups: bool
@@ -137,6 +143,21 @@ def _pairs(rows: list[tuple[str, str]]) -> list[JsonValue]:
 
 def _named_pairs(rows: list[tuple[str, list[tuple[str, str]]]]) -> list[JsonValue]:
     return [[name, _pairs(pairs)] for name, pairs in rows]
+
+
+def _declared_switches(
+    title: str, settings: LibrarySettings | None,
+) -> list[tuple[str, str, str, bool | int]]:
+    """The declared `enable_folder_creation` and `draft_version_visibility`, as stored."""
+    if settings is None:
+        return []
+    visibility = settings.draft_version_visibility
+    declared = (
+        ("enable_folder_creation", "EnableFolderCreation", settings.enable_folder_creation),
+        ("draft_version_visibility", "DraftVersionVisibility",
+         None if visibility is None else DRAFT_VISIBILITY_VALUES[visibility]),
+    )
+    return [(title, key, prop, value) for key, prop, value in declared if value is not None]
 
 
 @guards_resolution
@@ -162,6 +183,7 @@ def assess_targets(
         "library_folders": [[title, list(folders)] for title, folders in t.library_folders],
         "library_roots": [list(root) for root in t.library_roots],
         "library_checkout": [[title, required] for title, required in t.library_checkout],
+        "library_switches": [list(switch) for switch in t.library_switches],
         "list_view_threshold": t.list_view_threshold,
         "index_change_ceiling": t.index_change_ceiling,
         "declares_groups": t.declares_groups,
@@ -243,6 +265,9 @@ def _collect(
     # [[library title, declared require_checkout], ...] for each library that
     # declares one; an unmanaged library is not asked about.
     library_checkout: list[tuple[str, bool]] = []
+    # [[library title, setting key, property, declared value], ...] for the
+    # other two library settings; the declared value is the stored one.
+    library_switches: list[tuple[str, str, str, bool | int]] = []
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
@@ -256,6 +281,9 @@ def _collect(
             library_checkout.append((
                 bundle.mapping.list_title(table_name), entity.settings.require_checkout,
             ))
+        library_switches += _declared_switches(
+            bundle.mapping.list_title(table_name), entity.settings,
+        )
         if entity.internal_name:
             library_roots.append((
                 bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
@@ -346,6 +374,7 @@ def _collect(
         library_folders=library_folders,
         library_roots=library_roots,
         library_checkout=library_checkout,
+        library_switches=library_switches,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.

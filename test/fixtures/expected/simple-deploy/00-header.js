@@ -128,6 +128,7 @@
   "library_checkout": [],
   "library_folders": [],
   "library_roots": [],
+  "library_switches": [],
   "list_display_titles": [
     [
       "APP_Project",
