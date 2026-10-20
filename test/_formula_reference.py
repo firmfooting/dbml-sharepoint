@@ -266,7 +266,7 @@ def _text_function(name: str, s: str, nums: list[float]) -> Value:
         case "LEFT":
             return s[: int(count)]
         case "RIGHT":
-            return s[len(s) - int(count) :] if int(count) else ""
+            return s[max(len(s) - int(count), 0) :] if int(count) else ""
         case "MID":
             return s[int(count) - 1 : int(count) - 1 + int(nums[1])]
         case "LEN":

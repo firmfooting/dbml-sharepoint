@@ -1208,6 +1208,29 @@ FINDING_HELP: dict[FindingCode, str] = {
         "appends them to the last section, so the form still renders -- "
         "but the declared arrangement stops being the deployed one."
     ),
+    FindingCode.FORM_FORMULA_UNPARSEABLE: (
+        "A calculated column's formula cannot be read as a header formula: it "
+        "does not parse, refers to itself, or mixes types in a way the "
+        "formatting language cannot reproduce."
+    ),
+    FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED: (
+        "A calculated column's formula uses a function or operator that has "
+        "no exact formatting-expression equivalent, so a header could differ "
+        "from the column."
+    ),
+    FindingCode.FORM_FORMULA_VOLATILE: (
+        "A calculated column's formula calls TODAY or NOW. Its value changes "
+        "with no column changing, so a header could not match the column."
+    ),
+    FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED: (
+        "A calculated column's formula reads a column that is not a text, "
+        "number, date or choice column, or whose blank value a header cannot "
+        "tell from zero."
+    ),
+    FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
+        "A calculated column's result is not text, number or date, or the "
+        "formula's result does not match the column's declared type."
+    ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "
         "Calculated columns resolve to an empty string there, so the "

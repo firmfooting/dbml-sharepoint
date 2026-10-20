@@ -2,6 +2,8 @@
 
 from dbml_sharepoint.analysis.formula.syntax import Binary, Call, Expr, Neg, Percent, Ref
 
+# Each has an exact formatting equivalent (formatting syntax reference, Microsoft Learn). TRIM is
+# absent: it also collapses inner runs of spaces and formatting has no trim operator.
 # Name to (minimum, maximum) argument count; None means no maximum.
 SUPPORTED: dict[str, tuple[int, int | None]] = {
     "IF": (2, 3),
@@ -22,7 +24,6 @@ SUPPORTED: dict[str, tuple[int, int | None]] = {
     "LEN": (1, 1),
     "LOWER": (1, 1),
     "UPPER": (1, 1),
-    "TRIM": (1, 1),
     "DATE": (3, 3),
     "YEAR": (1, 1),
     "MONTH": (1, 1),

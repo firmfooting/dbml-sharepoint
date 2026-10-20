@@ -528,6 +528,14 @@ class FindingCode(StrEnum):
     # --- form visibility (analysis/forms.py) --------------------------------
     FORM_VISIBILITY_CONDITION_UNREACHABLE = "form_visibility_condition_unreachable", "error"
     FORM_VISIBILITY_ON_A_CALCULATED_COLUMN = "form_visibility_on_a_calculated_column", "error"
+
+    # --- header formulas (analysis/formula/translate.py) ---------------------
+    FORM_FORMULA_UNPARSEABLE = "form_formula_unparseable", "error"
+    FORM_FORMULA_FUNCTION_UNSUPPORTED = "form_formula_function_unsupported", "error"
+    FORM_FORMULA_VOLATILE = "form_formula_volatile", "error"
+    FORM_FORMULA_COLUMN_UNSUPPORTED = "form_formula_column_unsupported", "error"
+    FORM_FORMULA_RESULT_UNSUPPORTED = "form_formula_result_unsupported", "error"
+
     REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form", "error"
     REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = (
         "required_column_may_be_hidden_at_creation", "warning"
