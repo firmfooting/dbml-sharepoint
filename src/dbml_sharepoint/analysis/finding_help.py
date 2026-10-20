@@ -757,10 +757,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS: (
         "A library declares `settings.draft_version_visibility` as `author` or "
-        "`approver` while minor versions are off. SharePoint answers the write "
-        "with success and keeps the value at Reader, so the setting would be "
-        "ignored. Turn `enable_minor_versions` on for the library, or remove "
-        "the key."
+        "`approver` while versioning or minor versions are off. SharePoint "
+        "answers the write with success and keeps the value at Reader, so the "
+        "setting would be ignored. Turn `enable_versioning` and "
+        "`enable_minor_versions` on for the library, or remove the key."
     ),
     FindingCode.FOLDER_NAME_INVALID: (
         "A declared folder name breaks one of Microsoft's file and folder "
