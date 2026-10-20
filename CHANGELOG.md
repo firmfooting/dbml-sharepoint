@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.0...v0.26.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **renames:** find the prefixed title when an entity sets title ([#899](https://github.com/firmfooting/dbml-sharepoint/issues/899)) ([41fb8db](https://github.com/firmfooting/dbml-sharepoint/commit/41fb8dbd18bea65cbe1491fa82d8533675d8d908))
+
 ## [0.26.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.25.0...v0.26.0) (2026-10-20)
 
 
