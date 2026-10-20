@@ -256,3 +256,13 @@ def test_the_receiver_is_registered_only_after_the_file_is_reconciled() -> None:
         [_library({"FolderA": {"Division": "Corporate"}})],
     )
     assert result["summary"]["errors"] and result["receivers"] == []
+
+
+def test_unmanaged_entries_without_a_receiver_are_refused_not_activated() -> None:
+    held = _doc(_entry("HandMade", Division="Hand"))
+    result = _run_phase(
+        _state(held, receiverPresent=False), [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    (error,) = [e["error"] for e in result["summary"]["errors"]]
+    assert "HandMade" in error and "nothing was written" in error
+    assert result["receivers"] == [] and result["writes"] == [] and result["file"] == held

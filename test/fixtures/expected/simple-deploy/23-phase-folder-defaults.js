@@ -95,6 +95,11 @@
       const before = await read();
       const existing = parseFolderDefaults(before);
       const declaredPaths = new Set(list.folders.map((name) => `${rootUrl}/${name}`));
+      // Registering the receiver would start applying entries for folders this mapping never declared.
+      const unmanaged = existing.filter((e) => !declaredPaths.has(e.path)).map((e) => e.path);
+      if (unmanaged.length && !hasDefaultsReceiver(await readReceivers(list.title))) {
+        throw new Error(`the defaults file holds entries for folders this mapping does not declare (${unmanaged.join(', ')}); registering the receiver would start applying them, so nothing was written. Declare those folders or remove their entries`);
+      }
       const wanted = new Map(list.folder_defaults.map((d) => [`${rootUrl}/${d.folder}`, d.values]));
       const settled = [...declaredPaths].every((path) => {
         const have = existing.find((e) => e.path === path);

@@ -3531,7 +3531,10 @@ def test_assess_reports_declared_and_live_folder_creation_as_info() -> None:
     assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
 
 
-def _assess_folder_defaults(stored: str | None, *, all_findings: bool = False) -> list[Json]:
+def _assess_folder_defaults(
+    stored: str | None, *, all_findings: bool = False,
+    receivers: list[dict[str, object]] | None = None,
+) -> list[Json]:
     schema = make_schema(make_table("Docs", column("Title", required=True)))
     base = as_library(make_bundle(entities=["Docs"]), "Docs")
     entity = base.mapping.entities["Docs"]
@@ -3560,7 +3563,7 @@ def _assess_folder_defaults(stored: str | None, *, all_findings: bool = False) -
         json: async () => body, text: async () => JSON.stringify(body) }};
     }}
     if (u.includes('EventReceivers')) {{
-      const body = {{ d: {{ results: [] }} }};
+      const body = {{ d: {{ results: {json.dumps(receivers or [])} }} }};
       return {{ ok: true, status: 200, url: u, headers: {{ get: () => null }},
         json: async () => body, text: async () => JSON.stringify(body) }};
     }}
@@ -3665,3 +3668,14 @@ def test_assess_sees_a_stale_extra_folder_default_as_a_change() -> None:
 def test_assess_says_the_deploy_will_register_a_missing_defaults_receiver() -> None:
     found = _assess_folder_defaults("", all_findings=True)
     assert any("will register" in f["detail"] for f in found)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_blocks_on_an_asynchronous_defaults_receiver() -> None:
+    found = _assess_folder_defaults("", all_findings=True, receivers=[{
+        "ReceiverClass": "Microsoft.Office.DocumentManagement"
+        ".LocationBasedMetadataDefaultsReceiver",
+        "EventType": 10001, "Synchronization": 0,
+    }])
+    (blocked,) = [f for f in found if f["key"].endswith(":receiver")]
+    assert blocked["level"] == "BLOCKED" and "not synchronous" in blocked["detail"]

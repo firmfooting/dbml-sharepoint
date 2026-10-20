@@ -1598,10 +1598,14 @@
         finding(2, key, 'INFO', `Library '${title}' declares folder defaults; the defaults file could not be read, so the deploy decides.`);
         continue;
       }
-      const rc = await probeGet(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType`);
-      if (rc.ok && rc.d && Array.isArray(rc.d.results)
-        && !rc.d.results.some((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001)) {
-        finding(2, `${key}:receiver`, 'INFO', `Library '${title}' declares folder defaults but has no location-based defaults event receiver, which the deploy will register.`);
+      const rc = await probeGet(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType,Synchronization`);
+      if (rc.ok && rc.d && Array.isArray(rc.d.results)) {
+        const ours = rc.d.results.filter((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001);
+        if (ours.length && !ours.some((e) => e.Synchronization === 1)) {
+          finding(2, `${key}:receiver`, 'BLOCKED', `Library '${title}' has a location-based defaults event receiver that is not synchronous; remove it in the site so the deploy can register the synchronous one.`);
+        } else if (!ours.length) {
+          finding(2, `${key}:receiver`, 'INFO', `Library '${title}' declares folder defaults but has no location-based defaults event receiver, which the deploy will register.`);
+        }
       }
       const differing = declaredFolders.filter((d) => {
         const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
