@@ -12,8 +12,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dbml_sharepoint.model._keys import _known_keys, _require_mapping, _text_key
+from dbml_sharepoint.model._keys import _known_keys, _text_key
 from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
+from dbml_sharepoint.model.form_components import parse_header
+from dbml_sharepoint.model.form_tree import HeaderTree
 from dbml_sharepoint.model.mapping_types import FormFormatting
 from dbml_sharepoint.model.reading import load_yaml
 
@@ -21,16 +23,13 @@ FORM_FILE_NAME = "form.yaml"
 _PARTS = frozenset({"header", "body", "footer", "visibility"})
 _TREE_PARTS = ("header", "footer")
 
-#: A header or footer component tree as written, shape-checked only.
-RawTree = Mapping[str, object]
-
 
 @dataclass(frozen=True)
 class FormFileBlocks:
     form_formatting: dict[str, object] = field(default_factory=dict)
     form_visibility: dict[str, object] = field(default_factory=dict)
     # entity -> `header` or `footer` -> component tree
-    trees: dict[str, dict[str, RawTree]] = field(default_factory=dict)
+    trees: dict[str, dict[str, HeaderTree]] = field(default_factory=dict)
     present: bool = False
 
     def sections(self) -> dict[str, object]:
@@ -43,11 +42,6 @@ class FormFileBlocks:
         """A tree-only entity has no JSON part for the formatting reader to take."""
         for entity in self.trees:
             formatting.setdefault(entity, FormFormatting())
-
-
-def _header_part(raw: object, context: str) -> RawTree:
-    """The one place a header/footer component tree is read."""
-    return _require_mapping(raw, context)
 
 
 def _file_pointer(raw: object, context: str) -> str | None:
@@ -72,7 +66,7 @@ def _refuse_clash(raw: Mapping[str, object]) -> None:
 
 def _read_entity(
     entity: str, block: object,
-) -> tuple[dict[str, object], object, dict[str, RawTree]]:
+) -> tuple[dict[str, object], object, dict[str, HeaderTree]]:
     """One entity's raw formatting parts, visibility block and component trees."""
     context = f"{FORM_FILE_NAME}.{entity}"
     parts = {k: v for k, v in _known_keys(block, _PARTS, context).items() if v is not None}
@@ -81,14 +75,14 @@ def _read_entity(
             f"{context}: declare at least one of header/body/footer/visibility",
         )
     formatting: dict[str, object] = {}
-    trees: dict[str, RawTree] = {}
+    trees: dict[str, HeaderTree] = {}
     for part, value in parts.items():
         where = f"{context}.{part}"
         pointer = _file_pointer(value, where)
         if pointer is not None and part != "visibility":
             formatting[part] = pointer
         elif part in _TREE_PARTS:
-            trees[part] = _header_part(value, where)
+            trees[part] = parse_header(value, where)
         elif part == "body":
             formatting[part] = value  # an inline body
     return formatting, parts.get("visibility"), trees

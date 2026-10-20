@@ -647,3 +647,20 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
     # still cleared. The guard must not become "skip everything".
     assert fields["Note"]["validation_formula"] != UNMANAGED
     assert fields["Comment"]["validation_formula"] == ""
+
+
+def test_a_component_tree_alone_emits_no_form_formatting(tmp_path: Path) -> None:
+    """A header tree is not JSON the deploy can carry yet, so an entity that
+    declares only one has no part to write and must not emit an empty formatter."""
+    (tmp_path / "form.yaml").write_text(
+        "Risk:\n  header:\n    title: { column: Title, blank: Untitled }\n",
+        encoding="utf-8", newline="\n",
+    )
+    schema, bundle = pack(
+        tmp_path, dbml=table("Risk", ID_PK, TITLE), mapping=blocks(entities("Risk")),
+    )
+    assert bundle.mapping.form_formatting["Risk"].header is None
+    rows = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["form_formatting"]
+    assert rows == []

@@ -9,6 +9,7 @@ from dbml_sharepoint.model.errors import (
     MappingShapeError,
     UnknownMappingKeyError,
 )
+from dbml_sharepoint.model.form_tree import Title
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 _BASE = blocks(entities("Doc"))
@@ -79,7 +80,7 @@ def test_an_entity_with_no_part_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_component_header_alone_is_accepted(tmp_path: Path) -> None:
-    _form(tmp_path, "Doc:\n  header:\n    title: { column: Title }\n")
+    _form(tmp_path, "Doc:\n  header:\n    title: { column: Title, blank: x }\n")
     bundle = load_mapping(write_mapping(tmp_path, _BASE))
-    assert bundle.form_trees["Doc"]["header"] == {"title": {"column": "Title"}}
+    assert bundle.form_trees["Doc"]["header"].title == Title("Title", "x")
     assert bundle.mapping.form_formatting["Doc"].header is None
