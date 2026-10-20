@@ -170,6 +170,11 @@ def _default_value_problem(vc: ValidationContext, column: Column, value: str) ->
             f"{column.name} is a lookup, person or multi-value column, which a folder "
             f"default does not support yet."
         )
+    if column.unique:
+        return (
+            f"{column.name} is declared [unique], so every file filed in the folder would "
+            f"receive the same value and the second upload could not keep it."
+        )
     if _XML_ILLEGAL.search(value):
         return f"the value holds a control character XML cannot store ({value!r})."
     members = vc.enum_members_by_name.get(column.type)

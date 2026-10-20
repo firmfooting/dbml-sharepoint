@@ -1757,3 +1757,10 @@ def test_folder_default_with_an_xml_illegal_control_character_is_refused(
 ) -> None:
     findings = _defaults_findings(tmp_path, _one("FolderA", "Note", '"a\\x01b"'))
     assert "control character" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
+
+
+def test_folder_default_on_a_unique_column_is_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(
+        tmp_path, _one("FolderA", "Code", "x"), extra_columns="Code nvarchar [unique]",
+    )
+    assert "[unique]" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
