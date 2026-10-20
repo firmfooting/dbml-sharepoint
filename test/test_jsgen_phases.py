@@ -429,10 +429,11 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     # region like any other and is held to the same wrapper.
     assert _call_count(js, "assertListAdoptable") == 12
     # reconcileListItemSecurity, reconcileListAttachments, reconcileListForceCheckout
-    # and reconcileListLibrarySwitches are settings MERGEs on an already-adopted list,
+    # reconcileListLibrarySwitches and the folder defaults receiver and file write
+    # are settings writes on an already-adopted list,
     # so each re-proves ownership without a second adoptability pass, the same
     # shape reconcileListDeletionBlock has.
-    assert _call_count(js, "assertDeclaredListOwnedNow") == 15
+    assert _call_count(js, "assertDeclaredListOwnedNow") == 17
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,

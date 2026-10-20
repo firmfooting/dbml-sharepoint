@@ -3531,7 +3531,7 @@ def test_assess_reports_declared_and_live_folder_creation_as_info() -> None:
     assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
 
 
-def _assess_folder_defaults(stored: str | None) -> list[Json]:
+def _assess_folder_defaults(stored: str | None, *, all_findings: bool = False) -> list[Json]:
     schema = make_schema(make_table("Docs", column("Title", required=True)))
     base = as_library(make_bundle(entities=["Docs"]), "Docs")
     entity = base.mapping.entities["Docs"]
@@ -3559,6 +3559,11 @@ def _assess_folder_defaults(stored: str | None) -> list[Json]:
       return {{ ok: true, status: 200, url: u, headers: {{ get: () => null }},
         json: async () => body, text: async () => JSON.stringify(body) }};
     }}
+    if (u.includes('EventReceivers')) {{
+      const body = {{ d: {{ results: [] }} }};
+      return {{ ok: true, status: 200, url: u, headers: {{ get: () => null }},
+        json: async () => body, text: async () => JSON.stringify(body) }};
+    }}
     if (u.includes('GetFileByServerRelativeUrl')) {{
       const stored = {json.dumps(stored)};
       return {{ ok: stored !== null, status: stored === null ? 404 : 200, url: u,
@@ -3572,7 +3577,11 @@ def _assess_folder_defaults(stored: str | None) -> list[Json]:
         _declared_descriptions((schema, bundle)), harness=_healthy_harness(), js=js,
         wrap=wrap, capture=True,
     )
-    return [f for f in summary["findings"] if f["key"] == "library_folder_defaults:APP_Docs"]
+    return [
+        f for f in summary["findings"]
+        if f["key"] == "library_folder_defaults:APP_Docs"
+        or (all_findings and f["key"] == "library_folder_defaults:APP_Docs:receiver")
+    ]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -3650,3 +3659,9 @@ def test_assess_sees_a_stale_extra_folder_default_as_a_change() -> None:
     )
     (finding,) = _assess_folder_defaults(held)
     assert "will change" in finding["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_says_the_deploy_will_register_a_missing_defaults_receiver() -> None:
+    found = _assess_folder_defaults("", all_findings=True)
+    assert any("will register" in f["detail"] for f in found)

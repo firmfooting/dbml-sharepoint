@@ -338,14 +338,15 @@ _(none; no document library declares folders)_
 
 {% set defaulted = lists | selectattr('folder_defaults') | list %}
 {% if defaulted %}
-Each listed library's `Forms/client_LocationBasedDefaults.html` is rebuilt so
-the declared folders hold exactly the values below; entries for any other
-folder are carried over unchanged. The file is read back after the write. The
-deploy proves the stored file only; it does not claim SharePoint applies the
-values to an upload.
+Each listed library gets an ItemAdded event receiver of the location-based
+defaults class, registered once and read back, and its
+`Forms/client_LocationBasedDefaults.html` is rebuilt so the declared folders
+hold exactly the values below; entries for any other folder are carried over
+unchanged. The file is read back after the write. With the receiver
+registered, the defaults apply to files uploaded into the folder.
 
 {% for l in defaulted %}
-- **{{ l.title }}**: {% for d in l.folder_defaults %}{{ d.folder }} ({% for v in d.values %}{{ v.field }}={{ v.value }}{% if not loop.last %}, {% endif %}{% endfor %}){% if not loop.last %}; {% endif %}{% endfor %}
+- **{{ l.title }}**: {% for d in l.folder_defaults %}{{ d.folder }} ({% for v in d['values'] %}{{ v.field }}={{ v.value }}{% if not loop.last %}, {% endif %}{% endfor %}){% if not loop.last %}; {% endif %}{% endfor %}
 
 {% endfor %}
 {% else %}

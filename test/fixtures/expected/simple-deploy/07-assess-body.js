@@ -996,6 +996,11 @@
         finding(2, key, 'INFO', `Library '${title}' declares folder defaults; the defaults file could not be read, so the deploy decides.`);
         continue;
       }
+      const rc = await probeGet(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType`);
+      if (rc.ok && rc.d && Array.isArray(rc.d.results)
+        && !rc.d.results.some((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001)) {
+        finding(2, `${key}:receiver`, 'INFO', `Library '${title}' declares folder defaults but has no location-based defaults event receiver, which the deploy will register.`);
+      }
       const differing = declaredFolders.filter((d) => {
         const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
         return d.values.some((v) => held.get(v.field) !== v.value) || held.size !== d.values.length;

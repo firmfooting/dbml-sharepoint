@@ -158,6 +158,12 @@
         continue;
       }
       const text = file.ok ? await file.text() : '';
+      const receivers = await readJson(`web/lists/getbytitle('${odataName(lib.title)}')/EventReceivers?$select=ReceiverClass,EventType`);
+      const registered = receivers.ok && receivers.d && Array.isArray(receivers.d.results)
+        && receivers.d.results.some((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001);
+      if (!receivers.ok) finding(`${key}:receiver`, 'NOT-ASSESSABLE', `'${lib.title}' event receivers could not be read (HTTP ${receivers.status}).`);
+      else if (registered) finding(`${key}:receiver`, 'PASS', `VERIFIED: '${lib.title}' has the location-based defaults event receiver.`);
+      else finding(`${key}:receiver`, 'FAIL', `MISMATCH: '${lib.title}' has no location-based defaults event receiver, so stored folder defaults are not applied to uploads.`);
       for (const declared of lib.folder_defaults) {
         const held = folderDefaultValues(text, `${rootUrl}/${declared.folder}`);
         const wrong = declared.values.filter((v) => held.get(v.field) !== v.value).map((v) => v.field);

@@ -1,11 +1,43 @@
   markPhase('Phase 2.3: folder default values');
   // === Phase 2.3: folder default values ===
   log('INFO', 'Starting Phase 2.3: folder default values.');
-  // `library.folder-defaults.declare-writes-readback`: Files/add(overwrite=true) of
-  // <MetadataDefaults><a href="<folder path>"><DefaultValue FieldName="<internal name>">
-  // reads back as written. Whether SharePoint applies the values to an upload is not
-  // established, so this phase proves the stored file and nothing past it.
-  // overwrite=true replaces the whole file, so existing entries are kept verbatim.
+  // The stored file alone applies nothing: uploads by Files/add, addUsingPath and
+  // Upload.aspx left the column empty until the library had an ItemAdded event
+  // receiver of the location-based defaults class, after which all three applied it.
+  // So this phase registers that receiver (once) and then writes the file.
+  // Files/add(overwrite=true) replaces the whole file, so existing entries are kept verbatim.
+  const DEFAULTS_RECEIVER_CLASS = 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver';
+  const DEFAULTS_RECEIVER_ASSEMBLY = 'Microsoft.Office.DocumentManagement, Version=16.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c';
+  const ITEM_ADDED = 10001;
+  const readReceivers = async (title) => {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`event receiver read failed: HTTP ${r.status} ${spError(await r.text())}`);
+    return ((((await r.json()) || {}).d || {}).results) || [];
+  };
+  const hasDefaultsReceiver = (receivers) => receivers.some((e) => e.ReceiverClass === DEFAULTS_RECEIVER_CLASS && e.EventType === ITEM_ADDED);
+  async function reconcileDefaultsReceiver(list) {
+    if (hasDefaultsReceiver(await readReceivers(list.title))) return;
+    await assertDeclaredListOwnedNow(list.title);
+    const put = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/EventReceivers`), {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
+      body: JSON.stringify({
+        __metadata: { type: 'SP.EventReceiverDefinition' },
+        ReceiverName: 'LocationBasedMetadataDefaultsReceiver ItemAdded', EventType: ITEM_ADDED,
+        ReceiverAssembly: DEFAULTS_RECEIVER_ASSEMBLY, ReceiverClass: DEFAULTS_RECEIVER_CLASS,
+        SequenceNumber: 1000, Synchronization: 1,
+      }),
+    });
+    if (!put.ok) throw new Error(`event receiver registration failed: HTTP ${put.status} ${spError(await put.text())}`);
+    if (!hasDefaultsReceiver(await readReceivers(list.title))) {
+      throw new Error('the location-based defaults event receiver did not read back after registration');
+    }
+    log('OK', `Registered the location-based defaults event receiver on '${list.title}'.`);
+    logChange({ key: `list-setting:${list.title}:folder-defaults-receiver`, kind: 'list-setting', target: list.title,
+      oldValue: 'absent', newValue: 'registered' });
+  }
   const DEFAULTS_FILE = 'client_LocationBasedDefaults.html';
   const xmlEscape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -41,6 +73,7 @@
     && want.every((v) => have.get(v.field) === v.value);
   for (const list of SCHEMA.lists.filter((l) => l.is_library && (l.folder_defaults || []).length)) {
     try {
+      await reconcileDefaultsReceiver(list);
       const root = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/RootFolder?$select=ServerRelativeUrl`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
@@ -71,6 +104,8 @@
         `<a href="${xmlEscape(path)}">${values.map((v) =>
           `<DefaultValue FieldName="${xmlEscape(v.field)}">${xmlEscape(v.value)}</DefaultValue>`).join('')}</a>`);
       const text = `<MetadataDefaults>${[...kept, ...written].join('')}</MetadataDefaults>`;
+      // Immediately before the overwrite: a same-titled library that replaced ours is not written.
+      await assertDeclaredListOwnedNow(list.title);
       const digest = await getDigest();
       const put = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(`${rootUrl}/Forms`)}')/Files/add(url='${DEFAULTS_FILE}',overwrite=true)`), {
         method: 'POST',

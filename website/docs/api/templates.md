@@ -139,7 +139,7 @@ Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be d
 
 ### `_folder_defaults_read.js.j2`
 
-Included by: `assess.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `deploy.js.j2`, `verify.js.j2`
 
 The folder defaults file as the read-only scripts see it: the values stored for one folder path. Entries are matched as text; see deploy/_folder_defaults.js.j2.
 

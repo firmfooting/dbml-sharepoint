@@ -33,6 +33,10 @@ _HARNESS = textwrap.dedent(r"""
     const logChange = (change) => { changes.push(change); };
     // null is "no file yet"; the file is the only state the phase writes.
     let file = STATE.file;
+    const receivers = STATE.receiverPresent ? [{
+      ReceiverClass: 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver',
+      EventType: 10001,
+    }] : [];
     globalThis.fetch = async (url, opts = {}) => {
       const method = opts.method || 'GET';
       url = String(url);
@@ -41,6 +45,14 @@ _HARNESS = textwrap.dedent(r"""
         ok: status < 400, status, url, headers: { get: () => null },
         json: async () => JSON.parse(text), text: async () => text,
       });
+      if (url.includes('EventReceivers')) {
+        if (method === 'POST') {
+          if (STATE.refuseReceiver) return reply(500, '{}');
+          if (!STATE.ignoreReceiver) receivers.push(JSON.parse(opts.body));
+          return reply(200, '{}');
+        }
+        return reply(200, JSON.stringify({ d: { results: receivers } }));
+      }
       if (url.includes('RootFolder')) {
         return reply(200, JSON.stringify({ d: { ServerRelativeUrl: STATE.root } }));
       }
@@ -55,6 +67,7 @@ _HARNESS = textwrap.dedent(r"""
       return reply(200, JSON.stringify({ d: { results: [] } }));
     };
     const summary = { errors: [] };
+    const assertDeclaredListOwnedNow = async () => ({ Id: 'list-guid' });
 """)
 
 
@@ -74,7 +87,7 @@ def _run_phase(state: Mapping[str, object], lists: Sequence[Mapping[str, object]
         + _HARNESS
         + script_env().get_template("_http.js.j2").render()
         + "(async () => {\n" + _render_phase() + "\n})().then(() => console.log("
-        "'__RESULT__' + JSON.stringify({ summary, changes, file, "
+        "'__RESULT__' + JSON.stringify({ summary, changes, file, receivers, "
         "writes: calls.filter((c) => c.method === 'POST').map((c) => c.body) })));\n"
     )
     output = run_node(script)
@@ -85,7 +98,7 @@ def _run_phase(state: Mapping[str, object], lists: Sequence[Mapping[str, object]
 
 
 def _state(file: str | None = None, **overrides: object) -> dict[str, object]:
-    return {"root": _ROOT, "file": file, **overrides}
+    return {"root": _ROOT, "file": file, "receiverPresent": True, **overrides}
 
 
 def _library(
@@ -191,3 +204,30 @@ def test_an_unrecognised_existing_file_is_left_alone() -> None:
 def test_a_library_without_folder_defaults_is_never_read() -> None:
     result = _run_phase(_state("<html>not ours</html>"), [_library({})])
     assert result["summary"]["errors"] == [] and result["writes"] == []
+
+
+def test_a_missing_defaults_receiver_is_registered_and_read_back() -> None:
+    result = _run_phase(
+        _state(receiverPresent=False), [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    assert result["summary"]["errors"] == []
+    (receiver,) = result["receivers"]
+    assert receiver["EventType"] == 10001 and receiver["SequenceNumber"] == 1000
+    assert receiver["ReceiverClass"].endswith("LocationBasedMetadataDefaultsReceiver")
+    assert "list-setting:APP_Doc:folder-defaults-receiver" in [c["key"] for c in result["changes"]]
+
+
+def test_an_existing_defaults_receiver_is_not_registered_again() -> None:
+    result = _run_phase(_state(), [_library({"FolderA": {"Division": "Corporate"}})])
+    assert len(result["receivers"]) == 1
+    assert "list-setting:APP_Doc:folder-defaults-receiver" not in [
+        c["key"] for c in result["changes"]
+    ]
+
+
+def test_a_receiver_that_does_not_read_back_is_an_error() -> None:
+    result = _run_phase(
+        _state(receiverPresent=False, ignoreReceiver=True),
+        [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    assert "did not read back after registration" in result["summary"]["errors"][0]["error"]

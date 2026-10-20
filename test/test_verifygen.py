@@ -300,6 +300,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const FORCE_CHECKOUT = undefined;
     const LIBRARY_PROP = undefined;
     const DEFAULTS_FILE = undefined;
+    const RECEIVER = true;
     // An instant more than an hour ago is before the clock change.
     Date.prototype.getTimezoneOffset = function () {
       const old = OFFSET_BEFORE_THE_CHANGE !== null && this.getTime() < Date.now() - 3600000;
@@ -384,6 +385,12 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           return respond(404, { error: { message: { value: 'no group' } } });
         }
         return respond(200, { d: { results: GROUP_MEMBERS[name] } });
+      }
+      if (u.includes('EventReceivers')) {
+        return respond(200, { d: { results: RECEIVER ? [{
+          ReceiverClass: 'Microsoft.Office.DocumentManagement'
+            + '.LocationBasedMetadataDefaultsReceiver',
+          EventType: 10001 }] : [] } });
       }
       if (u.includes('RootFolder')) {
         return respond(200, { d: { ServerRelativeUrl: '/sites/test/APP_Docs' } });
@@ -1057,3 +1064,13 @@ def test_a_stale_extra_folder_default_is_a_mismatch() -> None:
     out = _run_verify_full(js, DEFAULTS_FILE=json.dumps(stale))
     assert out["verdict"] == "MISMATCH"
     assert any("undeclared default(s) for Old" in ln for ln in out["log"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_without_the_defaults_receiver_is_a_mismatch() -> None:
+    js = _switches_verify_js(
+        LibrarySettings(), folder_defaults={"FolderA": {"Division": "Corporate"}},
+    )
+    out = _run_verify_full(js, DEFAULTS_FILE=json.dumps(_DEFAULTS_ENTRY), RECEIVER="false")
+    assert out["verdict"] == "MISMATCH"
+    assert any("no location-based defaults event receiver" in ln for ln in out["log"])
