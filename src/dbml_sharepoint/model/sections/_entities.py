@@ -13,12 +13,15 @@ from dbml_sharepoint.model.errors import (
     MappingValueError,
 )
 from dbml_sharepoint.model.mapping_types import (
+    DRAFT_VISIBILITY_VALUES,
     ENTITY_KINDS,
+    DraftVisibility,
     EntityKind,
     EntityMapping,
     FoldersFromEnum,
     FolderSource,
     LibrarySettings,
+    is_draft_visibility,
     is_entity_kind,
 )
 from dbml_sharepoint.model.reading import (
@@ -134,13 +137,36 @@ def _library_settings(spec: Mapping[str, object], context: str) -> LibrarySettin
     """`settings`, a closed shape. Absent is None; a blank `require_checkout` is unmanaged."""
     if "settings" not in spec:
         return None
-    block = _known_keys(spec["settings"], {"require_checkout"}, f"{context}.settings")
-    value = optional_value(block, "require_checkout", f"{context}.settings")
+    where = f"{context}.settings"
+    block = _known_keys(
+        spec["settings"],
+        {"require_checkout", "enable_folder_creation", "draft_version_visibility"}, where,
+    )
+    return LibrarySettings(
+        require_checkout=_setting_bool(block, "require_checkout", where),
+        enable_folder_creation=_setting_bool(block, "enable_folder_creation", where),
+        draft_version_visibility=_draft_visibility(block, where),
+    )
+
+
+def _setting_bool(block: Mapping[str, object], key: str, where: str) -> bool | None:
+    value = optional_value(block, key, where)
     if value is not None and not isinstance(value, bool):
-        raise MappingShapeError(
-            f"{context}.settings.require_checkout must be a boolean, got {value!r}",
+        raise MappingShapeError(f"{where}.{key} must be a boolean, got {value!r}")
+    return value
+
+
+def _draft_visibility(block: Mapping[str, object], where: str) -> DraftVisibility | None:
+    value = optional_value(block, "draft_version_visibility", where)
+    if value is None:
+        return None
+    # isinstance first: an unhashable value would raise at the membership test.
+    if not (isinstance(value, str) and is_draft_visibility(value)):
+        raise MappingValueError(
+            f"{where}.draft_version_visibility must be one of "
+            f"{', '.join(DRAFT_VISIBILITY_VALUES)}; got {value!r}",
         )
-    return LibrarySettings(require_checkout=value)
+    return value
 
 
 def _folder_source(spec: Mapping[str, object], context: str) -> FolderSource:

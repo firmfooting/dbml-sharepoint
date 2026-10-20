@@ -57,6 +57,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"declare kind: DocumentLibrary with base_template: 101.",
                 location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
             ))
+        findings += _draft_visibility_needs_minor_versions(vc, entity_name, entity)
         findings += _folders(
             entity_name, entity, folders or (),
             declared=bool(entity.folder_source),
@@ -68,6 +69,36 @@ def check(vc: ValidationContext) -> list[Finding]:
     findings += _folder_permissions(vc)
     findings += _external_file_scopes(vc)
     return findings
+
+
+def _draft_visibility_needs_minor_versions(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+) -> list[Finding]:
+    """Refuse a non-default draft visibility on a library with minor versions off.
+
+    Measured on a SharePoint Online tenant (library settings finding): the MERGE
+    answers 204 and the value stays 0, so the write would be silently ignored.
+    Judged on the resolved versioning, as `_minor_versions_need_versioning` is.
+    """
+    settings = entity.settings
+    if (
+        settings is None or not entity.is_library
+        or settings.draft_version_visibility in (None, "reader")
+        or (
+            vc.bundle.mapping.versioning_for(entity_name).enable_versioning
+            and vc.bundle.mapping.versioning_for(entity_name).enable_minor_versions
+        )
+    ):
+        return []
+    return [Finding(
+        FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
+        f"entities[{entity_name}].settings.draft_version_visibility: "
+        f"{settings.draft_version_visibility} has no effect while versioning or "
+        f"minor versions are off, because SharePoint keeps Reader. Set enable_versioning "
+        f"and enable_minor_versions to true in the versioning that reaches {entity_name}, "
+        f"or remove the key.",
+        location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
+    )]
 
 
 def _external_file_scopes(vc: ValidationContext) -> list[Finding]:

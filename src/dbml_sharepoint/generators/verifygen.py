@@ -31,7 +31,12 @@ from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
-from dbml_sharepoint.model.mapping_types import ColumnValidation, Mapping, MappingBundle
+from dbml_sharepoint.model.mapping_types import (
+    DRAFT_VISIBILITY_VALUES,
+    ColumnValidation,
+    Mapping,
+    MappingBundle,
+)
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -139,7 +144,10 @@ class _Rule(TypedDict):
 
 class _LibrarySetting(TypedDict):
     title: str
-    require_checkout: bool
+    # Only the declared settings are present.
+    require_checkout: NotRequired[bool]
+    enable_folder_creation: NotRequired[bool]
+    draft_version_visibility: NotRequired[int]
 
 
 class VerifyTargets(TypedDict):
@@ -380,14 +388,23 @@ def _not_after_now(row: _Row) -> bool:
 
 
 def _library_settings(mapping: Mapping, table_names: list[str]) -> list[_LibrarySetting]:
-    """Each declared `require_checkout`, by deployed title; an unmanaged one is left out."""
+    """Each library's declared settings, by deployed title; an unmanaged one is left out."""
     declared: list[_LibrarySetting] = []
     for name in table_names:
         settings = mapping.entities[name].settings
-        if settings is not None and settings.require_checkout is not None:
-            declared.append({
-                "title": mapping.list_title(name), "require_checkout": settings.require_checkout,
-            })
+        if settings is None:
+            continue
+        entry: _LibrarySetting = {"title": mapping.list_title(name)}
+        if settings.require_checkout is not None:
+            entry["require_checkout"] = settings.require_checkout
+        if settings.enable_folder_creation is not None:
+            entry["enable_folder_creation"] = settings.enable_folder_creation
+        if settings.draft_version_visibility is not None:
+            entry["draft_version_visibility"] = DRAFT_VISIBILITY_VALUES[
+                settings.draft_version_visibility
+            ]
+        if len(entry) > 1:
+            declared.append(entry)
     return declared
 
 

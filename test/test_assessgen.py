@@ -3469,6 +3469,68 @@ def test_assess_targets_carry_only_a_declared_require_checkout() -> None:
         assert targets["library_checkout"] == expected
 
 
+def test_assess_targets_carry_the_declared_folder_creation_and_visibility() -> None:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": replace(
+        entity, settings=LibrarySettings(
+            enable_folder_creation=False, draft_version_visibility="author",
+        ),
+    )}))
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assert targets["library_switches"] == [
+        ["APP_Docs", "enable_folder_creation", "EnableFolderCreation", False],
+        ["APP_Docs", "draft_version_visibility", "DraftVersionVisibility", 1],
+    ]
+    assert targets["library_checkout"] == []
+
+
+def _assess_switches(live: object) -> list[Json]:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": replace(
+        entity, settings=LibrarySettings(enable_folder_creation=False),
+    )}))
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="s.dbml",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
+    )
+    wrap = f"""
+{{
+  const _under = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {{
+    if (String(url).includes('$select=EnableFolderCreation')) {{
+      const body = {json.dumps({"d": {"EnableFolderCreation": live}})};
+      return {{ ok: true, status: 200, url: String(url), headers: {{ get: () => null }},
+        json: async () => body, text: async () => JSON.stringify(body) }};
+    }}
+    return _under(url, opts);
+  }};
+}}
+"""
+    summary = _run_assess(
+        _declared_descriptions((schema, bundle)), harness=_healthy_harness(), js=js,
+        wrap=wrap, capture=True,
+    )
+    return [f for f in summary["findings"] if f["key"].endswith(":EnableFolderCreation")]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_reports_declared_and_live_folder_creation_as_info() -> None:
+    (same,) = _assess_switches(False)
+    assert same["level"] == "INFO" and "holds EnableFolderCreation false" in same["detail"]
+    assert "will change" not in same["detail"]
+    (differs,) = _assess_switches(True)
+    assert differs["level"] == "INFO" and "will change" in differs["detail"]
+    (unreadable,) = _assess_switches(None)
+    assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
+
+
 def _assess_checkout(live: object, *, declared: bool = False) -> list[Json]:
     schema, bundle = _checkout_pack(declared)
     js = generate_assess_js(

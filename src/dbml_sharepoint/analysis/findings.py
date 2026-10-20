@@ -326,6 +326,7 @@ class FindingCode(StrEnum):
     DUPLICATE_FOLDER = "duplicate_folder", "error"
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
     LIBRARY_SETTING_ON_A_LIST = "library_setting_on_a_list", "error"
+    DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS = "draft_visibility_without_minor_versions", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
     FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
     FOLDER_PERMISSIONS_ON_A_LIST = "folder_permissions_on_a_list", "error"

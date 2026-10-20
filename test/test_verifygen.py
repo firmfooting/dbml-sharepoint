@@ -298,6 +298,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const GROUP_MEMBERS = {};
     const GROUP_REPLY = null;
     const FORCE_CHECKOUT = undefined;
+    const LIBRARY_PROP = undefined;
     // An instant more than an hour ago is before the clock change.
     Date.prototype.getTimezoneOffset = function () {
       const old = OFFSET_BEFORE_THE_CHANGE !== null && this.getTime() < Date.now() - 3600000;
@@ -382,6 +383,12 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           return respond(404, { error: { message: { value: 'no group' } } });
         }
         return respond(200, { d: { results: GROUP_MEMBERS[name] } });
+      }
+      const prop = /\$select=(EnableFolderCreation|DraftVersionVisibility)/.exec(u);
+      if (prop) {
+        return LIBRARY_PROP === undefined
+          ? respond(404, { error: { message: { value: 'no list' } } })
+          : respond(200, { d: { [prop[1]]: LIBRARY_PROP } });
       }
       if (u.includes('ForceCheckout')) {
         return FORCE_CHECKOUT === undefined
@@ -866,6 +873,38 @@ def _checkout_verify_js(declared: bool) -> str:
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         source_dbml="s.dbml", generated_at="2026-10-09T00:00:00Z",
     )
+
+
+def _switches_verify_js(settings: LibrarySettings) -> str:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={
+        "Docs": replace(entity, settings=settings),
+    }))
+    assert verify_targets(schema, bundle, "default")["library_settings"]
+    return generate_verify_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", generated_at="2026-10-09T00:00:00Z",
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("settings", "live", "verdict"), [
+    (LibrarySettings(enable_folder_creation=False), "false", "VERIFIED"),
+    (LibrarySettings(enable_folder_creation=False), "true", "MISMATCH"),
+    (LibrarySettings(draft_version_visibility="approver"), "2", "VERIFIED"),
+    (LibrarySettings(draft_version_visibility="approver"), "0", "MISMATCH"),
+    (LibrarySettings(draft_version_visibility="approver"), "undefined", "NOT-VERIFIED"),
+    (LibrarySettings(enable_folder_creation=False), '"no"', "NOT-VERIFIED"),
+])
+def test_folder_creation_and_draft_visibility_are_verified_read_only(
+    settings: LibrarySettings, live: str, verdict: str,
+) -> None:
+    out = _run_verify_full(_switches_verify_js(settings), LIBRARY_PROP=live)
+    assert out["verdict"] == verdict
+    assert _no_writes(out)
 
 
 def test_a_declared_require_checkout_alone_gets_a_verify_script() -> None:

@@ -13,7 +13,7 @@
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
       'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
-      'list_view_threshold', 'index_change_ceiling', 'library_checkout',
+      'list_view_threshold', 'index_change_ceiling', 'library_checkout', 'library_switches',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
@@ -968,6 +968,17 @@
         finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; the site holds ForceCheckout ${r.d.ForceCheckout}${r.d.ForceCheckout === declared ? '' : ', which the deploy will change'}.`);
       } else {
         finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; its ForceCheckout could not be read (${r.ok ? 'no boolean reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
+      }
+    }
+
+    // EnableFolderCreation and DraftVersionVisibility, read only and INFO for the same reason.
+    for (const [title, setting, prop, declared] of TARGETS.library_switches) {
+      const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=${prop}`);
+      const key = `library_setting:${title}:${prop}`;
+      if (r.ok && typeof r.d[prop] === typeof declared) {
+        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; the site holds ${prop} ${r.d[prop]}${r.d[prop] === declared ? '' : ', which the deploy will change'}.`);
+      } else {
+        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; its ${prop} could not be read (${r.ok ? 'no value of the declared type reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }
     }
 

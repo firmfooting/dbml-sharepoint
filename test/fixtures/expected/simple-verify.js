@@ -452,16 +452,25 @@
       }
     }
     // ---- 0b. Library settings: read-only ---------------------------------
-    // Require Check Out is the live ForceCheckout (library.checkout.force-checkout-merge).
+    // Require Check Out is the live ForceCheckout (library.checkout.force-checkout-merge);
+    // the other two are the stored EnableFolderCreation and DraftVersionVisibility.
+    const LIBRARY_SETTINGS = [
+      ['require_checkout', 'ForceCheckout'],
+      ['enable_folder_creation', 'EnableFolderCreation'],
+      ['draft_version_visibility', 'DraftVersionVisibility'],
+    ];
     for (const lib of T.library_settings) {
-      const key = `library_checkout:${lib.title}`;
-      const read = await readJson(`web/lists/getbytitle('${odataName(lib.title)}')?$select=ForceCheckout`);
-      if (!read.ok || !read.d || typeof read.d.ForceCheckout !== 'boolean') {
-        finding(key, 'NOT-ASSESSABLE', `'${lib.title}' ForceCheckout could not be read (${read.ok ? 'no boolean reported' : `HTTP ${read.status}`}).`);
-      } else if (read.d.ForceCheckout !== lib.require_checkout) {
-        finding(key, 'FAIL', `MISMATCH: '${lib.title}' holds ForceCheckout ${read.d.ForceCheckout}, declared require_checkout ${lib.require_checkout}.`);
-      } else {
-        finding(key, 'PASS', `VERIFIED: '${lib.title}' holds ForceCheckout ${lib.require_checkout}.`);
+      for (const [setting, prop] of LIBRARY_SETTINGS) {
+        if (lib[setting] === undefined) continue;
+        const key = setting === 'require_checkout' ? `library_checkout:${lib.title}` : `library_setting:${lib.title}:${prop}`;
+        const read = await readJson(`web/lists/getbytitle('${odataName(lib.title)}')?$select=${prop}`);
+        if (!read.ok || !read.d || typeof read.d[prop] !== typeof lib[setting]) {
+          finding(key, 'NOT-ASSESSABLE', `'${lib.title}' ${prop} could not be read (${read.ok ? 'no value of the declared type reported' : `HTTP ${read.status}`}).`);
+        } else if (read.d[prop] !== lib[setting]) {
+          finding(key, 'FAIL', `MISMATCH: '${lib.title}' holds ${prop} ${read.d[prop]}, declared ${setting} ${lib[setting]}.`);
+        } else {
+          finding(key, 'PASS', `VERIFIED: '${lib.title}' holds ${prop} ${lib[setting]}.`);
+        }
       }
     }
     if (T.checks.length === 0) return finish();

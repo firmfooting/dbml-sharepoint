@@ -421,3 +421,30 @@ def test_require_checkout_is_emitted_only_for_a_library_that_declares_it() -> No
     assert emitted(library, None) is None
     # The validator refuses settings on a List; the emitter must not rely on it.
     assert emitted(base, LibrarySettings(require_checkout=False)) is None
+
+
+def test_folder_creation_and_draft_visibility_are_emitted_as_stored_values() -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import LibrarySettings
+
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+
+    def emitted(settings: LibrarySettings | None) -> tuple[JsonValue, JsonValue]:
+        entity = replace(base.mapping.entities["Docs"], settings=settings)
+        bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+        (entry,) = build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
+        return entry["enable_folder_creation"], entry["draft_version_visibility"]
+
+    assert emitted(LibrarySettings(enable_folder_creation=False)) == (False, None)
+    assert emitted(LibrarySettings(draft_version_visibility="approver")) == (None, 2)
+    assert emitted(LibrarySettings(draft_version_visibility="reader")) == (None, 0)
+    assert emitted(None) == (None, None)

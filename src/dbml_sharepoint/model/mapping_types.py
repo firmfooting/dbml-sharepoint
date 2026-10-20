@@ -61,6 +61,11 @@ def is_entity_kind(value: str) -> TypeIs[EntityKind]:
     return value in ENTITY_KINDS
 
 
+def is_draft_visibility(value: str) -> TypeIs[DraftVisibility]:
+    """Whether `value` names a draft visibility, so a caller can narrow a string to it."""
+    return value in DRAFT_VISIBILITY_VALUES
+
+
 def is_view_scope(value: str) -> TypeIs[ViewScope]:
     """Whether `value` is a view scope, so a caller can narrow a string to it."""
     return value in VIEW_SCOPES
@@ -134,12 +139,20 @@ Read it through `analysis/resolve.py::resolve`, never directly.
 """
 
 
+type DraftVisibility = Literal["reader", "author", "approver"]
+
+#: SharePoint's `DraftVisibilityType` integers, as measured on a tenant.
+DRAFT_VISIBILITY_VALUES: dict[str, int] = {"reader": 0, "author": 1, "approver": 2}
+
+
 @dataclass(frozen=True)
 class LibrarySettings:
     """`entities.<name>.settings`, a document library's own switches."""
 
-    # None leaves the library's "Require Check Out" unmanaged: never read, never written.
+    # None leaves each setting unmanaged: never read, never written.
     require_checkout: bool | None = None
+    enable_folder_creation: bool | None = None
+    draft_version_visibility: DraftVisibility | None = None
 
 
 @dataclass(frozen=True)

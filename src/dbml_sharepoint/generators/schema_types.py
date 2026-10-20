@@ -125,6 +125,8 @@ class ListRow(TypedDict):
     prevent_deletion: bool
     disable_attachments: bool
     require_checkout: bool | None
+    enable_folder_creation: bool | None
+    draft_version_visibility: int | None
     item_security: ItemSecurity | None
 
 

@@ -53,6 +53,14 @@ def is_entity_kind(value: str) -> TypeIs[EntityKind]
 
 Whether `value` is one of the entity kinds, so a caller can narrow a string to it.
 
+### `is_draft_visibility`
+
+```python
+def is_draft_visibility(value: str) -> TypeIs[DraftVisibility]
+```
+
+Whether `value` names a draft visibility, so a caller can narrow a string to it.
+
 ### `is_view_scope`
 
 ```python
@@ -124,12 +132,20 @@ nothing left to disagree.
 Resolved by `analysis/folders.py`, not here, because the schema is not
 loaded with the mapping.
 
+### `DRAFT_VISIBILITY_VALUES`
+
+```python
+DRAFT_VISIBILITY_VALUES = {'reader': 0, 'author': 1, 'approver': 2}
+```
+
 ### `LibrarySettings`
 
 ```python
 @dataclass(frozen=True)
 class LibrarySettings:
     require_checkout: bool | None = None
+    enable_folder_creation: bool | None = None
+    draft_version_visibility: dbml_sharepoint.model.mapping_types.DraftVisibility | None = None
 ```
 
 `entities.<name>.settings`, a document library's own switches.

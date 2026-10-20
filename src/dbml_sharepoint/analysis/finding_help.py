@@ -727,10 +727,19 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.LIBRARY_SETTING_ON_A_LIST: (
         "`settings` is declared on an entity that is not a `DocumentLibrary`. "
-        "Its one key, `require_checkout`, writes the library's `ForceCheckout` "
-        "property, which is the library's \"Require Check Out\" control "
-        "(`library.checkout.force-checkout-merge`). Remove the key, or declare "
+        "Its keys write library properties: `require_checkout` is "
+        "`ForceCheckout`, the library's \"Require Check Out\" control "
+        "(`library.checkout.force-checkout-merge`); `enable_folder_creation` is "
+        "`EnableFolderCreation`; `draft_version_visibility` is "
+        "`DraftVersionVisibility`. Remove the key, or declare "
         "`kind: DocumentLibrary` with `base_template: 101`."
+    ),
+    FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS: (
+        "A library declares `settings.draft_version_visibility` as `author` or "
+        "`approver` while versioning or minor versions are off. SharePoint "
+        "answers the write with success and keeps the value at Reader, so the "
+        "setting would be ignored. Turn `enable_versioning` and "
+        "`enable_minor_versions` on for the library, or remove the key."
     ),
     FindingCode.FOLDER_NAME_INVALID: (
         "A declared folder name breaks one of Microsoft's file and folder "

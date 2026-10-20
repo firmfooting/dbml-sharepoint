@@ -96,6 +96,7 @@ from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import (
+    DRAFT_VISIBILITY_VALUES,
     ColumnValidation,
     EntityMapping,
     EntitySection,
@@ -961,6 +962,16 @@ def build_schema_json(
             "require_checkout": (
                 entity.settings.require_checkout
                 if entity.is_library and entity.settings is not None else None
+            ),
+            "enable_folder_creation": (
+                entity.settings.enable_folder_creation
+                if entity.is_library and entity.settings is not None else None
+            ),
+            # The integer SharePoint stores (`DraftVisibilityType`).
+            "draft_version_visibility": (
+                DRAFT_VISIBILITY_VALUES[entity.settings.draft_version_visibility]
+                if entity.is_library and entity.settings is not None
+                and entity.settings.draft_version_visibility is not None else None
             ),
             # Null unless the mapping asks for trimming. `all`/`all` is
             # SharePoint's own default, so a mapping that says nothing gets

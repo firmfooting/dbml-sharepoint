@@ -804,6 +804,57 @@
       oldValue: String(live), newValue: String(wanted) });
   }
 
+  // Declared EnableFolderCreation and DraftVersionVisibility (library settings,
+  // each a plain MERGE that reads back). Only declared properties are read; one
+  // MERGE carries just the ones that differ, and the read-back is the control
+  // because DraftVersionVisibility answers 204 and keeps 0 while minor versions
+  // are off. The list settings MERGE above has already turned minor versions on.
+  async function reconcileListLibrarySwitches(list, digest) {
+    const wanted = {};
+    if (list.enable_folder_creation !== null && list.enable_folder_creation !== undefined) {
+      wanted.EnableFolderCreation = list.enable_folder_creation;
+    }
+    if (list.draft_version_visibility !== null && list.draft_version_visibility !== undefined) {
+      wanted.DraftVersionVisibility = list.draft_version_visibility;
+    }
+    const names = Object.keys(wanted);
+    if (names.length === 0) return;
+    const url = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=${names.join(',')}`);
+    const read = async (what) => {
+      const resp = await fetchWithRetry(url, { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Library '${list.title}' ${names.join('/')} ${what} failed: HTTP ${resp.status} ${text}`);
+      }
+      const d = ((await resp.json()) || {}).d || {};
+      for (const name of names) {
+        if (typeof d[name] !== typeof wanted[name]) {
+          throw new Error(`Library '${list.title}' ${what} returned no ${typeof wanted[name]} ${name}; this tenant does not expose the property the library setting needs.`);
+        }
+      }
+      return d;
+    };
+    const live = await read('probe');
+    const drifted = names.filter(name => live[name] !== wanted[name]);
+    if (drifted.length === 0) return;
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    const body = { __metadata: { type: 'SP.List' } };
+    for (const name of drifted) body[name] = wanted[name];
+    await patchListById(owned.Id, body, digest);
+    const back = await read('read-back');
+    // Every declared name, not only the drifted ones: the read-back carries them all.
+    for (const name of names) {
+      if (back[name] !== wanted[name]) {
+        throw new Error(`Library '${list.title}' did not retain ${name} = ${wanted[name]} (read back ${back[name]})`);
+      }
+    }
+    for (const name of drifted) {
+      log('INFO', `Library '${list.title}' ${name} set to ${wanted[name]}.`);
+      logChange({ key: `list-setting:${list.title}:${name}`, kind: 'list-setting', target: list.title,
+        oldValue: String(live[name]), newValue: String(wanted[name]) });
+    }
+  }
+
   // Declared ITEM-level trimming: ReadSecurity / WriteSecurity, each 1 ("all
   // items") or 2 ("items created by the user"). They narrow what a LIST-level
   // grant reaches, which is how a drop box is built -- Contribute plus
@@ -956,6 +1007,7 @@
     await reconcileListItemSecurity(list, digest);
     await reconcileListAttachments(list, digest);
     await reconcileListForceCheckout(list, digest);
+    await reconcileListLibrarySwitches(list, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
   }

@@ -26,10 +26,12 @@ from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     ENTITY_KINDS,
+    DraftVisibility,
     EntityKind,
     EntityMapping,
     FormFormatting,
     LibrarySettings,
+    Versioning,
     ViewDef,
 )
 
@@ -1622,9 +1624,57 @@ def test_library_settings_are_refused_on_a_list() -> None:
     assert "Docs" in f.message
 
 
+@pytest.mark.parametrize("settings", [
+    LibrarySettings(enable_folder_creation=False),
+    LibrarySettings(draft_version_visibility="author"),
+])
+def test_each_new_library_setting_is_refused_on_a_list(settings: LibrarySettings) -> None:
+    entity = EntityMapping(
+        name="Docs", kind="List", base_template=100, site_role="default", settings=settings,
+    )
+    only(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)
+
+
+def _visibility_findings(visibility: DraftVisibility, *, minor: bool) -> list[Finding]:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(draft_version_visibility=visibility),
+    )
+    return _library_findings(
+        entity, versioning_default=Versioning(enable_minor_versions=minor),
+    )
+
+
+def test_draft_visibility_needs_minor_versions() -> None:
+    f = only(
+        _visibility_findings("approver", minor=False),
+        FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
+    )
+    assert "Docs" in f.message
+    none_of(
+        _visibility_findings("approver", minor=True),
+        FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
+    )
+    none_of(
+        _visibility_findings("reader", minor=False),
+        FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
+    )
+
+
 def test_library_settings_are_accepted_on_a_library() -> None:
     entity = EntityMapping(
         name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
         settings=LibrarySettings(require_checkout=False),
     )
     none_of(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)
+
+
+def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(draft_version_visibility="author"),
+    )
+    findings = _library_findings(
+        entity, versioning_default=Versioning(enable_versioning=False, enable_minor_versions=True),
+    )
+    only(findings, FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS)
