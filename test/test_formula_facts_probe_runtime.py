@@ -33,10 +33,10 @@ LIST = "formula.calc.fixture-facts-list"
 ITEM = "formula.calc.fixture-facts-item"
 TYPE = "formula.calc.fixture-facts-content-type"
 CREATED = "formula.datetime.fact-created-plus-days-day"
+TYPES = ("number", "text", "date", "choice")
 OPS = ["add", "sub", "mul", "div", "pow", "cat", "eq", "ne", "lt", "gt", "le", "ge"]
 CASE_NAMES = (
-    [f"B_{op}_{t}_{s}" for op in OPS for t in ("number", "text", "date", "choice") for s in "lr"]
-    + [f"B_{op}_blank_b" for op in OPS]
+    [f"B_{op}_{t}_{s}" for op in OPS for t in TYPES for s in "lrb"]
     + ["Dov1", "Dov2", "Dov3", "Dov4", "Dov5", "Teq1", "Teq2", "CpdZero", "CpdOne", "Cdr",
        "CdrTime", "Ndisp", "NdispWhole"]
 )
@@ -60,8 +60,9 @@ _MOCK = textwrap.dedent(r"""
     };
     const LIST_ID = '00000000-0000-4000-8000-000000000abc';
     const OWNER = 'dbml-sharepoint formula-facts probe scratch list. Safe to delete.';
-    const OPERANDS = { NumA: 'Number', BlankNum: 'Number', TextA: 'Text', DateA: 'DateTime',
-      DateLeap: 'DateTime', ChoiceA: 'Choice' };
+    const OPERANDS = { NumA: 'Number', BlankNum: 'Number', TextA: 'Text', BlankText: 'Text',
+      DateA: 'DateTime', DateLeap: 'DateTime', BlankDate: 'DateTime', ChoiceA: 'Choice',
+      BlankChoice: 'Choice' };
     let standing = CONFIG.existing === 'foreign' ? { Description: 'Not made by the probe.' }
       : CONFIG.existing ? { Description: OWNER } : null;
     let kinds = {};
@@ -138,7 +139,8 @@ _MOCK = textwrap.dedent(r"""
         const row = { Id: 1, Created: CONFIG.created || '2026-10-20T20:00:00Z', NumA: 5,
           TextA: 'abc',
           DateA: '2026-03-15T00:00:00Z', ChoiceA: 'Low', DateLeap: '2024-02-29T00:00:00Z',
-          BlankNum: CONFIG.blankValue === undefined ? null : CONFIG.blankValue,
+          BlankNum: null, BlankDate: null, BlankChoice: null,
+          BlankText: CONFIG.blankValue === undefined ? null : CONFIG.blankValue,
           CpdZero: CONFIG.cpdZero || '2026-10-21T00:00:00Z' };
         return answer(200, Object.fromEntries(
           wanted.map((n) => [n, n in row ? row[n] : 'v_' + n])));
@@ -201,6 +203,23 @@ def test_a_build_run_creates_every_case_and_holds_its_fixtures() -> None:
     assert ended_with_report(output)
 
 
+def test_blank_is_covered_for_every_operator_operand_type_and_side() -> None:
+    _rows, sent, _output = _run()
+
+    created = {json.loads(s["body"].text)["Title"] for s in _writes(sent)
+               if s["path"].endswith("/fields")}
+    assert len(CASE_NAMES) == 12 * 4 * 3 + 13
+    assert {n for n in CASE_NAMES if n.startswith("B_")} <= created
+    twins = {"BlankNum": "Number", "BlankText": "Text", "BlankDate": "DateTime",
+             "BlankChoice": "Choice"}
+    made = [json.loads(s["body"].text)["parameters"]["SchemaXml"] for s in _writes(sent)
+            if s["path"].endswith("/fields/createfieldasxml")]
+    for name, kind in twins.items():
+        assert any(f"Name='{name}'" in x and f"Type='{kind}'" in x for x in made), name
+    facts = _facts(_run(PRIOR, READ)[2])["blank_coercion"]["cases"]
+    assert all(set(facts[op][t].keys()) == {"left", "right", "both"} for op in OPS for t in TYPES)
+
+
 def test_a_refused_case_is_recorded_with_its_message_and_the_run_goes_on() -> None:
     rows, _sent, _output = _run({"refuse": "^"})
 
@@ -219,6 +238,7 @@ def test_a_read_run_prints_exactly_the_fact_keys_with_results() -> None:
     assert not _writes(sent)
     cases = facts["blank_coercion"]["cases"]
     assert cases["add"]["number"]["left"] == "v_B_add_number_l"
+    assert cases["ge"]["choice"]["both"] == "v_B_ge_choice_b"
     assert rows["formula.datetime.calculated-date-form-body-reads"]["outcome"] == "MANUAL"
 
 
@@ -244,7 +264,7 @@ def test_a_blank_column_that_is_not_blank_voids_every_fact_resting_on_the_item()
 
     facts = _facts(output)
     resting = FACT_KEYS - {"header_size_limit"}
-    assert rows[ITEM]["outcome"] == "FAIL"
+    assert rows[ITEM]["outcome"] == "FAIL" and "BlankText" in rows[ITEM]["evidence"]
     assert {k for k in FACT_KEYS if facts[k] == "VOID"} == resting
     assert len(voided(rows)) >= len(resting)
     assert ended_with_report(output)
@@ -281,7 +301,7 @@ def test_a_throttled_size_search_is_left_open_not_recorded_as_a_limit() -> None:
 
     row = rows["formula.calc.fact-header-size-limit"]
     assert row["state"] == "open" and "429" in row["evidence"]
-    assert _facts(output)["header_size_limit"] == "VOID"
+    assert _facts(output)["header_size_limit"].startswith("INCONCLUSIVE")
 
 
 def test_a_foreign_list_of_the_same_title_is_never_touched() -> None:

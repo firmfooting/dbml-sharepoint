@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: THE FORMULA FACTS A FORM HEADER DEPENDS ON ----
  *
- * REVISION: 0fc6542a
+ * REVISION: 70039572
  *
  * QUESTION: what does the server do with the corners of a calculated column's
  * formula that a header evaluator written outside the server would have to
@@ -28,7 +28,7 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   formula.calc.fixture-facts-list              the list, with this probe's Description
  *   formula.calc.fixture-facts-columns           the operand columns, by TypeAsString
- *   formula.calc.fixture-facts-item              the one item: operands filled, BlankNum empty
+ *   formula.calc.fixture-facts-item              the one item: operands filled, every Blank column empty
  *   formula.datetime.fixture-facts-column-formatter  the formatter on both calculated date columns
  *   formula.datetime.fixture-facts-site-zone     the site's time zone offsets
  *   formula.calc.fixture-facts-content-type      the default item content type (size)
@@ -69,6 +69,7 @@
   const WEB = pageCtx.webAbsoluteUrl;
 
   const log = (level, msg) => console.log(`[${level}] ${msg}`);
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const getDigest = async () => {
     const res = await fetch(`${WEB}/_api/contextinfo`, {
@@ -91,12 +92,7 @@
     }
   };
 
-  // NOTE the contract, because getting it wrong has produced false verdicts
-  // here twice: `body` is the PARSED payload whether or not the request
-  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON, never that the call
-  // worked. Anything asking "did I actually read this?" must test `ok`.
-  const readFailed = (r) => !r.ok || r.body === null;
+  // `body` is the parsed payload even when the call failed, so only `ok` says a call worked.
 
   // Non-2xx other than 401/403/408/429/503 is the server rejecting the content: this tenant answers refusals 500, not 400.
   const isRefusal = (status) =>
@@ -142,7 +138,7 @@
   //
   // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
   // and `/items(<id>)` hang off it (Working with lists and list items with
-  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // REST, and the CSOM/REST API index).
   // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
   // It is the call this project has live evidence for with only the
   // addressing changed, and an unsupported URL fails visibly here rather
@@ -155,7 +151,6 @@
     }
     // An Id that is not a GUID would be spliced into a URL that addresses
     // something else, so it fails closed instead of being sent.
-    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (expectedId !== null && !GUID.test(String(expectedId))) {
       log('FAIL', `CLEANUP: '${expectedId}' is not a list Id, so nothing was deleted or `
                   + `recycled under '${title}'.`);
@@ -222,8 +217,8 @@
   //
   // STATE carries the coarse answer alongside the prose, from the five-value
   // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
-  // void, needs-human. There are 83 distinct outcome heads across the
-  // committed evidence, which is good prose and a bad enum, so a reader
+  // void, needs-human. Outcome heads are
+  // free prose and a bad enum, so a reader
   // downstream sorts on state and quotes outcome. record() takes an explicit
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
@@ -361,7 +356,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 0fc6542a. Quote this when reporting results.');
+  log('INFO', 'probe revision 70039572. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'build'; // 'build', then 'read', then 'size'
@@ -379,7 +374,7 @@
   const DAT = 'DateA';
   const CHO = 'ChoiceA';
   const LEAP = 'DateLeap';
-  const EMPTY = 'BlankNum';
+  const BLANKS = { number: 'BlankNum', text: 'BlankText', date: 'BlankDate', choice: 'BlankChoice' };
   const ITEM_VALUES = { [NUM]: 5, [TXT]: 'abc', [DAT]: '2026-03-15T00:00:00Z', [CHO]: 'Low', [LEAP]: '2024-02-29T00:00:00Z' };
   const OPERANDS = [['number', NUM], ['text', TXT], ['date', DAT], ['choice', CHO]];
   const OPS = [['add', '+'], ['sub', '-'], ['mul', '*'], ['div', '/'], ['pow', '^'], ['cat', '&'],
@@ -396,10 +391,10 @@
   const addCase = (name, formula, outputType, dateFormat) => CASES.push({ name, formula, outputType, dateFormat });
   for (const op of OPS) {
     for (const [type, column] of OPERANDS) {
-      addCase(`B_${op[0]}_${type}_l`, exprOf(op, EMPTY, column), TEXT);
-      addCase(`B_${op[0]}_${type}_r`, exprOf(op, column, EMPTY), TEXT);
+      addCase(`B_${op[0]}_${type}_l`, exprOf(op, BLANKS[type], column), TEXT);
+      addCase(`B_${op[0]}_${type}_r`, exprOf(op, column, BLANKS[type]), TEXT);
+      addCase(`B_${op[0]}_${type}_b`, exprOf(op, BLANKS[type], BLANKS[type]), TEXT);
     }
-    addCase(`B_${op[0]}_blank_b`, exprOf(op, EMPTY, EMPTY), TEXT);
   }
   const BLANK_CASES = CASES.length;
   const OVERFLOW_CASES = [['Dov1', 'DATE(2026,13,5)'], ['Dov2', 'DATE(2026,1,0)'], ['Dov3', 'DATE(2026,2,31)'],
@@ -462,7 +457,7 @@
   expect('formula.calc.fixture-facts-list', 'the list reads back with its marker, an item type and its folder URL');
   if (MODE !== 'size') {
     expect('formula.calc.fixture-facts-columns', 'the operand columns read back with their types');
-    expect('formula.calc.fixture-facts-item', 'the item reads back with the operands filled and BlankNum empty');
+    expect('formula.calc.fixture-facts-item', 'the item reads back with the operands filled and every Blank column empty');
     expect('formula.datetime.fixture-facts-column-formatter', 'both calculated date columns read back the column formatter as written');
   }
   if (BUILD) {
@@ -519,8 +514,8 @@
   };
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
   const said = (what, r) => log(r.ok ? 'INFO' : 'FAIL', `${what}: HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`);
-  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const listAt = `web/lists/getbytitle('${enc(LIST)}')`;
+  const MERGE = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
 
   const refuse = (why) => {
     record(LIST_F, 'the list reads back with its marker, an item type and its folder URL', 'FAIL', why);
@@ -588,11 +583,10 @@
       { ClientFormCustomFormatter: (v) => v === null || typeof v === 'string' }, dependents(TYPE))) return finish(true);
     const shell = (t) => JSON.stringify({ headerJSONFormatter: { elmType: 'div', txtContent: t } });
     const overhead = shell('').length;
-    const merge = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
     // The read back, not the write status, says what the type holds: saved, refused, or unanswered.
     const attempt = async (n) => {
       const formatter = shell('x'.repeat(Math.max(0, n - overhead)));
-      const w = await post(typePath, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: formatter }, merge);
+      const w = await post(typePath, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: formatter }, MERGE);
       if (!w.ok) {
         return isRefusal(w.status) && !bare500(w)
           ? { verdict: 'refused', why: `HTTP ${w.status} ${reason(w)}` }
@@ -622,6 +616,7 @@
       record(F_SIZE, 'the largest form formatter the content type saves, found by doubling then bisecting', 'NOT ESTABLISHED',
         `the search stopped with ${good} saved: ${stopped}`, 'open');
       voidDependents(dependents(F_SIZE), 'the size search did not finish');
+      FACTS.header_size_limit = `INCONCLUSIVE: the search stopped with ${good} saved: ${stopped}`;
       return finish(true);
     }
     FACTS.header_size_limit = { largest_saved: good, first_refused: bad, refusal: why, cap: CAP };
@@ -644,15 +639,19 @@
   const addField = (schemaXml) => post(`${at}/fields/createfieldasxml`, { parameters: {
     __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: schemaXml, Options: 9 } });
   if (BUILD) {
-    for (const name of [NUM, EMPTY]) {
+    for (const name of [NUM, BLANKS.number]) {
       said(`${name} create`, await addField(`<Field Type='Number' Name='${name}' DisplayName='${name}'></Field>`));
     }
-    said(`${TXT} create`, await addField(`<Field Type='Text' Name='${TXT}' DisplayName='${TXT}'></Field>`));
-    for (const name of [DAT, LEAP]) {
+    for (const name of [TXT, BLANKS.text]) {
+      said(`${name} create`, await addField(`<Field Type='Text' Name='${name}' DisplayName='${name}'></Field>`));
+    }
+    for (const name of [DAT, LEAP, BLANKS.date]) {
       said(`${name} create`, await addField(`<Field Type='DateTime' Name='${name}' DisplayName='${name}' Format='DateOnly'></Field>`));
     }
-    said(`${CHO} create`, await addField(`<Field Type='Choice' Name='${CHO}' DisplayName='${CHO}'>`
-      + '<CHOICES><CHOICE>Low</CHOICE><CHOICE>High</CHOICE></CHOICES></Field>'));
+    for (const name of [CHO, BLANKS.choice]) {
+      said(`${name} create`, await addField(`<Field Type='Choice' Name='${name}' DisplayName='${name}'>`
+        + '<CHOICES><CHOICE>Low</CHOICE><CHOICE>High</CHOICE></CHOICES></Field>'));
+    }
   }
   const readFields = () => spGet(`${at}/fields?$select=InternalName,TypeAsString&$top=500`);
   let fields = null;
@@ -660,7 +659,8 @@
     const f = ((fields && fields.body && fields.body.value) || []).find((r) => r && r.InternalName === name);
     return f && f.TypeAsString;
   };
-  const OPERAND_KINDS = { [NUM]: 'Number', [EMPTY]: 'Number', [TXT]: 'Text', [DAT]: 'DateTime', [LEAP]: 'DateTime', [CHO]: 'Choice' };
+  const OPERAND_KINDS = { [NUM]: 'Number', [TXT]: 'Text', [DAT]: 'DateTime', [LEAP]: 'DateTime', [CHO]: 'Choice',
+    BlankNum: 'Number', BlankText: 'Text', BlankDate: 'DateTime', BlankChoice: 'Choice' };
   if (!await establishFixture(COLS, async () => (fields = await readFields()),
     { value: (rows) => Array.isArray(rows) && Object.entries(OPERAND_KINDS).every(([n, k]) => kindOf(n) === k) },
     dependents(COLS))) return finish(true);
@@ -679,17 +679,17 @@
   }
   const day = (v) => typeof v === 'string' && v.slice(0, 10);
   const itemRead = () => (Number.isInteger(itemId)
-    ? spGet(`${at}/items(${itemId})?$select=Id,Created,${NUM},${TXT},${DAT},${CHO},${LEAP},${EMPTY}`)
+    ? spGet(`${at}/items(${itemId})?$select=Id,Created,${NUM},${TXT},${DAT},${CHO},${LEAP},${Object.values(BLANKS).join(',')}`)
     : { ok: false, status: 0, body: null });
   let item = null;
   if (!await establishFixture(ITEM, async () => (item = await itemRead()), {
     Id: itemId, [NUM]: 5, [TXT]: 'abc', [CHO]: 'Low', [DAT]: (v) => day(v) === '2026-03-15',
-    [LEAP]: (v) => day(v) === '2024-02-29', [EMPTY]: (v) => v === null,
+    [LEAP]: (v) => day(v) === '2024-02-29',
+    ...Object.fromEntries(Object.values(BLANKS).map((n) => [n, (v) => v === null])),
     Created: (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) },
   dependents(ITEM))) return finish(true);
 
   const fieldAt = (name) => `${at}/fields/getbyinternalnameortitle('${name}')`;
-  const MERGE = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
   const readFormatters = async () => {
     const out = {};
     for (const name of DATE_COLUMNS) {
@@ -753,8 +753,8 @@
     const blank = {};
     for (const [code, sign] of OPS) {
       blank[code] = { sign };
-      for (const [type] of OPERANDS) blank[code][type] = { left: cell(`B_${code}_${type}_l`), right: cell(`B_${code}_${type}_r`) };
-      blank[code].blank = { both: cell(`B_${code}_blank_b`) };
+      for (const [type] of OPERANDS) blank[code][type] = { left: cell(`B_${code}_${type}_l`), right: cell(`B_${code}_${type}_r`),
+          both: cell(`B_${code}_${type}_b`) };
     }
     FACTS.blank_coercion = { operands: { number: ITEM_VALUES[NUM], text: ITEM_VALUES[TXT], date: ITEM_VALUES[DAT], choice: ITEM_VALUES[CHO] }, cases: blank };
     const missing = CASES.slice(0, BLANK_CASES).filter((c) => !present.has(c.name)).length;

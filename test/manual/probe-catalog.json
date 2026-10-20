@@ -1345,7 +1345,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -13781,7 +13781,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch generic list with operand columns, one item, about 120 calculated case columns and a column formatter on two of them, and on the default content type a form formatter written at growing sizes; recycled by the next build run with CLEANUP on"
+        "one scratch generic list with operand columns, one item, about 150 calculated case columns and a column formatter on two of them, and on the default content type a form formatter written at growing sizes; recycled by the next build run with CLEANUP on"
       ],
       "cleanup": {
         "policy": "before"
