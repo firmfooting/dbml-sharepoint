@@ -218,3 +218,18 @@ def test_two_entities_claiming_one_title_still_refuse_with_title_and_prefixes() 
         "Other": _titled("Other", "Others", "Risk"),
     })
     assert any(f.code == FindingCode.RENAMED_FROM_CLAIMED_TWICE for f in found)
+
+
+def test_a_title_differing_only_by_case_from_the_generated_one_is_not_a_rename() -> None:
+    found = _titled_findings({"Risk": _titled("Risk", "APP_RISK")})
+    none_of(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
+
+
+def test_the_implicit_title_never_takes_a_declared_historical_pair() -> None:
+    bundle = make_bundle(
+        prefix="", previous_prefixes=("Old",),
+        entities={"OldRisk": _titled("OldRisk", "Risks", "Risk")},
+    )
+    assert bundle.mapping.previous_titles("OldRisk") == [
+        ("Risk", "Risk"), ("OldOldRisk", "OldRisk"), ("OldRisk", "Risk"),
+    ]

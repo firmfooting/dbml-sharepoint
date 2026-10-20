@@ -1099,24 +1099,28 @@ class Mapping:
         """Every title this list may be found under on a site that has not
         migrated, each paired with the entity name whose marker it must carry.
 
-        Order: for the current prefix and then each previous prefix, the entity
-        name and then each previous name. The current
-        title is never a candidate, and nothing is listed twice.
+        Order: the current prefix with each previous name, then each previous
+        prefix with the entity name and each previous name, then the current
+        prefix with the entity name. The current title is never a candidate,
+        and nothing is listed twice (compared case-insensitively).
         """
         entity = self.entities[entity_name]
-        current = self.list_title(entity_name)
+        current = self.list_title(entity_name).casefold()
         seen: set[str] = set()
         out: list[tuple[str, str]] = []
-        prefixes = [self.prefix, *self.previous_prefixes]
-        for prefix in prefixes:
-            # The entity name is a candidate under every prefix: with `title:`
-            # set, `<prefix><name>` is what the list was called before it.
-            for name in [entity_name, *entity.renamed_from]:
-                title = prefix + name
-                if title == current or title in seen:
-                    continue
-                seen.add(title)
+
+        def add(title: str, name: str) -> None:
+            if title.casefold() not in seen | {current}:
+                seen.add(title.casefold())
                 out.append((title, name))
+
+        prefixes = [self.prefix, *self.previous_prefixes]
+        for i, prefix in enumerate(prefixes):
+            for name in (entity.renamed_from if i == 0 else [entity_name, *entity.renamed_from]):
+                add(prefix + name, name)
+        # Last, so it never takes a title a declared historical pair produces.
+        # With `title:` set this is the list's name before `title:` existed.
+        add(self.prefix + entity_name, entity_name)
         return out
 
 @dataclass(frozen=True)
