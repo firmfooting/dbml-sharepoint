@@ -333,6 +333,21 @@
     .split(/("(?:""|[^"])*")/)
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
+  // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
+  const folderDefaultValues = (text, path) => {
+    const unescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    for (const entry of String(text).matchAll(/<a\s+href="([^"]*)"\s*>([\s\S]*?)<\/a>/g)) {
+      let found = unescape(entry[1]);
+      try { found = decodeURIComponent(found); } catch { /* compare the stored text */ }
+      if (found !== path) continue;
+      const values = new Map();
+      for (const v of entry[2].matchAll(/<DefaultValue\s+FieldName="([^"]*)"\s*>([\s\S]*?)<\/DefaultValue>/g)) {
+        values.set(unescape(v[1]), unescape(v[2]));
+      }
+      return values;
+    }
+    return new Map();
+  };
 
   async function verifySite(ctx) {
     const { targets: T, log, fetchWithRetry, apiUrl, odataName, getDigest, spHeaders,
@@ -471,6 +486,30 @@
         } else {
           finding(key, 'PASS', `VERIFIED: '${lib.title}' holds ${prop} ${lib[setting]}.`);
         }
+      }
+    }
+    // Folder defaults: the stored file holds exactly the declared values for each declared folder.
+    for (const lib of T.library_settings) {
+      if (!lib.folder_defaults) continue;
+      const key = `folder_defaults:${lib.title}`;
+      const root = await readJson(`web/lists/getbytitle('${odataName(lib.title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const rootUrl = root.ok && root.d ? root.d.ServerRelativeUrl : null;
+      if (typeof rootUrl !== 'string') {
+        finding(key, 'NOT-ASSESSABLE', `'${lib.title}' root folder could not be read (HTTP ${root.status}).`);
+        continue;
+      }
+      const file = await fetchWithRetry(apiUrl(`web/GetFileByServerRelativeUrl('${`${rootUrl}/Forms/client_LocationBasedDefaults.html`.replace(/'/g, "''")}')/$value`));
+      if (!file.ok && file.status !== 404) {
+        finding(key, 'NOT-ASSESSABLE', `'${lib.title}' defaults file could not be read (HTTP ${file.status}).`);
+        continue;
+      }
+      const text = file.ok ? await file.text() : '';
+      for (const declared of lib.folder_defaults) {
+        const held = folderDefaultValues(text, `${rootUrl}/${declared.folder}`);
+        const wrong = declared.values.filter((v) => held.get(v.field) !== v.value).map((v) => v.field);
+        const folderKey = `${key}:${declared.folder}`;
+        if (wrong.length) finding(folderKey, 'FAIL', `MISMATCH: '${lib.title}/${declared.folder}' does not hold the declared default for ${wrong.join(', ')}.`);
+        else finding(folderKey, 'PASS', `VERIFIED: '${lib.title}/${declared.folder}' holds its declared defaults.`);
       }
     }
     if (T.checks.length === 0) return finish();

@@ -124,6 +124,7 @@
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_checkout": [],
+  "library_folder_defaults": [],
   "library_folders": [],
   "library_roots": [],
   "library_switches": [],
@@ -385,6 +386,21 @@
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
     return cachedDigest;
   }
+  // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
+  const folderDefaultValues = (text, path) => {
+    const unescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    for (const entry of String(text).matchAll(/<a\s+href="([^"]*)"\s*>([\s\S]*?)<\/a>/g)) {
+      let found = unescape(entry[1]);
+      try { found = decodeURIComponent(found); } catch { /* compare the stored text */ }
+      if (found !== path) continue;
+      const values = new Map();
+      for (const v of entry[2].matchAll(/<DefaultValue\s+FieldName="([^"]*)"\s*>([\s\S]*?)<\/DefaultValue>/g)) {
+        values.set(unescape(v[1]), unescape(v[2]));
+      }
+      return values;
+    }
+    return new Map();
+  };
 
   // The READ half of the $batch transport, and only the read half: this
   // script includes `_http_batch_read.js.j2` where the write-capable scripts
@@ -1566,6 +1582,29 @@
       } else {
         finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; its ${prop} could not be read (${r.ok ? 'no value of the declared type reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }
+    }
+
+    // Declared folder defaults against the stored file, read only and INFO.
+    for (const [title, declaredFolders] of (TARGETS.library_folder_defaults || [])) {
+      const key = `library_folder_defaults:${title}`;
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const rootUrl = root.ok && root.d ? root.d.ServerRelativeUrl : null;
+      let text = null;
+      if (typeof rootUrl === 'string') {
+        const file = await fetchWithRetry(apiUrl(`web/GetFileByServerRelativeUrl('${`${rootUrl}/Forms/client_LocationBasedDefaults.html`.replace(/'/g, "''")}')/$value`));
+        text = file.ok ? await file.text() : (file.status === 404 ? '' : null);
+      }
+      if (text === null) {
+        finding(2, key, 'INFO', `Library '${title}' declares folder defaults; the defaults file could not be read, so the deploy decides.`);
+        continue;
+      }
+      const differing = declaredFolders.filter((d) => {
+        const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
+        return d.values.some((v) => held.get(v.field) !== v.value);
+      }).map((d) => d.folder);
+      finding(2, key, 'INFO', differing.length
+        ? `Library '${title}' declares folder defaults; ${differing.join(', ')} differ from the stored file, which the deploy will change.`
+        : `Library '${title}' declares folder defaults; the stored file already holds them.`);
     }
 
     // CSOM ProcessQuery availability (read-only Current-Web-Title query),

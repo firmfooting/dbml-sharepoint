@@ -101,6 +101,16 @@ class ItemSecurity(TypedDict):
     write: JsonValue
 
 
+class FolderDefaultValue(TypedDict):
+    field: str
+    value: str
+
+
+class FolderDefaults(TypedDict):
+    folder: str
+    values: list[FolderDefaultValue]
+
+
 class ListRow(TypedDict):
     title: str
     kind: str
@@ -108,6 +118,7 @@ class ListRow(TypedDict):
     internal_name: NotRequired[str]
     is_library: bool
     folders: list[str]
+    folder_defaults: list[FolderDefaults]
     description: str
     expected_marker: str
     renamed_from: list[RenamedFrom]

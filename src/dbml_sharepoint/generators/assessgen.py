@@ -33,6 +33,7 @@ from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import (
     DRAFT_VISIBILITY_VALUES,
+    EntityMapping,
     LibrarySettings,
     MappingBundle,
 )
@@ -95,6 +96,7 @@ class AssessTargets(TypedDict):
     library_roots: list[JsonValue]
     library_checkout: list[JsonValue]
     library_switches: list[JsonValue]
+    library_folder_defaults: list[JsonValue]
     list_view_threshold: int
     index_change_ceiling: int
     declares_groups: bool
@@ -125,6 +127,7 @@ class _Collected:
     library_roots: list[tuple[str, str, int, bool]]
     library_checkout: list[tuple[str, bool]]
     library_switches: list[tuple[str, str, str, bool | int]]
+    library_folder_defaults: list[tuple[str, list[JsonValue]]]
     list_view_threshold: int
     index_change_ceiling: int
     declares_groups: bool
@@ -143,6 +146,20 @@ def _pairs(rows: list[tuple[str, str]]) -> list[JsonValue]:
 
 def _named_pairs(rows: list[tuple[str, list[tuple[str, str]]]]) -> list[JsonValue]:
     return [[name, _pairs(pairs)] for name, pairs in rows]
+
+
+def _declared_folder_defaults(
+    title: str, entity: EntityMapping,
+) -> list[tuple[str, list[JsonValue]]]:
+    """The library's `folder_defaults` as the assess payload carries them, or nothing."""
+    if not (entity.is_library and entity.folder_defaults):
+        return []
+    return [(title, [
+        {"folder": folder, "values": [
+            {"field": column, "value": value} for column, value in values.items()
+        ]}
+        for folder, values in entity.folder_defaults.items()
+    ])]
 
 
 def _declared_switches(
@@ -184,6 +201,7 @@ def assess_targets(
         "library_roots": [list(root) for root in t.library_roots],
         "library_checkout": [[title, required] for title, required in t.library_checkout],
         "library_switches": [list(switch) for switch in t.library_switches],
+        "library_folder_defaults": [list(pair) for pair in t.library_folder_defaults],
         "list_view_threshold": t.list_view_threshold,
         "index_change_ceiling": t.index_change_ceiling,
         "declares_groups": t.declares_groups,
@@ -268,6 +286,9 @@ def _collect(
     # [[library title, setting key, property, declared value], ...] for the
     # other two library settings; the declared value is the stored one.
     library_switches: list[tuple[str, str, str, bool | int]] = []
+    # [[library title, [{folder, values: [{field, value}]}]], ...] for each library
+    # that declares folder_defaults.
+    library_folder_defaults: list[tuple[str, list[JsonValue]]] = []
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
@@ -281,6 +302,9 @@ def _collect(
             library_checkout.append((
                 bundle.mapping.list_title(table_name), entity.settings.require_checkout,
             ))
+        library_folder_defaults += _declared_folder_defaults(
+            bundle.mapping.list_title(table_name), entity,
+        )
         library_switches += _declared_switches(
             bundle.mapping.list_title(table_name), entity.settings,
         )
@@ -375,6 +399,7 @@ def _collect(
         library_roots=library_roots,
         library_checkout=library_checkout,
         library_switches=library_switches,
+        library_folder_defaults=library_folder_defaults,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.

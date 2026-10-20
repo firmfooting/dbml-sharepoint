@@ -299,6 +299,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const GROUP_REPLY = null;
     const FORCE_CHECKOUT = undefined;
     const LIBRARY_PROP = undefined;
+    const DEFAULTS_FILE = undefined;
     // An instant more than an hour ago is before the clock change.
     Date.prototype.getTimezoneOffset = function () {
       const old = OFFSET_BEFORE_THE_CHANGE !== null && this.getTime() < Date.now() - 3600000;
@@ -383,6 +384,15 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           return respond(404, { error: { message: { value: 'no group' } } });
         }
         return respond(200, { d: { results: GROUP_MEMBERS[name] } });
+      }
+      if (u.includes('RootFolder')) {
+        return respond(200, { d: { ServerRelativeUrl: '/sites/test/APP_Docs' } });
+      }
+      if (u.includes('GetFileByServerRelativeUrl')) {
+        return DEFAULTS_FILE === undefined
+          ? respond(404, {})
+          : { ok: true, status: 200, headers: { get: () => null },
+              text: async () => DEFAULTS_FILE };
       }
       const prop = /\$select=(EnableFolderCreation|DraftVersionVisibility)/.exec(u);
       if (prop) {
@@ -875,12 +885,14 @@ def _checkout_verify_js(declared: bool) -> str:
     )
 
 
-def _switches_verify_js(settings: LibrarySettings) -> str:
+def _switches_verify_js(
+    settings: LibrarySettings, folder_defaults: dict[str, dict[str, str]] | None = None,
+) -> str:
     schema = make_schema(make_table("Docs", column("Title", required=True)))
     base = as_library(make_bundle(entities=["Docs"]), "Docs")
     entity = base.mapping.entities["Docs"]
     bundle = replace(base, mapping=replace(base.mapping, entities={
-        "Docs": replace(entity, settings=settings),
+        "Docs": replace(entity, settings=settings, folder_defaults=folder_defaults or {}),
     }))
     assert verify_targets(schema, bundle, "default")["library_settings"]
     return generate_verify_js(
@@ -903,6 +915,28 @@ def test_folder_creation_and_draft_visibility_are_verified_read_only(
     settings: LibrarySettings, live: str, verdict: str,
 ) -> None:
     out = _run_verify_full(_switches_verify_js(settings), LIBRARY_PROP=live)
+    assert out["verdict"] == verdict
+    assert _no_writes(out)
+
+
+_DEFAULTS_ENTRY = (
+    '<MetadataDefaults><a href="/sites/test/APP_Docs/FolderA">'
+    '<DefaultValue FieldName="Division">Corporate</DefaultValue></a></MetadataDefaults>'
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("file", "verdict"), [
+    (_DEFAULTS_ENTRY, "VERIFIED"),
+    (_DEFAULTS_ENTRY.replace("Corporate", "Finance"), "MISMATCH"),
+    ("undefined", "MISMATCH"),
+])
+def test_folder_defaults_are_verified_against_the_stored_file(file: str, verdict: str) -> None:
+    js = _switches_verify_js(
+        LibrarySettings(), folder_defaults={"FolderA": {"Division": "Corporate"}},
+    )
+    literal = file if file == "undefined" else json.dumps(file)
+    out = _run_verify_full(js, DEFAULTS_FILE=literal)
     assert out["verdict"] == verdict
     assert _no_writes(out)
 

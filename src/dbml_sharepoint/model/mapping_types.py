@@ -194,6 +194,11 @@ class EntityMapping:
     title: str | None = None
     internal_name: str | None = None
     settings: LibrarySettings | None = None
+    # {declared folder: {column: default value}}, library only. A folder named
+    # here has its whole default set reconciled to this declaration; entries for
+    # folders the mapping never declares are left alone. Read by the folder
+    # defaults phase; the validator checks every name and value.
+    folder_defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
     def is_library(self) -> bool:

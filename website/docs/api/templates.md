@@ -137,6 +137,12 @@ Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `lis
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
+### `_folder_defaults_read.js.j2`
+
+Included by: `assess.js.j2`, `verify.js.j2`
+
+The folder defaults file as the read-only scripts see it: the values stored for one folder path. Entries are matched as text; see deploy/_folder_defaults.js.j2.
+
 ### `_formula_canonical.js.j2`
 
 Included by: `deploy/_field_reconcile.js.j2`, `verify.js.j2`
@@ -225,7 +231,7 @@ Runs the site assessment and refuses a verdict the operator has not accepted.
 
 ### `deploy/_field_defaults.js.j2`
 
-*Phase 2.5 (STRUCTURE): field defaults*
+*Phase 2.6 (STRUCTURE): field defaults*
 
 Defaults are included in create-field bodies, but existing columns are skipped in Phase 2.1. Re-applying the declared value makes upgrades idempotent and lets a provisioned constant replace after-create flows.
 
@@ -240,6 +246,12 @@ A calculated column leaves the Edit and Display form only through Hidden on its 
 Included by: `deploy.js.j2`
 
 Shared field machinery for the structure phases: immutable-shape verification (type kind, lookup target, formula) before an existing field is adopted, and narrow MERGE reconciliation of mutable settings (title, description, required, choices, defaults) with readback verification. Fail closed: shape mismatch aborts the field, never mutates it.
+
+### `deploy/_folder_defaults.js.j2`
+
+*Phase 2.3 (STRUCTURE): folder default values*
+
+Phase body: write the default column values declared per folder into the library's location-based defaults file. Only a library that declares folder_defaults is touched. Declared folders are reconciled exactly; every other entry in the file is carried over verbatim.
 
 ### `deploy/_folders.js.j2`
 
@@ -267,7 +279,7 @@ Phase body: enrol every identity a group declares, from the build's resolved val
 
 ### `deploy/_indexes.js.j2`
 
-*Phase 2.4 (STRUCTURE): indexed columns*
+*Phase 2.5 (STRUCTURE): indexed columns*
 
 Phase body: assert Indexed=true on every declared indexed column, verified by readback. SharePoint builds the index asynchronously; the flag is the deployer's contract.
 
@@ -285,7 +297,7 @@ Phase body: decide where this run's record goes, ensure whatever that answer nee
 
 ### `deploy/_lookups.js.j2`
 
-*Phase 2.3 (STRUCTURE): deferred lookups*
+*Phase 2.4 (STRUCTURE): deferred lookups*
 
 Phase body: add the deferred lookup columns (self-references and members of reference cycles) now that every target list exists.
 

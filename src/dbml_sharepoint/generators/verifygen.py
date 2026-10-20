@@ -142,12 +142,23 @@ class _Rule(TypedDict):
     message: str
 
 
+class _FolderDefaultValue(TypedDict):
+    field: str
+    value: str
+
+
+class _FolderDefaults(TypedDict):
+    folder: str
+    values: list[_FolderDefaultValue]
+
+
 class _LibrarySetting(TypedDict):
     title: str
     # Only the declared settings are present.
     require_checkout: NotRequired[bool]
     enable_folder_creation: NotRequired[bool]
     draft_version_visibility: NotRequired[int]
+    folder_defaults: NotRequired[list[_FolderDefaults]]
 
 
 class VerifyTargets(TypedDict):
@@ -391,10 +402,20 @@ def _library_settings(mapping: Mapping, table_names: list[str]) -> list[_Library
     """Each library's declared settings, by deployed title; an unmanaged one is left out."""
     declared: list[_LibrarySetting] = []
     for name in table_names:
-        settings = mapping.entities[name].settings
-        if settings is None:
-            continue
+        entity = mapping.entities[name]
+        settings = entity.settings
         entry: _LibrarySetting = {"title": mapping.list_title(name)}
+        if entity.is_library and entity.folder_defaults:
+            entry["folder_defaults"] = [
+                {"folder": folder, "values": [
+                    {"field": column, "value": value} for column, value in values.items()
+                ]}
+                for folder, values in entity.folder_defaults.items()
+            ]
+        if settings is None:
+            if len(entry) > 1:
+                declared.append(entry)
+            continue
         if settings.require_checkout is not None:
             entry["require_checkout"] = settings.require_checkout
         if settings.enable_folder_creation is not None:

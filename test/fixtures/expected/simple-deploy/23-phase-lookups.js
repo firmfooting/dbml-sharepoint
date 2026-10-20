@@ -1,6 +1,6 @@
-  markPhase('Phase 2.3: deferred lookups');
-  // === Phase 2.3: deferred lookups ===
-  log('INFO', 'Starting Phase 2.3: deferred lookups.');
+  markPhase('Phase 2.4: deferred lookups');
+  // === Phase 2.4: deferred lookups ===
+  log('INFO', 'Starting Phase 2.4: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
 
@@ -20,7 +20,7 @@
       deferredOwnershipFailed = true;
       log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
       summary.errors.push({
-        phase: '2.3', list: listName, error: err.message,
+        phase: '2.4', list: listName, error: err.message,
       });
     }
   }, 4);
@@ -80,14 +80,14 @@
         }
       }
     } catch (err) {
-      log('ERROR', `Phase 2.3 ${lookup.list}.${lookup.field.title}: ${err.message}`);
+      log('ERROR', `Phase 2.4 ${lookup.list}.${lookup.field.title}: ${err.message}`);
       summary.errors.push({
-        phase: '2.3', list: lookup.list, column: lookup.field.title, error: err.message,
+        phase: '2.4', list: lookup.list, column: lookup.field.title, error: err.message,
       });
     }
   }
 
   if (summary.errors.length > 0) {
-    log('ERROR', 'Phase 2.3 lookup reconciliation failed; aborting before indexes and ACL work.');
+    log('ERROR', 'Phase 2.4 lookup reconciliation failed; aborting before indexes and ACL work.');
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }

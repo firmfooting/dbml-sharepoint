@@ -734,6 +734,27 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`DraftVersionVisibility`. Remove the key, or declare "
         "`kind: DocumentLibrary` with `base_template: 101`."
     ),
+    FindingCode.FOLDER_DEFAULTS_ON_A_LIST: (
+        "`folder_defaults` is declared on an entity that is not a "
+        "`DocumentLibrary`. Only a library holds folders. Remove the key, or "
+        "declare `kind: DocumentLibrary` with `base_template: 101`."
+    ),
+    FindingCode.FOLDER_DEFAULT_FOLDER_UNDECLARED: (
+        "`folder_defaults` names a folder the library's `folders` does not "
+        "declare. The deploy reconciles the default values of declared "
+        "folders only, so a default for any other folder would never be "
+        "written."
+    ),
+    FindingCode.FOLDER_DEFAULT_COLUMN_UNKNOWN: (
+        "`folder_defaults` names a column the library does not declare. The "
+        "default is stored against the column's internal name, so a misspelt "
+        "name would be written and never apply."
+    ),
+    FindingCode.FOLDER_DEFAULT_VALUE_INVALID: (
+        "A `folder_defaults` value cannot be written for its column: a choice "
+        "column's default must be one of its enum members, and lookup, person "
+        "and multi-value columns do not take a folder default in this release."
+    ),
     FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS: (
         "A library declares `settings.draft_version_visibility` as `author` or "
         "`approver` while minor versions are off. SharePoint answers the write "

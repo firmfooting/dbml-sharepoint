@@ -995,6 +995,29 @@
       }
     }
 
+    // Declared folder defaults against the stored file, read only and INFO.
+    for (const [title, declaredFolders] of (TARGETS.library_folder_defaults || [])) {
+      const key = `library_folder_defaults:${title}`;
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const rootUrl = root.ok && root.d ? root.d.ServerRelativeUrl : null;
+      let text = null;
+      if (typeof rootUrl === 'string') {
+        const file = await fetchWithRetry(apiUrl(`web/GetFileByServerRelativeUrl('${`${rootUrl}/Forms/client_LocationBasedDefaults.html`.replace(/'/g, "''")}')/$value`));
+        text = file.ok ? await file.text() : (file.status === 404 ? '' : null);
+      }
+      if (text === null) {
+        finding(2, key, 'INFO', `Library '${title}' declares folder defaults; the defaults file could not be read, so the deploy decides.`);
+        continue;
+      }
+      const differing = declaredFolders.filter((d) => {
+        const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
+        return d.values.some((v) => held.get(v.field) !== v.value);
+      }).map((d) => d.folder);
+      finding(2, key, 'INFO', differing.length
+        ? `Library '${title}' declares folder defaults; ${differing.join(', ')} differ from the stored file, which the deploy will change.`
+        : `Library '${title}' declares folder defaults; the stored file already holds them.`);
+    }
+
     // CSOM ProcessQuery availability (read-only Current-Web-Title query),
     // needed for group owner correction and hidden field links.
     if (TARGETS.declares_groups || (TARGETS.list_field_links || []).length > 0) {
