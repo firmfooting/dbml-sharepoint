@@ -809,6 +809,16 @@ and `reportgen` MUST agree on (a column expanded into a Choice + URL
 pair on one side and treated as a Lookup on the other produces a
 report that expands a field the list does not have).
 
+#### `Mapping.declared_previous_titles`
+
+```python
+def declared_previous_titles(self, entity_name: str) -> list[tuple[str, str]]
+```
+
+The previous titles `renamed_from` and `previous_prefixes` declare:
+the current prefix with each previous name, then each previous prefix
+with the entity name and each previous name.
+
 #### `Mapping.declares_item_read_trimming`
 
 ```python
@@ -848,6 +858,19 @@ PascalCase when mode is auto, else the internal name unchanged.
 ```python
 def entity(self, name: str) -> EntityMapping
 ```
+
+#### `Mapping.implicit_previous_title`
+
+```python
+def implicit_previous_title(self, entity_name: str) -> str | None
+```
+
+`<prefix><entity name>`, the title the list had before `title:`
+existed, when `title:` is set and nothing declared already names it.
+
+Opportunistic: a deploy renames from it only when it exists and carries
+the marker, and neither the deploy nor the assessment treats its
+presence beside the current title, or without the marker, as an error.
 
 #### `Mapping.is_retired`
 
@@ -899,10 +922,9 @@ def previous_titles(self, entity_name: str) -> list[tuple[str, str]]
 Every title this list may be found under on a site that has not
 migrated, each paired with the entity name whose marker it must carry.
 
-Order: the current prefix with each previous name, then each previous
-prefix with the entity name and each previous name, then the current
-prefix with the entity name. The current title is never a candidate,
-and nothing is listed twice (compared case-insensitively).
+Order: the declared titles of `declared_previous_titles`, then the
+`implicit_previous_title` if there is one. The current title is never
+a candidate, and nothing is listed twice (compared case-insensitively).
 
 #### `Mapping.projections_for`
 

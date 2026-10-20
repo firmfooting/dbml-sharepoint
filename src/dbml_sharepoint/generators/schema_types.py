@@ -87,6 +87,7 @@ class FieldSpec(TypedDict):
 class RenamedFrom(TypedDict):
     title: str
     expected_marker: str
+    implicit: NotRequired[bool]
 
 
 class BuiltinFormulaRef(TypedDict):

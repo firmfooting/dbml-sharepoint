@@ -3696,3 +3696,20 @@ def test_assess_blocks_on_unmanaged_entries_when_no_synchronous_receiver_exists(
              ".LocationBasedMetadataDefaultsReceiver", "EventType": 10001, "Synchronization": 1}]
     again = _assess_folder_defaults(held, all_findings=True, receivers=sync)
     assert not [f for f in again if f["key"].endswith(":unmanaged")]
+
+
+def test_an_entity_whose_title_differs_adds_no_rename_requirement() -> None:
+    """The implicit prefixed source is opportunistic and stays out of the
+    assessment: a title in place needs no rename row, blocked or otherwise."""
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(make_table("Risk", "Title", note="Risks."))
+    bundle = make_bundle(entities={
+        "Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default", title="Plain Risks",
+        ),
+    })
+    resolved = resolve(schema, bundle.mapping)
+    assert assess_targets(schema, bundle, "default", resolved=resolved)["list_renames"] == []
+    keys = {r.key for r in derive_requirements(schema, bundle, "default", resolved=resolved)}
+    assert not {k for k in keys if k.startswith("rename:")}
