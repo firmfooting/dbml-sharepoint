@@ -24,11 +24,10 @@ def _n(value: float) -> Num:
     return Num(value)
 
 
-# Operator order and left-to-right association follow Microsoft's "Calculation operators
-# and precedence in Excel" (support.microsoft.com, id 48be406d-4975-4d31-b2b8-7af9e0e2878a):
-# negation, %, ^, then * and /, then + and -, then &, then comparison. Microsoft's
-# "Examples of common formulas in lists" says SharePoint formulas use Excel syntax but
-# gives no precedence table of its own.
+# Order follows Excel's documented operator table ("Calculation operators and precedence in
+# Excel", support.microsoft.com, id 48be406d-4975-4d31-b2b8-7af9e0e2878a): negation, %, ^,
+# * /, + -, &, comparison, left to right. SharePoint matching Excel is an assumption, since no
+# SharePoint page states precedence; the -2^2 and 2^-2 cases depend on it and await a probe finding.
 @pytest.mark.parametrize(
     ("formula", "expected"),
     [
