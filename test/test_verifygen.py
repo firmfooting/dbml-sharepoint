@@ -1044,3 +1044,16 @@ def test_seeded_midnights_use_the_offset_in_force_on_each_date() -> None:
             seeded["old" if stamp == "14" else "new"].add(stamp)
     # Midnight at +10:00 is 14:00Z, and at +11:00 it is 13:00Z.
     assert seeded == {"old": {"14"}, "new": {"13"}}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_stale_extra_folder_default_is_a_mismatch() -> None:
+    js = _switches_verify_js(
+        LibrarySettings(), folder_defaults={"FolderA": {"Division": "Corporate"}},
+    )
+    stale = _DEFAULTS_ENTRY.replace(
+        "</a>", '<DefaultValue FieldName="Old">x</DefaultValue></a>',
+    )
+    out = _run_verify_full(js, DEFAULTS_FILE=json.dumps(stale))
+    assert out["verdict"] == "MISMATCH"
+    assert any("undeclared default(s) for Old" in ln for ln in out["log"])

@@ -3639,3 +3639,14 @@ def test_assess_reports_declared_and_live_require_checkout_as_info() -> None:
 def test_assess_says_so_when_force_checkout_is_not_a_boolean() -> None:
     (unreadable,) = _assess_checkout(None)
     assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_sees_a_stale_extra_folder_default_as_a_change() -> None:
+    held = (
+        '<MetadataDefaults><a href="/sites/test/APP_Docs/A">'
+        '<DefaultValue FieldName="Division">Corporate</DefaultValue>'
+        '<DefaultValue FieldName="Old">x</DefaultValue></a></MetadataDefaults>'
+    )
+    (finding,) = _assess_folder_defaults(held)
+    assert "will change" in finding["detail"]

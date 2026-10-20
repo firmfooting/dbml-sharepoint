@@ -2084,6 +2084,19 @@ def test_only_the_drifted_setting_is_merged(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_switch_that_moved_during_the_write_fails_the_read_back(
+    tmp_path: Path,
+) -> None:
+    # Folder creation matches at the probe, so only visibility is merged; the mock
+    # then drops the write, leaving visibility at 0, which the read-back must catch.
+    summary, _, _, _ = _switch_run(
+        tmp_path, library_switches={"enable_folder_creation": True, "draft_version_visibility": 1},
+        ignore_library_prop_writes=True,
+    )
+    assert any("DraftVersionVisibility" in e["error"] for e in summary["errors"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_draft_visibility_readback_mismatch_throws(tmp_path: Path) -> None:
     summary, merges, changes, _ = _switch_run(
         tmp_path, library_switches={"draft_version_visibility": 1},

@@ -13,7 +13,7 @@
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
       'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
-      'list_view_threshold', 'index_change_ceiling', 'library_checkout',
+      'list_view_threshold', 'index_change_ceiling', 'library_checkout', 'library_switches',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
@@ -972,7 +972,7 @@
     }
 
     // EnableFolderCreation and DraftVersionVisibility, read only and INFO for the same reason.
-    for (const [title, setting, prop, declared] of (TARGETS.library_switches || [])) {
+    for (const [title, setting, prop, declared] of TARGETS.library_switches) {
       const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=${prop}`);
       const key = `library_setting:${title}:${prop}`;
       if (r.ok && typeof r.d[prop] === typeof declared) {
@@ -998,7 +998,7 @@
       }
       const differing = declaredFolders.filter((d) => {
         const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
-        return d.values.some((v) => held.get(v.field) !== v.value);
+        return d.values.some((v) => held.get(v.field) !== v.value) || held.size !== d.values.length;
       }).map((d) => d.folder);
       finding(2, key, 'INFO', differing.length
         ? `Library '${title}' declares folder defaults; ${differing.join(', ')} differ from the stored file, which the deploy will change.`

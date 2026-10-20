@@ -507,8 +507,9 @@
       for (const declared of lib.folder_defaults) {
         const held = folderDefaultValues(text, `${rootUrl}/${declared.folder}`);
         const wrong = declared.values.filter((v) => held.get(v.field) !== v.value).map((v) => v.field);
+        const extra = [...held.keys()].filter((f) => !declared.values.some((v) => v.field === f));
         const folderKey = `${key}:${declared.folder}`;
-        if (wrong.length) finding(folderKey, 'FAIL', `MISMATCH: '${lib.title}/${declared.folder}' does not hold the declared default for ${wrong.join(', ')}.`);
+        if (wrong.length || extra.length) finding(folderKey, 'FAIL', `MISMATCH: '${lib.title}/${declared.folder}' ${wrong.length ? `does not hold the declared default for ${wrong.join(', ')}` : ''}${wrong.length && extra.length ? ' and ' : ''}${extra.length ? `still holds undeclared default(s) for ${extra.join(', ')}` : ''}.`);
         else finding(folderKey, 'PASS', `VERIFIED: '${lib.title}/${declared.folder}' holds its declared defaults.`);
       }
     }

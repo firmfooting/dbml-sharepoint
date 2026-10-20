@@ -1739,3 +1739,14 @@ def test_folder_default_on_a_person_or_lookup_column_is_refused(
 def test_folder_defaults_on_a_list_are_refused(tmp_path: Path) -> None:
     findings = _defaults_findings(tmp_path, _GOOD_DEFAULTS, kind="List", template=100)
     only(findings, FindingCode.FOLDER_DEFAULTS_ON_A_LIST)
+
+
+def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(draft_version_visibility="author"),
+    )
+    findings = _library_findings(
+        entity, versioning_default=Versioning(enable_versioning=False, enable_minor_versions=True),
+    )
+    only(findings, FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS)

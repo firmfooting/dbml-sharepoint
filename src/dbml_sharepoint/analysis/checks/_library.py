@@ -86,15 +86,19 @@ def _draft_visibility_needs_minor_versions(
     if (
         settings is None or not entity.is_library
         or settings.draft_version_visibility in (None, "reader")
-        or vc.bundle.mapping.versioning_for(entity_name).enable_minor_versions
+        or (
+            vc.bundle.mapping.versioning_for(entity_name).enable_versioning
+            and vc.bundle.mapping.versioning_for(entity_name).enable_minor_versions
+        )
     ):
         return []
     return [Finding(
         FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
         f"entities[{entity_name}].settings.draft_version_visibility: "
-        f"{settings.draft_version_visibility} has no effect while minor versions "
-        f"are off, because SharePoint keeps Reader. Set enable_minor_versions: true "
-        f"in the versioning that reaches {entity_name}, or remove the key.",
+        f"{settings.draft_version_visibility} has no effect while versioning or "
+        f"minor versions are off, because SharePoint keeps Reader. Set enable_versioning "
+        f"and enable_minor_versions to true in the versioning that reaches {entity_name}, "
+        f"or remove the key.",
         location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
     )]
 
