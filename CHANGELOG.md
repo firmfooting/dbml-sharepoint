@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.25.0...v0.26.0) (2026-10-20)
+
+
+### Features
+
+* **folders:** declare default column values per folder ([#896](https://github.com/firmfooting/dbml-sharepoint/issues/896)) ([7c55ab2](https://github.com/firmfooting/dbml-sharepoint/commit/7c55ab2c41811a58b56116bb2f8aa426705480ba))
+* **settings:** manage EnableFolderCreation and DraftVersionVisibility on libraries ([#895](https://github.com/firmfooting/dbml-sharepoint/issues/895)) ([fd9e760](https://github.com/firmfooting/dbml-sharepoint/commit/fd9e76094818d28d6cd6c9ae025ac220fe403298))
+
 ## [0.25.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.24.1...v0.25.0) (2026-10-19)
 
 
