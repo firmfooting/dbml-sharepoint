@@ -193,7 +193,8 @@ _MOCK = textwrap.dedent(r"""
 
 Run = tuple[dict[str, Json], list[Json], str]
 PER_LIST = 40
-_ORDER = CASE_NAMES[12 * 4 * 3:] + CASE_NAMES[:12 * 4 * 3]
+BLANK_CASES = len(OPS) * len(TYPES) * 3
+_ORDER = CASE_NAMES[BLANK_CASES:] + CASE_NAMES[:BLANK_CASES]
 CHUNKS = [_ORDER[i:i + PER_LIST] for i in range(0, len(_ORDER), PER_LIST)]
 PRIOR = {"prior": True, "chunks": CHUNKS, "formatter": FORMATTER}
 SIZE_PRIOR: dict[str, object] = {"prior": True, "chunks": [[]], "formatter": ""}
@@ -238,7 +239,7 @@ def test_blank_is_covered_for_every_operator_operand_type_and_side() -> None:
 
     created = {json.loads(s["body"].text)["Title"] for s in _writes(sent)
                if s["path"].endswith("/fields")}
-    assert len(CASE_NAMES) == 12 * 4 * 3 + 13
+    assert len(CASE_NAMES) == BLANK_CASES + 13
     assert {n for n in CASE_NAMES if n.startswith("B_")} <= created
     twins = {"BlankNum": "Number", "BlankText": "Text", "BlankDate": "DateTime",
              "BlankChoice": "Choice"}

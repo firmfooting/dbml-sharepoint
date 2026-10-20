@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: THE FORMULA FACTS A FORM HEADER DEPENDS ON ----
  *
- * REVISION: 2041c88c
+ * REVISION: f450e8ed
  *
  * QUESTION: what does the server do with the corners of a calculated column's
  * formula that a header evaluator written outside the server would have to
@@ -357,7 +357,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 2041c88c. Quote this when reporting results.');
+  log('INFO', 'probe revision f450e8ed. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'build'; // 'build', then 'read', then 'size'
@@ -417,7 +417,7 @@
     { elmType: 'div', txtContent: '@currentField.displayValue' }] });
   const DATE_COLUMNS = ['Cdr', 'CdrTime'];
   const CAP = 1048576;
-  // Learn's SharePoint boundaries page caps calculated columns at 48 per list under default row wrapping: https://learn.microsoft.com/sharepoint/install/software-boundaries-limits-2019
+  // 40 per list keeps each list under the row-size limit.
   const PER_LIST = 40;
   // The cases that share the item's date and number reads stay in the first list; the blank cases fill the rest.
   const ORDER = [...CASES.slice(BLANK_CASES), ...CASES.slice(0, BLANK_CASES)];
@@ -538,7 +538,7 @@
   };
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
   const said = (what, r) => log(r.ok ? 'INFO' : 'FAIL', `${what}: HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`);
-  const CAPACITY = /too many (calculated )?(columns|fields)|row size|8,?000 bytes|\b(columns?|fields?|rows?)\b[^.]*\b(exceed\w*|limit|maximum)\b|\b(exceed\w*|limit|maximum)\b[^.]*\b(columns?|fields?|row)\b/i;
+  const CAPACITY = /too many (calculated )?(columns|fields)|row size|8,?000 bytes/i;
   const MERGE = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
 
   // standList finds or makes one scratch list and reads it back; false once a row says why it could not.
