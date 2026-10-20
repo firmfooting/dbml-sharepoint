@@ -27,8 +27,7 @@ def too_large(size: int) -> FormulaRefusal:
     )
 
 
-def check_size(entity: str, column: str, expression: str) -> None:
-    """Refuse a header expression longer than the largest known to save, naming the column."""
+def check_size(expression: str) -> None:
+    """Refuse a header expression longer than the largest known to save."""
     if len(expression) > FORM_HEADER_MAX_CHARS:
-        error = too_large(len(expression))
-        raise FormulaRefusal(error.code, f"{entity}.{column} {error.detail}")
+        raise too_large(len(expression))

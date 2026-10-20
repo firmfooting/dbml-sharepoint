@@ -141,10 +141,20 @@ def test_the_chained_rating_stays_under_budget() -> None:
 
 
 def test_over_budget_is_refused_naming_the_column() -> None:
-    check_size("Task", "Rating", "x" * FORM_HEADER_MAX_CHARS)
+    check_size("x" * FORM_HEADER_MAX_CHARS)
     with pytest.raises(FormulaRefusal) as found:
-        check_size("Task", "Rating", "x" * (FORM_HEADER_MAX_CHARS + 1))
+        check_size("x" * (FORM_HEADER_MAX_CHARS + 1))
     assert found.value.code is FindingCode.FORM_HEADER_TOO_LARGE
-    assert "Task.Rating" in found.value.detail
     assert str(FORM_HEADER_MAX_CHARS + 1) in found.value.detail
     assert "Task.Rating" in found.value.finding("Task", "Rating", "F").message
+
+
+def test_literals_differing_only_by_case_collapse_to_one_branch() -> None:
+    # Text equality ignores case, so the second literal can never be reached.
+    formula = 'IF([Status]="A",1,IF([Status]="a",2,3))'
+    ctx = _ctx(formula, "number")
+    code = tabulate(parse_formula(formula), ctx)
+    assert code is not None
+    assert code.count("toLowerCase([$Status])") == 1
+    expression = translate_column("Calc", ctx).expression
+    check_parity(formula, expression, ctx.formulas, KINDS, CHOICES, BROWSERS)

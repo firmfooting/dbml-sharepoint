@@ -1244,6 +1244,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formatter known to save. The size is a floor, not a SharePoint "
         "limit: no larger save was refused, and none was tried."
     ),
+    FindingCode.FORM_HEADER_DUE_NEEDS_DATE: (
+        "A header bubble is marked `due: true` on a column that is not a date "
+        "or calculated date column, so there is no day to compare with today."
+    ),
+    FindingCode.FORM_HEADER_COLUMN_UNKNOWN: (
+        "A header or footer component names a column the entity does not have."
+    ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "
         "Calculated columns resolve to an empty string there, so the "
