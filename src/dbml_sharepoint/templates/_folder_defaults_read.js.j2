@@ -1,5 +1,4 @@
-{# The folder defaults file as the read-only scripts see it: the values stored
-   for one folder path. Entries are matched as text; see deploy/_folder_defaults.js.j2. #}
+{# Read-only view of the folder defaults file: the values stored for one folder path. #}
   // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
   const folderDefaultValues = (text, path) => {
     const unescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');

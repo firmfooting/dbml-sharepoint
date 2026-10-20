@@ -1,11 +1,7 @@
   markPhase('Phase 2.3: folder default values');
   // === Phase 2.3: folder default values ===
   log('INFO', 'Starting Phase 2.3: folder default values.');
-  // The stored file alone applies nothing: uploads by Files/add, addUsingPath and
-  // Upload.aspx left the column empty until the library had an ItemAdded event
-  // receiver of the location-based defaults class, after which all three applied it.
-  // So this phase registers that receiver (once) and then writes the file.
-  // Files/add(overwrite=true) replaces the whole file, so existing entries are kept verbatim.
+  // The stored file applies nothing until the library has the location-based defaults ItemAdded receiver, so register it first.
   const DEFAULTS_RECEIVER_CLASS = 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver';
   const DEFAULTS_RECEIVER_ASSEMBLY = 'Microsoft.Office.DocumentManagement, Version=16.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c';
   const ITEM_ADDED = 10001;

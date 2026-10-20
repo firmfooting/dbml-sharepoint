@@ -141,7 +141,7 @@ Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be d
 
 Included by: `assess.js.j2`, `deploy.js.j2`, `verify.js.j2`
 
-The folder defaults file as the read-only scripts see it: the values stored for one folder path. Entries are matched as text; see deploy/_folder_defaults.js.j2.
+Read-only view of the folder defaults file: the values stored for one folder path.
 
 ### `_formula_canonical.js.j2`
 
@@ -251,7 +251,7 @@ Shared field machinery for the structure phases: immutable-shape verification (t
 
 *Phase 2.3 (STRUCTURE): folder default values*
 
-Phase body: write the default column values declared per folder into the library's location-based defaults file. Only a library that declares folder_defaults is touched. Declared folders are reconciled exactly; every other entry in the file is carried over verbatim.
+Phase body: reconcile declared folders' defaults in the location-based defaults file; other entries are kept verbatim.
 
 ### `deploy/_folders.js.j2`
 

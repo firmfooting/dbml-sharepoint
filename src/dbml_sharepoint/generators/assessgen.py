@@ -286,8 +286,7 @@ def _collect(
     # [[library title, setting key, property, declared value], ...] for the
     # other two library settings; the declared value is the stored one.
     library_switches: list[tuple[str, str, str, bool | int]] = []
-    # [[library title, [{folder, values: [{field, value}]}]], ...] for each library
-    # that declares folder_defaults.
+    # [[library title, [{folder, values: [{field, value}]}]], ...] per library with folder_defaults.
     library_folder_defaults: list[tuple[str, list[JsonValue]]] = []
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):

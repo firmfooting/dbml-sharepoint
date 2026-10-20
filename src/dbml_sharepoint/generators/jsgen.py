@@ -914,8 +914,7 @@ def build_schema_json(
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
             "folders": list(resolved.require_folders(table_name)),
-            # Declared folders only, in folder order; the validator has already
-            # refused a default for any other folder and any unknown column.
+            # Declared folders only, in folder order; the validator refuses the rest.
             "folder_defaults": [
                 {
                     "folder": folder,
