@@ -1251,6 +1251,17 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.FORM_HEADER_COLUMN_UNKNOWN: (
         "A header or footer component names a column the entity does not have."
     ),
+    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED: (
+        "A header or footer text cannot be written safely: it has a single "
+        "quote where it is placed inside an expression, or `[$` or `@` where "
+        "it is a plain string. The formatting reference documents no escape "
+        "for the first and does not say how the second is read."
+    ),
+    FindingCode.FORM_HEADER_ICON_UNKNOWN: (
+        "A header or footer chip or banner names an icon outside the fleet "
+        "icon vocabulary. SharePoint shows an unknown icon as nothing, with "
+        "no error anywhere."
+    ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "
         "Calculated columns resolve to an empty string there, so the "

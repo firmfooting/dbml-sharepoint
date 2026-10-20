@@ -6,8 +6,10 @@ Shapes follow the formatting syntax reference (Microsoft Learn,
 https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference):
 elmType div, span and a; the style properties display, flex, padding, margin, border-radius and
 the like; the attributes class, href, target, rel and iconName; `if`, `+`, `==`, `!=`, `&&`,
-`||`, `Number()`, `toString()` and `[$Field.displayValue]`. A literal's quote is doubled, the
-convention the shared condition grammar documents for this syntax.
+`||`, `toString()` and `[$Field.displayValue]`. Learn gives no escape for a quote inside an
+expression's literal, so a literal containing one is refused. Learn also does not say how a plain
+string with an embedded `[$` or `@` marker is read, so static text containing one is refused.
+`Number(@now)` as epoch milliseconds is inferred from Learn's `@now + 86400000` sample.
 """
 
 import dataclasses
@@ -25,6 +27,7 @@ from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
+from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES
@@ -90,11 +93,6 @@ def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
 
 def _any(conditions: Sequence[str]) -> str:
     return "(" + " || ".join(conditions) + ")"
-
-
-def _static(text: str) -> str:
-    # A plain string that starts like a special value would be read as one.
-    return text if not text.startswith(("=", "@", "[")) else "=" + quoted(text)
 
 
 def _display(
@@ -211,14 +209,35 @@ class _Render:
         return "(" + self.inline(raw) + ")"
 
     # --- text -----------------------------------------------------------------------------
-    @staticmethod
-    def template(text: str, value: str) -> list[str]:
+    def lit(self, text: str, where: str, column: str | None = None) -> str:
+        """`text` as a quoted literal inside an expression; a single quote is refused."""
+        if "'" in text:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
+                f"the {where} text {text!r} contains a single quote, and the formatting "
+                "reference gives no escape for one inside an expression.",
+            )
+        return quoted(text)
+
+    def plain(self, text: str, where: str, column: str | None = None) -> str:
+        """`text` as a plain txtContent or href, or as a literal when it starts like a formula."""
+        if "[$" in text or "@" in text:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
+                f"the {where} text {text!r} contains [$ or @, which the formatting reference "
+                "does not say a plain string leaves alone.",
+            )
+        return "=" + self.lit(text, where, column) if text.startswith(("=", "[")) else text
+
+    def template(
+        self, text: str, value: str, where: str, column: str | None = None
+    ) -> list[str]:
         """The pieces of `text` with `{value}` replaced by `value`, quoted where literal."""
         pieces: list[str] = []
         chunks = text.split(_VALUE)
         for i, chunk in enumerate(chunks):
             if chunk:
-                pieces.append(quoted(chunk))
+                pieces.append(self.lit(chunk, where, column))
             if i < len(chunks) - 1:
                 pieces.append(value)
         return pieces or ["''"]
@@ -265,6 +284,15 @@ class _Render:
             named += [part.column] if part.column else list(part.columns)
         named += [c.url_column for c in tree.chips if c.url_column]
         named += [i.column for r in tree.rows for i in r.items if isinstance(i, Bubble)]
+        icons = [("banner", tree.banner.icon)] if tree.banner else []
+        icons += [("chip", c.icon) for c in tree.chips]
+        for where, icon in icons:
+            if icon not in FLEET_ICONS:
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_ICON_UNKNOWN, None,
+                    f"the {where} icon {icon!r} is not in the fleet icon vocabulary, and "
+                    "SharePoint shows an unknown icon as nothing.",
+                )
         for name in named:
             if name not in self.ctx.types:
                 raise self.refusal(
@@ -288,7 +316,8 @@ class _Render:
         title = tree.title
         if title is not None:
             v = self.value(title.column)
-            shown = f"=if({v.blank}, {quoted(title.blank)}, {v.code})"
+            blank = self.lit(title.blank, "title blank", title.column)
+            shown = f"=if({v.blank}, {blank}, {v.code})"
             kids.append({
                 "elmType": "div",
                 "style": {"display": _display("block", when=self.when(title.when))},
@@ -324,7 +353,7 @@ class _Render:
                 names = "|".join(map(re.escape, values))
                 chunks = re.split(r"\{(" + names + r")\}", part.text or "")
                 text = " + ".join(
-                    quoted(c) if i % 2 == 0 else values[c].code
+                    self.lit(c, 'subtitle', part.columns[0]) if i % 2 == 0 else values[c].code
                     for i, c in enumerate(chunks)
                     if i % 2 or c
                 ) or "''"
@@ -344,9 +373,10 @@ class _Render:
         if chip.url_column is not None:
             v = self.value(chip.url_column)
             hidden = v.blank
-            href = "=" + " + ".join(self.template(chip.url_template or "", v.code))
+            pieces = self.template(chip.url_template or "", v.code, "chip url", chip.url_column)
+            href = "=" + " + ".join(pieces)
         else:
-            href = _static(chip.url or "")
+            href = self.plain(chip.url or "", "chip url")
         return {
             "elmType": "a",
             "style": {
@@ -361,7 +391,7 @@ class _Render:
                     "style": {"padding": "0 4px"},
                     "attributes": {"iconName": chip.icon},
                 },
-                {"elmType": "span", "txtContent": _static(chip.text)},
+                {"elmType": "span", "txtContent": self.plain(chip.text, "chip")},
             ],
         }
 
@@ -387,7 +417,7 @@ class _Render:
                 **_PILL,
             },
             "attributes": {"class": f"{TOKENS[badge.token].classes} {_SECONDARY}"},
-            "children": [{"elmType": "span", "txtContent": _static(badge.text)}],
+            "children": [{"elmType": "span", "txtContent": self.plain(badge.text, "badge")}],
         }
 
     def bubble(self, bubble: Bubble) -> Json:
@@ -398,9 +428,12 @@ class _Render:
                 f"{column} is marked due but is a {self.ctx.types[column]} column, not a date.",
             )
         v = self.value(column)
-        hidden = [v.blank, *(f"{v.code} == {quoted(h)}" for h in bubble.hide_values)]
+        hidden = [
+            v.blank,
+            *(f"{v.code} == {self.lit(h, 'hide_values', column)}" for h in bubble.hide_values),
+        ]
         pairs = [
-            (f"{v.code} == {quoted(k)}", TOKENS[t].classes)
+            (f"{v.code} == {self.lit(k, 'tokens', column)}", TOKENS[t].classes)
             for k, t in bubble.tokens.items()
             if k != "default"
         ]
@@ -409,9 +442,9 @@ class _Render:
             overdue, guard = self.overdue(column)
             hidden += guard
             pairs.insert(0, (overdue, TOKENS["blocked"].classes))
-        pieces = self.template(bubble.text, v.code) if bubble.text else [v.code]
+        pieces = self.template(bubble.text, v.code, "text", column) if bubble.text else [v.code]
         if bubble.label is not None:
-            pieces.insert(0, quoted(f"{bubble.label}: "))
+            pieces.insert(0, self.lit(f"{bubble.label}: ", "label", column))
         css = (
             f"={_chain(pairs, fallback)} + {quoted(' ' + _SECONDARY)}"
             if pairs
@@ -435,6 +468,7 @@ class _Render:
             rule = zone_rule(self.ctx.zone)
         except FormulaRefusal as error:
             raise self.from_formula(error, column, "the due test") from error
+        # Number(@now) as epoch milliseconds is inferred (Learn shows @now + 86400000).
         due, now = f"Number([${column}])", "Number(@now)"
         # Both days are whole-day arithmetic on the instant, so the browser's zone is never read.
         overdue = f"({site_day(now, rule)} > {site_day(due, rule)})"
@@ -444,7 +478,10 @@ class _Render:
         return overdue, guard
 
     def banner(self, banner: Banner) -> Json:
-        rules = [(self.condition(r.when), r.text) for r in banner.rules]
+        rules = [
+            (self.condition(r.when), self.lit(r.text, "banner rule")[1:-1])
+            for r in banner.rules
+        ]
         return {
             "elmType": "div",
             "style": {
@@ -466,7 +503,7 @@ class _Render:
                     "elmType": "span",
                     "attributes": {"class": "ms-fontWeight-bold"},
                     "style": {"padding": "0 8px 0 0"},
-                    "txtContent": _static(banner.label),
+                    "txtContent": self.plain(banner.label, "banner label"),
                 },
                 {"elmType": "span", "txtContent": "=" + _chain(rules, "")},
             ],

@@ -3,7 +3,7 @@
 import dataclasses
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -24,7 +24,6 @@ from dbml_sharepoint.analysis.form_header import (
 )
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
-from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.form_tree import (
@@ -120,9 +119,9 @@ def _shown(bubble: dict[str, object], row: Mapping[str, object]) -> tuple[object
 def test_rendered_header_never_references_a_calculated_column() -> None:
     tree = HeaderTree(
         title=Title("Title", "x", Leaf("Score", "eq", "Hot")),
-        chips=(LinkChip("Go", "Link", url_column="Score", url_template="https://e/{value}"),),
+        chips=(LinkChip("Go", "ContactLink", url_column="Score", url_template="https://e/{value}"),),
         rows=(Row((Bubble("Score", tokens={"Hot": "severe"}),), Leaf("Score", "eq", "Hot")),),
-        banner=Banner("L", "Info", (BannerRule(Leaf("Score", "eq", "Cold"), "t"),)),
+        banner=Banner("L", "Lightbulb", (BannerRule(Leaf("Score", "eq", "Cold"), "t"),)),
     )
     header = _render(tree)
     assert "Score" not in formatter_field_refs(header)
@@ -241,8 +240,8 @@ def test_subtitle_parts_join_with_a_dot_only_between_shown_parts() -> None:
 
 def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     chip = _kids(_kids(_render(HeaderTree(chips=(
-        LinkChip("Open case", "Link", url_column="Case", url_template="https://e/x?id={value}"),
-        LinkChip("Help", "Help", url="https://e/help"),
+        LinkChip("Open case", "ContactLink", url_column="Case", url_template="https://e/x?id={value}"),
+        LinkChip("Help", "Feedback", url="https://e/help"),
     ))))[0])
     assert _ev(_style(chip[0], "display"), {"Case": ""}) == "none"
     assert _ev(_style(chip[0], "display"), {"Case": "7"}) == "inline-flex"
@@ -250,11 +249,11 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     assert _attr(chip[1], "href") == "https://e/help"
     assert _style(chip[1], "display") == "inline-flex"
     assert _kids(chip[0])[1]["txtContent"] == "Open case"
-    assert _attr(_kids(chip[0])[0], "iconName") == "Link"
+    assert _attr(_kids(chip[0])[0], "iconName") == "ContactLink"
 
 
 def test_a_chip_when_hides_it() -> None:
-    tree = HeaderTree(chips=(LinkChip("Help", "Help", url="u", when=OPEN),))
+    tree = HeaderTree(chips=(LinkChip("Help", "Feedback", url="u", when=OPEN),))
     chip = _kids(_kids(_render(tree))[0])[0]
     assert _ev(_style(chip, "display"), {"Status": "Open"}) == "inline-flex"
     assert _ev(_style(chip, "display"), {"Status": "Done"}) == "none"
@@ -399,7 +398,7 @@ def test_a_zone_the_expressions_cannot_encode_refuses_the_due_test() -> None:
 
 def test_banner_shows_the_first_matching_rule_and_hides_with_none() -> None:
     banner = _kids(_render(HeaderTree(banner=Banner(
-        "Next:", "Info",
+        "Next:", "Lightbulb",
         (
             BannerRule(Leaf("Risk", "eq", "High"), "first"),
             BannerRule(Leaf("Status", "eq", "Open"), "second"),
@@ -419,27 +418,28 @@ def test_banner_shows_the_first_matching_rule_and_hides_with_none() -> None:
         assert _ev(_style(banner, "display"), full) == shown, full
         assert _ev(text, full) == said, full
     assert _kids(banner)[1]["txtContent"] == "Next:"
-    assert _attr(_kids(banner)[0], "iconName") == "Info"
+    assert _attr(_kids(banner)[0], "iconName") == "Lightbulb"
 
 
 # --- text kept verbatim ------------------------------------------------------------------------
 
 
-def test_quotes_braces_and_percent_in_text_render_verbatim() -> None:
-    odd = "It's {raw} 100% O''Brien \"q\""
+def test_braces_percent_and_double_quotes_render_as_written() -> None:
+    # Nothing in the formatting reference gives these a meaning inside a single-quoted literal or
+    # a plain string; the evaluator only shows the expressions pass them through unchanged.
+    odd = 'Is {raw} 100% "q"'
     tree = HeaderTree(
         title=Title("Title", odd),
         subtitle=(SubtitlePart(text=f"{odd} {{Case}}", columns=("Case",)),),
-        chips=(LinkChip(odd, "Link", url_column="Case", url_template="https://e/?q={value}&p=100%"),),
+        chips=(LinkChip(odd, "ContactLink", url_column="Case", url_template="https://e/?q={value}&p=100%"),),
         rows=(Row((
             Bubble("Risk", label=odd, text=f"{odd}{{value}}", hide_values=(odd,),
                    tokens={odd: "severe", "default": "good"}),
             Badge(odd, "muted"),
         )),),
-        banner=Banner(odd, "Info", (BannerRule(Leaf("Risk", "eq", odd), odd),)),
+        banner=Banner(odd, "Lightbulb", (BannerRule(Leaf("Risk", "eq", "x"), odd),)),
     )
-    header = _render(tree)
-    title_block, chips, row, banner = _kids(header)
+    title_block, chips, row, banner = _kids(_render(tree))
     assert _ev(_kids(title_block)[0]["txtContent"], {"Title": ""}) == odd
     assert _ev(_kids(title_block)[1]["txtContent"], {"Case": "7"}) == f"{odd} 7"
     assert _kids(_kids(chips)[0])[1]["txtContent"] == odd
@@ -447,11 +447,54 @@ def test_quotes_braces_and_percent_in_text_render_verbatim() -> None:
     bubble, badge = _kids(row)
     assert _ev(_text(bubble), {"Risk": "v"}) == f"{odd}: {odd}v"
     assert _ev(_style(bubble, "display"), {"Risk": odd}) == "none"
-    classes = _ev(_attr(bubble, "class"), {"Risk": odd})
-    assert str(classes).startswith(TOKENS["severe"].classes)
+    assert str(_ev(_attr(bubble, "class"), {"Risk": odd})).startswith(TOKENS["severe"].classes)
     assert _kids(badge)[0]["txtContent"] == odd
-    assert _ev(_kids(banner)[2]["txtContent"], {"Risk": odd}) == odd
+    assert _ev(_kids(banner)[2]["txtContent"], {"Risk": "x"}) == odd
     assert _kids(banner)[1]["txtContent"] == odd
+
+
+QUOTE_SITES: dict[str, Callable[[str], HeaderTree]] = {
+    "title blank": lambda t: HeaderTree(title=Title("Title", t)),
+    "subtitle": lambda t: HeaderTree(subtitle=(SubtitlePart(text=t, columns=("Case",)),)),
+    "chip url": lambda t: HeaderTree(chips=(
+        LinkChip("a", "Feedback", url_column="Case", url_template=t + "{value}"),
+    )),
+    "label": lambda t: HeaderTree(rows=(Row((Bubble("Risk", label=t),)),)),
+    "text": lambda t: HeaderTree(rows=(Row((Bubble("Risk", text=t + "{value}"),)),)),
+    "hide_values": lambda t: HeaderTree(rows=(Row((Bubble("Risk", hide_values=(t,)),)),)),
+    "tokens": lambda t: HeaderTree(rows=(Row((Bubble("Risk", tokens={t: "good"}),)),)),
+    "banner rule": lambda t: HeaderTree(banner=Banner(
+        "L", "Lightbulb", (BannerRule(Leaf("Risk", "eq", "x"), t),),
+    )),
+    "starts like a formula": lambda t: HeaderTree(chips=(LinkChip("=" + t, "Feedback", url="u"),)),
+}
+
+
+@pytest.mark.parametrize("site", QUOTE_SITES)
+def test_a_single_quote_inside_an_expression_is_refused(site: str) -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _render(QUOTE_SITES[site]("It's"))
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+    assert "It's" in found.value.finding.message
+
+
+def test_a_single_quote_in_plain_static_text_is_kept() -> None:
+    chip = _kids(_kids(_render(HeaderTree(chips=(LinkChip("It's", "Feedback", url="u"),))))[0])[0]
+    assert _kids(chip)[1]["txtContent"] == "It's"
+
+
+@pytest.mark.parametrize("marker", ["[$Case]", "a@b.example", "@now"])
+def test_static_text_with_an_embedded_special_marker_is_refused(marker: str) -> None:
+    sites = (
+        HeaderTree(chips=(LinkChip(marker, "Feedback", url="u"),)),
+        HeaderTree(chips=(LinkChip("a", "Feedback", url=marker),)),
+        HeaderTree(rows=(Row((Badge(marker, "muted"),)),)),
+        HeaderTree(banner=Banner(marker, "Lightbulb", (BannerRule(OPEN, "t"),))),
+    )
+    for tree in sites:
+        with pytest.raises(HeaderRefusal) as found:
+            _render(tree)
+        assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
 
 
 def test_text_that_looks_like_a_special_value_is_quoted_not_evaluated() -> None:
@@ -471,11 +514,26 @@ def test_header_over_budget_is_refused_naming_the_column(monkeypatch: pytest.Mon
     assert "Task.Score" in found.value.finding.message
 
 
-def test_icons_outside_the_fleet_vocabulary_are_caught_by_the_template_sweep() -> None:
-    header = _render(HeaderTree(chips=(LinkChip("Go", "Calendar", url="u"),)))
-    icons = set(re.findall(r'"iconName": "([^"]+)"', json.dumps(header)))
-    assert icons == {"Calendar"}
-    assert not icons <= FLEET_ICONS  # the sweep over shipped headers fails on this name
+def test_an_icon_outside_the_fleet_vocabulary_is_refused_through_resolve() -> None:
+    for tree in (
+        HeaderTree(chips=(LinkChip("Go", "Calendar", url="u"),)),
+        HeaderTree(banner=Banner("L", "Calendar", (BannerRule(OPEN, "t"),))),
+    ):
+        schema_, base = _bundle(tree)
+        resolved, findings = resolve_form_headers(schema_, base, SITE)
+        assert [f.code for f in findings] == [FindingCode.FORM_HEADER_ICON_UNKNOWN]
+        assert "'Calendar'" in findings[0].message
+        assert resolved.mapping.form_formatting["Task"].header is None
+
+
+def test_an_oversize_header_with_no_calculated_column_says_the_header() -> None:
+    schema_, base = _bundle(HeaderTree(title=Title("Title", "x" * 600)))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(form_header, "FORM_HEADER_MAX_CHARS", 400)
+        _, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HEADER_TOO_LARGE]
+    assert "the header" in findings[0].message
+    assert "None" not in findings[0].message
 
 
 def _bundle(tree: HeaderTree) -> tuple[Schema, MappingBundle]:
