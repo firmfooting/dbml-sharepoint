@@ -282,7 +282,7 @@ def test_a_date_with_too_many_possible_arguments_is_refused_quickly() -> None:
     def many(base: int, bits: int) -> str:
         text = str(base)
         for n in range(bits):
-            text = f'IF([Status]="s{n}",{text},{base + n + 1})'
+            text = f'IF([Status]="s{n}",{base + n + 1},{text})'
         return text
 
     refusal = _refusal(f"DAY(DATE({many(2000, 17)},{many(1, 17)},{many(1, 17)}))")
@@ -295,8 +295,8 @@ def test_a_nested_date_that_outgrows_a_saved_formatter_is_refused() -> None:
     for n in range(1, 8):
         chain[f"D{n}"] = f"DATE(YEAR([D{n - 1}]),MONTH([D{n - 1}])+1,DAY([D{n - 1}]))"
     refusal = _refusal("DAY([D7])", **chain)
-    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
-    assert "too large" in refusal.detail
+    assert refusal.code is FindingCode.FORM_HEADER_TOO_LARGE
+    assert "characters" in refusal.detail
     small = _translate("DAY([D2])", **{k: v for k, v in chain.items() if k in ("D0", "D1", "D2")})
     assert len(small) < FORMATTER_SAVED_SIZE_FLOOR
 

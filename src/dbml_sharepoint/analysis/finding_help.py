@@ -1239,6 +1239,11 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formula that is translated, a stored date outside the verified "
         "years or the calendar range shows a blank header."
     ),
+    FindingCode.FORM_HEADER_TOO_LARGE: (
+        "A calculated column's header expression is longer than the largest "
+        "formatter known to save. The size is a floor, not a SharePoint "
+        "limit: no larger save was refused, and none was tried."
+    ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "
         "Calculated columns resolve to an empty string there, so the "
