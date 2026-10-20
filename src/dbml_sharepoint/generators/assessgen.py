@@ -308,7 +308,7 @@ def _collect(
                 bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
                 entity.is_library,
             ))
-        previous = bundle.mapping.previous_titles(table_name)
+        previous = bundle.mapping.declared_previous_titles(table_name)
         if previous:
             renames.append((
                 bundle.mapping.list_title(table_name),

@@ -233,3 +233,16 @@ def test_the_implicit_title_never_takes_a_declared_historical_pair() -> None:
     assert bundle.mapping.previous_titles("OldRisk") == [
         ("Risk", "Risk"), ("OldOldRisk", "OldRisk"), ("OldRisk", "Risk"),
     ]
+
+
+def test_the_implicit_title_is_separate_from_the_declared_ones() -> None:
+    bundle = make_bundle(
+        prefix="APP_", previous_prefixes=("Old",),
+        entities={"Risk": _titled("Risk", "Risks", "Program")},
+    )
+    mapping = bundle.mapping
+    assert mapping.implicit_previous_title("Risk") == "APP_Risk"
+    assert ("APP_Risk", "Risk") not in mapping.declared_previous_titles("Risk")
+    assert ("APP_Risk", "Risk") in mapping.previous_titles("Risk")
+    plain = make_bundle(prefix="APP_", entities={"Risk": _entity("Risk")}).mapping
+    assert plain.implicit_previous_title("Risk") is None

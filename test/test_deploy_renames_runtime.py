@@ -114,10 +114,15 @@ _HARNESS = textwrap.dedent(r"""
 """) + BATCH_MOCK
 
 
-def _deploy_js(*, with_assessment: bool = False) -> str:
+_TITLED = EntityMapping(
+    name="Risk", kind="List", base_template=100, site_role="default", title="Plain Risks",
+)
+
+
+def _deploy_js(*, with_assessment: bool = False, entity: EntityMapping | None = None) -> str:
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     bundle = make_bundle(entities={
-        "Risk": EntityMapping(
+        "Risk": entity or EntityMapping(
             name="Risk", kind="List", base_template=100, site_role="default",
             renamed_from=("ProgramRisk",),
         ),
@@ -154,9 +159,10 @@ def _new_marker() -> str:
 
 def _run_deploy(
     lists: dict[str, dict[str, object]], *, with_assessment: bool = False,
+    entity: EntityMapping | None = None,
 ) -> tuple[Json, list[Json], Json]:
     harness = _HARNESS.replace("const LISTS = {};", f"const LISTS = {json.dumps(lists)};", 1)
-    body = _deploy_js(with_assessment=with_assessment).rstrip()
+    body = _deploy_js(with_assessment=with_assessment, entity=entity).rstrip()
     assert body.endswith("})();")
     script = (
         f"{harness}\n({body[:-1]}).then((r) => {{\n"
@@ -246,6 +252,62 @@ def test_the_assessment_reports_the_rename_it_will_make() -> None:
     planned = [f for f in summary["assessment"]["findings"] if f["key"] == "rename:APP_Risk"]
     assert len(planned) == 1 and planned[0]["level"] == "INFO"
     assert "APP_ProgramRisk" in planned[0]["detail"] and "renamed" in planned[0]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# The implicit source: an entity that sets `title:` may be found under
+# `<prefix><entity>`. It is opportunistic and never an error of its own.
+# ---------------------------------------------------------------------------
+
+
+def _plain(description: str | None = None) -> dict[str, dict[str, object]]:
+    return {"Plain Risks": {
+        "Id": "dddddddd-3333-3333-3333-333333333333", "Title": "Plain Risks",
+        "Description": description or f"Risks. {_new_marker()}",
+    }}
+
+
+def _prefixed(description: str) -> dict[str, dict[str, object]]:
+    return {"APP_Risk": {"Id": OLD_ID, "Title": "APP_Risk", "Description": description}}
+
+
+def test_a_title_in_place_with_no_prefixed_list_has_no_rename_row_or_block() -> None:
+    summary, _calls, _state = _run_deploy(_plain(), with_assessment=True, entity=_TITLED)
+    assert not [f for f in summary["assessment"]["findings"] if f["key"].startswith("rename:")]
+    assert summary.get("aborted") != "assessment-blocked"
+
+
+def test_a_title_in_place_beside_an_unmarked_prefixed_list_is_not_a_collision() -> None:
+    lists = _plain()
+    lists |= _prefixed("Someone else's.")
+    summary, calls, _state = _run_deploy(lists, with_assessment=True, entity=_TITLED)
+    assert not [f for f in summary["assessment"]["findings"] if f["key"].startswith("rename:")]
+    assert summary.get("aborted") not in ("assessment-blocked", "existing-schema-shape-errors")
+    assert not [c for c in calls if OLD_ID in c["url"] and c["method"] == "POST"]
+
+
+def test_a_title_in_place_beside_a_marked_prefixed_list_is_not_a_collision() -> None:
+    lists = _plain()
+    lists |= _prefixed(f"x {_new_marker()}")
+    summary, _calls, _state = _run_deploy(lists, entity=_TITLED)
+    assert summary.get("aborted") != "existing-schema-shape-errors"
+
+
+def test_an_unmarked_prefixed_list_with_the_title_absent_is_left_alone() -> None:
+    lists = _prefixed("Someone else's.")
+    summary, calls, state = _run_deploy(lists, with_assessment=True, entity=_TITLED)
+    assert summary.get("aborted") != "existing-schema-shape-errors"
+    assert not [f for f in summary["assessment"]["findings"]
+                if f["key"].startswith("rename:") and f["level"] == "BLOCKED"]
+    assert state["APP_Risk"]["Id"] == OLD_ID
+    assert not [c for c in calls if OLD_ID in c["url"] and c["method"] == "POST"]
+
+
+def test_a_marked_prefixed_list_with_the_title_absent_is_retitled() -> None:
+    lists = _prefixed(f"x {_new_marker()}")
+    summary, _calls, state = _run_deploy(lists, entity=_TITLED)
+    assert summary["listsRenamed"] == [{"from": "APP_Risk", "to": "Plain Risks"}]
+    assert state["Plain Risks"]["Id"] == OLD_ID
 
 
 # ---------------------------------------------------------------------------

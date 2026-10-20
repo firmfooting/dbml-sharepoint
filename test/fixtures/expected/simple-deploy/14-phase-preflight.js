@@ -27,23 +27,24 @@
   // owning list resolves itself. Renames have not run yet at preflight.
   const probeTitle = (title) => (renamePlan[title] ? renamePlan[title].from : title);
   const probeTitleFor = (list) => probeTitle(list.title);
-  async function previousTitleShapes(list) {
+  async function previousTitleShapes(list, actual) {
     const found = [];
     for (const previous of (list.renamed_from || [])) {
       const shape = await readListShape(previous.title);
       if (!shape) continue;
       const held = typeof shape.Description === 'string' ? shape.Description : '';
-      found.push({
-        title: previous.title, marker: previous.expected_marker, shape,
-        carries: previous.expected_marker.length > 0 && held.includes(previous.expected_marker),
-      });
+      const carries = previous.expected_marker.length > 0 && held.includes(previous.expected_marker);
+      // The implicit source is opportunistic: a title already in place, or a
+      // list there without the marker, is somebody else's and not a rename.
+      if (previous.implicit && (actual || !carries)) continue;
+      found.push({ title: previous.title, marker: previous.expected_marker, shape, carries });
     }
     return found;
   }
   await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
     try {
       let actual = await readListShape(list.title);
-      const previous = await previousTitleShapes(list);
+      const previous = await previousTitleShapes(list, actual);
       if (!actual && previous.length === 0) { listOutcomes[list.title] = 'absent'; return; }
       let renamedFrom = null;
       if (previous.length > 0) {

@@ -1099,29 +1099,42 @@ class Mapping:
         """Every title this list may be found under on a site that has not
         migrated, each paired with the entity name whose marker it must carry.
 
-        Order: the current prefix with each previous name, then each previous
-        prefix with the entity name and each previous name, then the current
-        prefix with the entity name. The current title is never a candidate,
-        and nothing is listed twice (compared case-insensitively).
+        Order: the declared titles of `declared_previous_titles`, then the
+        `implicit_previous_title` if there is one. The current title is never
+        a candidate, and nothing is listed twice (compared case-insensitively).
         """
+        out = self.declared_previous_titles(entity_name)
+        implicit = self.implicit_previous_title(entity_name)
+        return [*out, (implicit, entity_name)] if implicit else out
+
+    def declared_previous_titles(self, entity_name: str) -> list[tuple[str, str]]:
+        """The previous titles `renamed_from` and `previous_prefixes` declare:
+        the current prefix with each previous name, then each previous prefix
+        with the entity name and each previous name."""
         entity = self.entities[entity_name]
         current = self.list_title(entity_name).casefold()
         seen: set[str] = set()
         out: list[tuple[str, str]] = []
-
-        def add(title: str, name: str) -> None:
-            if title.casefold() not in seen | {current}:
-                seen.add(title.casefold())
-                out.append((title, name))
-
-        prefixes = [self.prefix, *self.previous_prefixes]
-        for i, prefix in enumerate(prefixes):
+        for i, prefix in enumerate([self.prefix, *self.previous_prefixes]):
             for name in (entity.renamed_from if i == 0 else [entity_name, *entity.renamed_from]):
-                add(prefix + name, name)
-        # Last, so it never takes a title a declared historical pair produces.
-        # With `title:` set this is the list's name before `title:` existed.
-        add(self.prefix + entity_name, entity_name)
+                title = prefix + name
+                if title.casefold() not in seen | {current}:
+                    seen.add(title.casefold())
+                    out.append((title, name))
         return out
+
+    def implicit_previous_title(self, entity_name: str) -> str | None:
+        """`<prefix><entity name>`, the title the list had before `title:`
+        existed, when `title:` is set and nothing declared already names it.
+
+        Opportunistic: a deploy renames from it only when it exists and carries
+        the marker, and neither the deploy nor the assessment treats its
+        presence beside the current title, or without the marker, as an error.
+        """
+        title = self.prefix + entity_name
+        taken = {t.casefold() for t, _ in self.declared_previous_titles(entity_name)}
+        taken.add(self.list_title(entity_name).casefold())
+        return None if title.casefold() in taken else title
 
 @dataclass(frozen=True)
 class GovernanceVocabulary:

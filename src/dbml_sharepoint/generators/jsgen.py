@@ -659,6 +659,7 @@ def build_schema_json(
     role_tables = site_tables_in_order(schema, bundle.mapping.entities, site_role)
     for table_name in role_tables:
         entity = bundle.mapping.entities[table_name]
+        implicit = bundle.mapping.implicit_previous_title(table_name)
         list_title = bundle.mapping.list_title(table_name)
         versioning = bundle.mapping.versioning_for(table_name)
         item_security = bundle.mapping.item_security_for(table_name)
@@ -931,9 +932,13 @@ def build_schema_json(
             ),
             "expected_marker": marker_for(family, table_name),
             # The previous TITLES (prefix applied) and the marker each must
-            # carry, from the same helper as the current marker.
+            # carry, from the same helper as the current marker. The implicit
+            # one is flagged: deploy treats it as opportunistic.
             "renamed_from": [
-                {"title": title, "expected_marker": marker_for(family, name)}
+                {
+                    "title": title, "expected_marker": marker_for(family, name),
+                    **({"implicit": True} if title == implicit else {}),
+                }
                 for title, name in bundle.mapping.previous_titles(table_name)
             ],
             "content_types_enabled": False,
