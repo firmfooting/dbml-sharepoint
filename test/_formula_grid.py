@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.formula.functions import refs
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 
+# Text ordering (< >) is unmeasured, so the grid's text values are not evidence for it.
 NUMBERS: tuple[float | None, ...] = (None, 0.0, 1.0, 3.0, 12.0, -2.0)
 TEXTS: tuple[str | None, ...] = (None, "abc", "ABC", "  a  b ")
 # Month ends, year ends, 28 and 29 February (leap and not), the due day and the day after,

@@ -158,6 +158,7 @@ def _order(left: Value, right: Value, zone: str) -> int:
 _COMPARE: dict[str, Callable[[int], bool]] = {
     "=": lambda o: o == 0,
     "<>": lambda o: o != 0,
+    # Ordering of text (< > <= >=) is unmeasured; only = and <> were measured.
     "<": lambda o: o < 0,
     ">": lambda o: o > 0,
     "<=": lambda o: o <= 0,
@@ -171,6 +172,22 @@ def _truth(value: Value) -> bool:
     if isinstance(value, float | int):
         return value != 0
     raise NotImplementedError("a blank or text condition is not measured")
+
+
+def _numbers(name: str, values: list[Value]) -> list[float]:
+    """Number arguments of a function; a blank, text or date argument is unmeasured."""
+    found: list[float] = []
+    for value in values:
+        if value is None or isinstance(value, str | bool | date):
+            raise NotImplementedError(f"{name} with a blank, text or date argument is unmeasured")
+        assert not isinstance(value, ColumnError)
+        found.append(float(value))
+    return found
+
+
+def _texts(values: list[Value], zone: str) -> list[str]:
+    # A blank joins as "" (the measured `&` rule, assumed for text functions).
+    return [t for t in (_text(v, zone) for v in values) if isinstance(t, str)]
 
 
 def _only(value: Value, kinds: tuple[type, ...], what: str) -> object:
@@ -194,18 +211,22 @@ def _date(y: float, m: float, d: float) -> date | ColumnError:
 
 def _call(name: str, args: tuple[Expr, ...], run: Callable[[Expr], Value], zone: str) -> Value:
     if name == "IF":
-        branch = args[1] if _truth(run(args[0])) else (args[2] if len(args) > 2 else None)
-        return run(branch) if branch is not None else False
+        condition = run(args[0])
+        if isinstance(condition, ColumnError):
+            return condition
+        if not _truth(condition) and len(args) < 3:
+            raise NotImplementedError("IF without an else is unmeasured")
+        return run(args[1] if _truth(condition) else args[2])
     if name == "CHOOSE":
         index = _number(run(args[0]), zone)
         if isinstance(index, ColumnError):
             return index
-        return run(args[int(index)]) if 1 <= int(index) < len(args) else ColumnError(1)
+        if not 1 <= int(index) < len(args):
+            raise NotImplementedError("CHOOSE with an index out of range is unmeasured")
+        return run(args[int(index)])
     values = [run(arg) for arg in args]
     if failed := next((v for v in values if isinstance(v, ColumnError)), None):
         return failed
-    text = [_text(v, zone) for v in values]
-    nums = [_number(v, zone) for v in values]
     first = values[0]
     match name:
         case "AND":
@@ -217,26 +238,20 @@ def _call(name: str, args: tuple[Expr, ...], run: Callable[[Expr], Value], zone:
         case "ISBLANK":
             return first is None
         case "MIN" | "MAX":
-            if any(isinstance(n, ColumnError) for n in nums):
-                return ColumnError(1)
-            return (min if name == "MIN" else max)(n for n in nums if isinstance(n, float))
+            return (min if name == "MIN" else max)(_numbers(name, values))
         case "ABS" | "INT":
-            n = nums[0]
-            return n if isinstance(n, ColumnError) else (abs(n) if name == "ABS" else math.floor(n))
+            n = _numbers(name, values)[0]
+            return abs(n) if name == "ABS" else math.floor(n)
         case "ROUND":
-            n, places = nums
-            if isinstance(n, ColumnError) or isinstance(places, ColumnError):
-                return ColumnError(1)
+            n, places = _numbers(name, values)
             return _round(n, places)
         case "CONCATENATE":
-            return "".join(t for t in text if isinstance(t, str))
+            return "".join(_texts(values, zone))
         case "LEFT" | "RIGHT" | "MID" | "LEN" | "LOWER" | "UPPER" | "TRIM":
-            return _text_function(name, text, nums)
+            return _text_function(name, _texts(values[:1], zone)[0], _numbers(name, values[1:]))
         case "DATE":
-            y, m, d = nums
-            if isinstance(y, ColumnError) or isinstance(m, ColumnError):
-                return ColumnError(1)
-            return ColumnError(1) if isinstance(d, ColumnError) else _date(y, m, d)
+            y, m, d = _numbers(name, values)
+            return _date(y, m, d)
         case "YEAR" | "MONTH" | "DAY":
             moment = _only(first, (date,), name)
             assert isinstance(moment, date)
@@ -245,26 +260,15 @@ def _call(name: str, args: tuple[Expr, ...], run: Callable[[Expr], Value], zone:
     raise NotImplementedError(f"the reference evaluator has no {name}")
 
 
-def _text_function(
-    name: str, text: list[str | ColumnError], nums: list[float | ColumnError]
-) -> Value:
-    s = text[0]
-    assert isinstance(s, str)
-    count = nums[1] if len(nums) > 1 else 1.0
-    if isinstance(count, ColumnError):
-        return count
+def _text_function(name: str, s: str, nums: list[float]) -> Value:
+    count = nums[0] if nums else 1.0
     match name:
         case "LEFT":
             return s[: int(count)]
         case "RIGHT":
             return s[len(s) - int(count) :] if int(count) else ""
         case "MID":
-            length = nums[2]
-            return (
-                s[int(count) - 1 : int(count) - 1 + int(length)]
-                if isinstance(length, float)
-                else length
-            )
+            return s[int(count) - 1 : int(count) - 1 + int(nums[1])]
         case "LEN":
             return float(len(s))
         case "LOWER":

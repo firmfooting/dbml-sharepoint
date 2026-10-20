@@ -11,36 +11,24 @@ from collections.abc import Mapping, Sequence
 
 from _node import run_node
 
-# Learn documents each of these by name and example; padStart, addDays and substring follow it too.
+# Each function below is on the Learn page above (Operators); a function no test uses is not here.
 _PRELUDE = """
-const toString = String;
-const toLowerCase = (s) => s.toLowerCase();
-const toUpperCase = (s) => s.toUpperCase();
-const abs = Math.abs;
-const floor = Math.floor;
-const ceiling = Math.ceil;
-const pow = Math.pow;
-const indexOf = (s, needle) => s.indexOf(needle);
-const lastIndexOf = (s, needle) => s.lastIndexOf(needle);
-const startsWith = (s, needle) => s.startsWith(needle);
-const endsWith = (s, needle) => s.endsWith(needle);
-const substring = (s, a, b) => s.substring(a, b);
-const replace = (s, a, b) => s.replace(a, b);
-const replaceAll = (s, a, b) => s.replaceAll(a, b);
-const padStart = (s, n, pad) => s.padStart(n, pad);
-const padEnd = (s, n, pad) => s.padEnd(n, pad);
-const getDate = (d) => d.getDate();
-const getMonth = (d) => d.getMonth();
-const getYear = (d) => d.getFullYear();
-// Learn does not say whether addDays counts calendar days or 24 hours across a daylight change.
+const toString = String; // Unary operators: toString
+const toLowerCase = (s) => s.toLowerCase(); // Unary operators: toLowerCase
+const abs = Math.abs; // Unary operators: abs
+const floor = Math.floor; // Unary operators: floor
+const pow = Math.pow; // Binary operators: pow
+const padStart = (s, n, pad) => s.padStart(n, pad); // Ternary operators: padStart
+const getDate = (d) => d.getDate(); // Unary operators: getDate
+// Binary operators: addDays. Learn does not say whether it counts calendar days or 24 hours
+// across a daylight change; this counts calendar days.
 const addDays = (d, n) => {
   const r = new Date(d.getTime());
   r.setDate(r.getDate() + n);
   return r;
 };
-const addMinutes = (d, n) => new Date(d.getTime() + n * 60000);
-const asDate = (v) => new Date(v);
-const choose = (condition, yes, no) => (condition ? yes : no);
+const asDate = (v) => new Date(v); // Unary operators: Date()
+const choose = (condition, yes, no) => (condition ? yes : no); // Conditional operator: if
 """
 
 
@@ -67,6 +55,7 @@ def evaluate_rows(
     Dates in a row are strings, as a list read returns them; a date result comes back as an ISO
     instant. The browser zone is set before any date exists.
     """
+    # Learn does not say whether a blank field reaches a function as null or ''; this passes null.
     script = (
         f"process.env.TZ = {json.dumps(browser_tz)};\n{_PRELUDE}\n"
         f"const now = new Date({json.dumps(now)});\n"

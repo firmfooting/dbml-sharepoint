@@ -212,3 +212,37 @@ def test_a_field_reads_from_the_row_and_the_browser_zone_applies() -> None:
         )
         == 20
     )
+
+
+def test_an_error_in_an_if_condition_is_the_result() -> None:
+    kinds: dict[str, ColumnKind] = {"T": "text"}
+
+    assert evaluate(parse_formula('IF([T]+1>0,"a","b")'), {"T": "abc"}, kinds) == ERROR(1)
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        "MIN([N],1)",
+        "MAX(1,[N])",
+        "ABS([N])",
+        "INT([N])",
+        "ROUND([N],1)",
+        "DATE(2026,[N],1)",
+        'IF([N]>1,"a")',
+        "CHOOSE(3,1,2)",
+    ],
+)
+def test_an_unmeasured_behaviour_is_refused_not_guessed(formula: str) -> None:
+    with pytest.raises(NotImplementedError, match="unmeasured"):
+        evaluate(parse_formula(formula), {"N": None}, {"N": "number"})
+
+
+def test_a_difference_in_one_browser_zone_only_is_caught() -> None:
+    # The date is site-local midnight, so only a browser east of the site's day sees the 20th.
+    kinds: dict[str, ColumnKind] = {"D": "date"}
+    formula = "IF(ISBLANK([D]),0,DAY([D]))"
+    same = "=if(Number([$D]) == 0, 0, getDate(Date([$D])))"
+    check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne",))
+    with pytest.raises(AssertionError, match="differing rows"):
+        check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "UTC"))
