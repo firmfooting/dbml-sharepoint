@@ -1235,7 +1235,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A calculated column's date formula needs the site's time zone, and "
         "the zone's daylight rule is not one offset, or two offsets switched "
         "on a weekday of a month, over recent enough years. A header "
-        "could not cross the day at the site's local midnight."
+        "could not cross the day at the site's local midnight. In a "
+        "formula that is translated, a stored date outside the verified "
+        "years or the calendar range shows a blank header."
     ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "

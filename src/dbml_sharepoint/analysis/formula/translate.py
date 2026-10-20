@@ -48,7 +48,6 @@ from dbml_sharepoint.analysis.formula.syntax import (
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
 
-_MS_DAY = 86_400_000
 # These two never hold a blank, so a formula may read them without testing for one.
 _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
 _NEVER = "0 == 1"
@@ -298,12 +297,11 @@ class _Translator:
                 "reproduces only in the branch of an ISBLANK test that excludes the blank",
             )
         ms = f"Number([${name}])"
-        if system or name in self.ctx.moments:
-            rule = zone_rule(self.ctx.zone)
+        # Measured: every date column keeps the instant written, so its day is the site's day of it.
+        rule = zone_rule(self.ctx.zone)
+        if rule.daylight is not None:  # a fixed offset is exact for any instant
             self.fails.append(out_of_span_instant(ms, rule))
-            return _Tr(site_day(ms, rule), "date", moment=True)
-        # Unproven: that SharePoint stores every date-only value as the UTC midnight of its date.
-        return _Tr(f"floor({ms} / {_MS_DAY})", "date")
+        return _Tr(site_day(ms, rule), "date", moment=system or name in self.ctx.moments)
 
     def binary(self, op: str, left: Expr, right: Expr, stack: tuple[str, ...]) -> _Tr:
         a, b = self.go(left, stack), self.go(right, stack)

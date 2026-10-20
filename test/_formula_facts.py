@@ -159,15 +159,25 @@ CALCULATED_NUMBER_DISPLAY = {
 
 HEADER_SIZE_LIMIT = {"largest_saved": 1048576, "first_refused": None, "refusal": "", "cap": 1048576}
 
-# Measured: Number([$D]) of a date field is its epoch milliseconds. A date-only value is the UTC
-# midnight of its date; a date and time value is the exact instant.
+# Measured: Number([$D]) of a date field is its epoch milliseconds, the instant as stored.
 DATE_FIELD_EPOCH_MS = {
-    "date only": {"2026-07-15T00:00:00Z": 1784073600000, "2026-10-04T00:00:00Z": 1791072000000},
+    "date only": {
+        "2026-07-15T00:00:00Z": 1784073600000,
+        "2026-10-04T00:00:00Z": 1791072000000,
+        "2026-10-21T13:30:00Z": 1792589400000,
+        "2026-10-20T13:00:00Z": 1792501200000,
+    },
     "date and time": {
         "2026-07-14T14:30:00Z": 1784039400000,
         "2026-10-03T14:30:00Z": 1791037800000,
         "2026-10-04T12:30:00Z": 1791117000000,
     },
+}
+
+# Measured: a date-only column keeps the instant written and shows the site's day of it.
+DATE_ONLY_STORED_AS_WRITTEN = {
+    "2026-10-21T13:30:00Z": {"read_back": "2026-10-21T13:30:00Z", "displayed": "22/10/2026"},
+    "2026-10-21T00:00:00+11:00": {"read_back": "2026-10-20T13:00:00Z", "displayed": "21/10/2026"},
 }
 
 # Measured: a blank date field.

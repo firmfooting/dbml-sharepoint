@@ -133,8 +133,9 @@ def test_the_grid_covers_blanks_unlisted_values_case_variants_and_month_ends() -
         "DONE",
         "Unlisted value",
     }
-    assert {r["D"] for r in rows} >= {
-        None,
+    assert None in {r["D"] for r in rows}
+    site = ZoneInfo("Australia/Melbourne")
+    assert {r["D"].astimezone(site).date() for r in rows if isinstance(r["D"], datetime)} >= {
         date(2024, 2, 29),
         date(2026, 2, 28),
         date(2025, 12, 31),
@@ -239,10 +240,10 @@ def test_an_unmeasured_behaviour_is_refused_not_guessed(formula: str) -> None:
 
 
 def test_a_difference_in_one_browser_zone_only_is_caught() -> None:
-    # A date-only value is a UTC midnight, so a browser west of UTC reads the day before.
+    # A stored instant at UTC midnight is the previous day for a browser west of UTC.
     kinds: dict[str, ColumnKind] = {"D": "date"}
     formula = "IF(ISBLANK([D]),0,DAY([D]))"
     same = "=if(toString([$D]) == '', 0, getDate([$D]))"
-    check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "UTC"))
+    check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne",))
     with pytest.raises(AssertionError, match="differing rows"):
         check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "America/Los_Angeles"))

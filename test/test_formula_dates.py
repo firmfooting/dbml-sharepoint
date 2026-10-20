@@ -17,6 +17,7 @@ from _formula_facts import (
     BLANK_DATE_FIELD,
     BROWSER_PARTS_OF_DATE_ONLY,
     DATE_FIELD_EPOCH_MS,
+    DATE_ONLY_STORED_AS_WRITTEN,
     DATE_OVERFLOW,
 )
 from _formula_grid import check_parity
@@ -363,7 +364,7 @@ def test_a_date_and_time_column_in_a_zone_without_a_rule_is_refused_by_name() ->
     assert name in found.value.detail
 
 
-def test_a_date_only_column_needs_no_zone() -> None:
+def test_a_date_only_column_needs_the_zone_too() -> None:
     name = _zone_where(r"only from (\d{4})", 2026, 2049)
     ctx = TranslationContext(
         formulas={"Calc": "IF(ISBLANK([Due]),0,DAY([Due]+1))"},
@@ -372,7 +373,43 @@ def test_a_date_only_column_needs_no_zone() -> None:
         choices=CHOICES,
         zone=name,
     )
-    assert translate_column("Calc", ctx).expression.startswith("=if(")
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", ctx)
+    assert found.value.code is FindingCode.FORM_FORMULA_ZONE_UNSUPPORTED
+
+
+@node
+@pytest.mark.parametrize(("written", "fact"), DATE_ONLY_STORED_AS_WRITTEN.items())
+def test_a_date_only_column_shows_the_site_day_of_the_instant_it_kept(
+    written: str, fact: dict[str, str]
+) -> None:
+    expression = _translate(_FILLED.format("0", "DAY([Due])"))
+    ms = int(datetime.fromisoformat(fact["read_back"]).timestamp() * 1000)
+    shown = int(fact["displayed"].split("/")[0])
+    for browser in BROWSERS:
+        got = evaluate_expression(expression, {"Due": date_field(ms)}, browser_tz=browser, now=_NOW)
+        assert got == shown, (written, browser)
+
+
+def test_a_fixed_offset_zone_has_no_span_guard_and_is_exact_for_any_instant() -> None:
+    ctx = _ctx("YEAR([Created])", "number", {}, "Australia/Brisbane")
+    expression = translate_column("Calc", ctx).expression
+    guard = out_of_span_instant("Number([$Created])", zone_rule("Australia/Brisbane"))
+    assert guard not in expression
+    if NODE is None:
+        return
+    old, new = datetime(1999, 12, 31, 14, 30, tzinfo=UTC), datetime(2060, 6, 30, 14, 30, tzinfo=UTC)
+    rows = [{"Created": _ms(old)}, {"Created": _ms(new)}]
+    assert evaluate_rows(expression, rows, browser_tz="UTC", now=_NOW) == [2000, 2060]
+
+
+def test_a_created_expression_stays_under_the_saved_size_floor() -> None:
+    for formula in (
+        "YEAR([Created])",
+        _ymd("[Created]+7"),
+        "DAY(DATE(YEAR([Created]),MONTH([Created])+1,MIN(DAY([Created]),28)))",
+    ):
+        assert len(_translate(formula)) < FORMATTER_SAVED_SIZE_FLOOR
 
 
 def test_no_translation_reads_a_date_through_the_browser_zone() -> None:
@@ -412,7 +449,7 @@ def test_the_evaluator_models_what_was_measured_of_a_date_field() -> None:
 
 @node
 def test_the_browser_parts_of_a_date_only_value_move_with_the_browser_zone() -> None:
-    # A date-only value is a UTC midnight, so west of UTC a part reader gives the day before.
+    # A stored UTC midnight is the day before for a part reader west of UTC.
     facts = BROWSER_PARTS_OF_DATE_ONLY
     row = {"D": date_field(DATE_FIELD_EPOCH_MS["date only"][facts["value"]])}
     read = {"getDate": "=getDate([$D])", "getMonth": "=getMonth([$D])", "getYear": "=getYear([$D])"}
@@ -439,7 +476,9 @@ def test_a_translation_is_blank_rather_than_wrong_outside_the_verified_years() -
 
 @node
 def test_a_date_only_value_outside_the_calendar_range_is_blank_where_it_is_read() -> None:
-    expression = _translate(_FILLED.format("0", "DAY([Due])"))
+    # A fixed-offset site zone has no verified-years guard, so only the calendar range blanks.
+    ctx = _ctx(_FILLED.format("0", "DAY([Due])"), "number", {}, "UTC")
+    expression = translate_column("Calc", ctx).expression
     rows = [
         {"Due": _day_ms(date(1850, 1, 1))},
         {"Due": _day_ms(date(1904, 3, 1))},
@@ -453,7 +492,8 @@ def test_a_date_only_value_outside_the_calendar_range_is_blank_where_it_is_read(
 @node
 def test_a_date_built_from_a_column_outside_the_calendar_range_is_blank() -> None:
     next_year = "DAY(DATE(YEAR([Due])+1,MONTH([Due]),DAY([Due])))"
-    expression = _translate(_FILLED.format("0", next_year))
+    ctx = _ctx(_FILLED.format("0", next_year), "number", {}, "UTC")
+    expression = translate_column("Calc", ctx).expression
     rows = [{"Due": _day_ms(date(y, 3, 5))} for y in (2026, 2099, 1850)]
     assert evaluate_rows(expression, rows, browser_tz="UTC", now=_NOW) == [5, "", ""]
 
@@ -619,11 +659,18 @@ def test_every_instant_around_a_change_and_a_midnight_has_the_right_site_day(nam
 def test_the_site_day_follows_the_clock_a_day_either_side_of_new_year(name: str) -> None:
     rule = zone_rule(name)
     instants: list[datetime] = []
-    for year in range(rule.first_year + 1, rule.last_year):
+    for year in range(rule.first_year, rule.last_year + 1):
         start = datetime(year, 1, 1, tzinfo=UTC)
         instants += [start + timedelta(hours=h) for h in range(-30, 31, 3)]
+    instants = [t for t in instants if _inside(rule, t)]
     got, expected = _site_days(name, instants)
     assert got == expected
+
+
+def _inside(rule: zone.ZoneRule, moment: datetime) -> bool:
+    return datetime(rule.first_year, 1, 1, tzinfo=UTC) <= moment < datetime(
+        rule.last_year + 1, 1, 1, tzinfo=UTC
+    )
 
 
 def _in_span(name: str, instants: list[datetime]) -> list[object]:
@@ -634,16 +681,14 @@ def _in_span(name: str, instants: list[datetime]) -> list[object]:
 
 
 @node
-def test_an_instant_within_a_day_of_the_verified_years_is_outside_them() -> None:
+def test_an_instant_in_the_verified_years_is_never_outside_them() -> None:
     first, last = zone_rule(SITE).first_year, zone_rule(SITE).last_year
     edges = [
+        datetime(first, 1, 1, tzinfo=UTC) - timedelta(seconds=1),
         datetime(first, 1, 1, tzinfo=UTC),
-        datetime(first, 1, 1, 23, 59, tzinfo=UTC),
-        datetime(first, 1, 2, tzinfo=UTC),
-        datetime(last + 1, 1, 1, tzinfo=UTC) - timedelta(days=1, seconds=1),
-        datetime(last + 1, 1, 1, tzinfo=UTC) - timedelta(days=1),
+        datetime(last + 1, 1, 1, tzinfo=UTC) - timedelta(seconds=1),
         datetime(last + 1, 1, 1, tzinfo=UTC),
         datetime(first - 1, 6, 1, tzinfo=UTC),
         datetime(last + 1, 6, 1, tzinfo=UTC),
     ]
-    assert _in_span(SITE, edges) == [True, True, False, False, True, True, True, True]
+    assert _in_span(SITE, edges) == [True, False, False, True, True, True]

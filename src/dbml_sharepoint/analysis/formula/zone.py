@@ -163,9 +163,9 @@ def _span_days(year: int, month: int) -> int:
 
 
 def out_of_span_instant(ms: str, rule: ZoneRule) -> str:
-    """True when an instant is within a day of, or outside, the years the rule is verified for."""
-    low = (_span_days(rule.first_year, 1) + 1) * _MS_DAY
-    high = (_span_days(rule.last_year + 1, 1) - 1) * _MS_DAY
+    """True when an instant is outside the (UTC) years the rule is verified for."""
+    low = _span_days(rule.first_year, 1) * _MS_DAY
+    high = _span_days(rule.last_year + 1, 1) * _MS_DAY
     # The quotient is 0 only inside [low, high).
     return f"(floor((({ms}) - {low}) / {high - low}) != 0)"
 

@@ -40,7 +40,6 @@ UNLISTED = "Unlisted value"
 SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
 # Local times either side of midnight and noon, on the days of the dates above.
 _TIMES = (time(0, 0, 0), time(0, 0, 1), time(12, 0, 0), time(23, 59, 59))
-_EPOCH = date(1970, 1, 1)
 
 
 def instants(zone: str) -> tuple[datetime, ...]:
@@ -62,6 +61,10 @@ def instants(zone: str) -> tuple[datetime, ...]:
         if offset != previous:
             found.update(probe + timedelta(minutes=m) for m in (-60, -31, -30, -1, 0, 1, 30, 60))
             previous = offset
+    # A date written as a UTC midnight and one written 13:30 UTC, which reads the next day.
+    for day in DATES:
+        if day is not None:
+            found.update(datetime.combine(day, at, tzinfo=UTC) for at in (time(0), time(13, 30)))
     return tuple(sorted(found))
 
 
@@ -79,7 +82,8 @@ def grid(
 ) -> Iterator[dict[str, object]]:
     """Every combination of each column's hard values; a blank appears in each column.
 
-    A date column named in `moments` holds a date and time, else a date only.
+    A date column holds an instant as written, so its domain is instants around the site's
+    midnights and changes; `moments` marks a column that keeps its time of day.
     """
     domains: list[list[object]] = []
     for name, kind in columns.items():
@@ -88,11 +92,9 @@ def grid(
                 domains.append(list(NUMBERS))
             case "text":
                 domains.append(list(TEXTS))
-            case "date" if name in moments or name in SYSTEM_MOMENTS:
+            case "date":
                 blank = [] if name in SYSTEM_MOMENTS else [None]
                 domains.append([*blank, *instants(zone)])
-            case "date":
-                domains.append(list(DATES))
             case "choice":
                 domains.append(list(_choice_values(choices.get(name, ()))))
     for combo in itertools.product(*domains):
@@ -120,8 +122,15 @@ def _reference(
     formulas: Mapping[str, str],
     kinds: Mapping[str, ColumnKind],
     zone: str,
+    moments: frozenset[str],
 ) -> object:
-    values = dict(row)
+    # A date-only column's value is the site day of its instant; the others keep the instant.
+    values = {
+        k: v.astimezone(ZoneInfo(zone)).date()
+        if isinstance(v, datetime) and k not in moments and k not in SYSTEM_MOMENTS
+        else v
+        for k, v in row.items()
+    }
 
     def run(text: str) -> object:
         expr = parse_formula(text)
@@ -147,7 +156,7 @@ def error_rows(
     return [
         r
         for r in grid(stored, choices, moments, zone)
-        if isinstance(_reference(formula, r, formulas, kinds, zone), ColumnError)
+        if isinstance(_reference(formula, r, formulas, kinds, zone, moments), ColumnError)
     ]
 
 
@@ -155,13 +164,11 @@ def _json_row(
     row: Mapping[str, object], kinds: Mapping[str, ColumnKind]
 ) -> dict[str, object]:
     # A blank text or choice field reads as '' in a formatter (Learn's `[$Field] == ''` blank test).
-    # A date column's value is its epoch milliseconds, the UTC midnight of a date-only value.
+    # A date column's value is its epoch milliseconds, the instant as stored.
     sent: dict[str, object] = {}
     for k, v in row.items():
         if isinstance(v, datetime):
             sent[k] = date_field(int(v.timestamp() * 1000))
-        elif isinstance(v, date):
-            sent[k] = date_field((v - _EPOCH).days * 86_400_000)
         elif v is None and kinds[k] == "date":
             sent[k] = date_field(None)
         else:
@@ -200,7 +207,7 @@ def check_parity(
     Rows on which the formula is a column error are skipped (see `error_rows`).
     """
     rows = list(grid(_stored(formula, formulas, kinds), choices, moments, zone))
-    expected = [_reference(formula, r, formulas, kinds, zone) for r in rows]
+    expected = [_reference(formula, r, formulas, kinds, zone, moments) for r in rows]
     kept = [(r, e) for r, e in zip(rows, expected, strict=True) if not isinstance(e, ColumnError)]
     assert kept, "every grid row is a column error, so nothing was compared"
     stored = _stored(formula, formulas, kinds)
