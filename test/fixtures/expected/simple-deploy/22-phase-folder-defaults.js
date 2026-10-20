@@ -1,15 +1,11 @@
   markPhase('Phase 2.3: folder default values');
   // === Phase 2.3: folder default values ===
   log('INFO', 'Starting Phase 2.3: folder default values.');
-  // `library.folder-defaults.declare-writes-readback`: the file
-  // Forms/client_LocationBasedDefaults.html takes a Files/add(overwrite=true)
-  // of <MetadataDefaults><a href="<folder path>"><DefaultValue FieldName="<internal
-  // name>">value</DefaultValue></a></MetadataDefaults> and reads back as the
-  // text written. Whether SharePoint applies the stored values to an upload is
-  // not established, so this phase proves the file and nothing past it.
-  // `overwrite=true` replaces the whole file, so the new text is built from the
-  // existing entries (kept verbatim unless their folder is declared) and read
-  // back after the write.
+  // `library.folder-defaults.declare-writes-readback`: Files/add(overwrite=true) of
+  // <MetadataDefaults><a href="<folder path>"><DefaultValue FieldName="<internal name>">
+  // reads back as written. Whether SharePoint applies the values to an upload is not
+  // established, so this phase proves the stored file and nothing past it.
+  // overwrite=true replaces the whole file, so existing entries are kept verbatim.
   const DEFAULTS_FILE = 'client_LocationBasedDefaults.html';
   const xmlEscape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
