@@ -842,10 +842,13 @@
     for (const name of drifted) body[name] = wanted[name];
     await patchListById(owned.Id, body, digest);
     const back = await read('read-back');
-    for (const name of drifted) {
+    // Every declared name, not only the drifted ones: the read-back carries them all.
+    for (const name of names) {
       if (back[name] !== wanted[name]) {
         throw new Error(`Library '${list.title}' did not retain ${name} = ${wanted[name]} (read back ${back[name]})`);
       }
+    }
+    for (const name of drifted) {
       log('INFO', `Library '${list.title}' ${name} set to ${wanted[name]}.`);
       logChange({ key: `list-setting:${list.title}:${name}`, kind: 'list-setting', target: list.title,
         oldValue: String(live[name]), newValue: String(wanted[name]) });

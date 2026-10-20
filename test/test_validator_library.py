@@ -1667,3 +1667,14 @@ def test_library_settings_are_accepted_on_a_library() -> None:
         settings=LibrarySettings(require_checkout=False),
     )
     none_of(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)
+
+
+def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(draft_version_visibility="author"),
+    )
+    findings = _library_findings(
+        entity, versioning_default=Versioning(enable_versioning=False, enable_minor_versions=True),
+    )
+    only(findings, FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS)
