@@ -334,8 +334,13 @@
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
   // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
+  const unescapeDefaults = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const folderDefaultPaths = (text) => [...String(text).matchAll(/<a\s+href="([^"]*)"\s*>/g)].map((m) => {
+    const path = unescapeDefaults(m[1]);
+    try { return decodeURIComponent(path); } catch { return path; }
+  });
   const folderDefaultValues = (text, path) => {
-    const unescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const unescape = unescapeDefaults;
     for (const entry of String(text).matchAll(/<a\s+href="([^"]*)"\s*>([\s\S]*?)<\/a>/g)) {
       let found = unescape(entry[1]);
       try { found = decodeURIComponent(found); } catch { /* compare the stored text */ }

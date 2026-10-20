@@ -3583,7 +3583,7 @@ def _assess_folder_defaults(
     return [
         f for f in summary["findings"]
         if f["key"] == "library_folder_defaults:APP_Docs"
-        or (all_findings and f["key"] == "library_folder_defaults:APP_Docs:receiver")
+        or (all_findings and f["key"].startswith("library_folder_defaults:APP_Docs:"))
     ]
 
 
@@ -3679,3 +3679,20 @@ def test_assess_blocks_on_an_asynchronous_defaults_receiver() -> None:
     }])
     (blocked,) = [f for f in found if f["key"].endswith(":receiver")]
     assert blocked["level"] == "BLOCKED" and "not synchronous" in blocked["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_blocks_on_unmanaged_entries_when_no_synchronous_receiver_exists() -> None:
+    held = (
+        '<MetadataDefaults><a href="/sites/test/APP_Docs/HandMade">'
+        '<DefaultValue FieldName="Division">Hand</DefaultValue></a></MetadataDefaults>'
+    )
+    found = _assess_folder_defaults(held, all_findings=True)
+    (blocked,) = [f for f in found if f["key"].endswith(":unmanaged")]
+    assert blocked["level"] == "BLOCKED"
+    assert "/sites/test/APP_Docs/HandMade" in blocked["detail"]
+    assert "nothing was written" in blocked["detail"]
+    sync: list[dict[str, object]] = [{"ReceiverClass": "Microsoft.Office.DocumentManagement"
+             ".LocationBasedMetadataDefaultsReceiver", "EventType": 10001, "Synchronization": 1}]
+    again = _assess_folder_defaults(held, all_findings=True, receivers=sync)
+    assert not [f for f in again if f["key"].endswith(":unmanaged")]

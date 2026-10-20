@@ -387,8 +387,13 @@
     return cachedDigest;
   }
   // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
+  const unescapeDefaults = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const folderDefaultPaths = (text) => [...String(text).matchAll(/<a\s+href="([^"]*)"\s*>/g)].map((m) => {
+    const path = unescapeDefaults(m[1]);
+    try { return decodeURIComponent(path); } catch { return path; }
+  });
   const folderDefaultValues = (text, path) => {
-    const unescape = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const unescape = unescapeDefaults;
     for (const entry of String(text).matchAll(/<a\s+href="([^"]*)"\s*>([\s\S]*?)<\/a>/g)) {
       let found = unescape(entry[1]);
       try { found = decodeURIComponent(found); } catch { /* compare the stored text */ }
@@ -1606,6 +1611,13 @@
         } else if (!ours.length) {
           finding(2, `${key}:receiver`, 'INFO', `Library '${title}' declares folder defaults but has no location-based defaults event receiver, which the deploy will register.`);
         }
+      }
+      // Same refusal the deploy makes: registering the receiver would activate entries nobody declared.
+      const declaredPaths = declaredFolders.map((d) => `${rootUrl}/${d.folder}`);
+      const unmanaged = folderDefaultPaths(text).filter((path) => !declaredPaths.includes(path));
+      const synchronous = rc.ok && rc.d && Array.isArray(rc.d.results) && rc.d.results.some((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001 && e.Synchronization === 1);
+      if (unmanaged.length && rc.ok && !synchronous) {
+        finding(2, `${key}:unmanaged`, 'BLOCKED', `the defaults file holds entries for folders this mapping does not declare (${unmanaged.join(', ')}); registering the receiver would start applying them, so nothing was written. Declare those folders or remove their entries`);
       }
       const differing = declaredFolders.filter((d) => {
         const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
