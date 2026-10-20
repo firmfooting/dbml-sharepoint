@@ -121,7 +121,7 @@ Probes: `calculated-operand-probe.js`, `calculated-choice-operand.js`,
 `today-semantics-probe.js`, `modified-clock-probe.js`,
 `list-modified-clock-probe.js`, `form-validation-probe.js`,
 `save-instant-paths-probe.js`, `today-source-probe.js`,
-`blank-operand-probe.js`
+`blank-operand-probe.js`, `formula-facts-probe.js`
 
 ### 2. `expression`: client-evaluated expressions
 
