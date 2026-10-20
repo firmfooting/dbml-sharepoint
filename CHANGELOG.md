@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.3](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.2...v0.26.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **manifest:** render rename sources that carry no implicit flag ([#904](https://github.com/firmfooting/dbml-sharepoint/issues/904)) ([97fd721](https://github.com/firmfooting/dbml-sharepoint/commit/97fd7211a9c0ed27e5a52a981107aff4a1e8dffd))
+
 ## [0.26.2](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.1...v0.26.2) (2026-10-20)
 
 
