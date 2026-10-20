@@ -1040,6 +1040,7 @@ class MappingBundle:
     extension_configs: dict[str, dict[object, object]] = field(default_factory=dict)
     source_paths: dict[str, pathlib.Path] = field(default_factory=dict)
     governance: Governance = field(default_factory=Governance)
+    form_trees: dict[str, dict[str, collections.abc.Mapping[str, object]]] = field(default_factory=dict)
 ```
 
 Mapping + the generic configs it references, all loaded.

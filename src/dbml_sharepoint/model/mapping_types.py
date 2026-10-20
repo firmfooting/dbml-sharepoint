@@ -1208,6 +1208,10 @@ class MappingBundle:
     source_paths: dict[str, Path] = field(default_factory=dict)
     # Optional and descriptive: nothing here is deployed.
     governance: Governance = field(default_factory=Governance)
+    # entity -> `header` or `footer` -> component tree as written in form.yaml
+    form_trees: dict[str, dict[str, collections.abc.Mapping[str, object]]] = field(
+        default_factory=dict,
+    )
 
     def extension_config_for(self, name: str | None) -> dict[object, object]:
         """The named extension's config block; {} when name is None or the
