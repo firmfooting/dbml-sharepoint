@@ -248,3 +248,43 @@ def test_explicit_root_cannot_collide_with_an_implicit_library(
             pack(tmp_path, dbml=schema, mapping=mapping)
     else:
         pack(tmp_path, dbml=schema, mapping=mapping)
+
+
+def test_manifest_renders_rename_sources_that_carry_no_implicit_flag(tmp_path: Path) -> None:
+    """The `implicit` key exists only on an implicit source; its absence must not fail the build."""
+    schema, bundle = pack(
+        tmp_path, dbml=table("Alpha", ID_PK, TITLE) + "\n" + table("Beta", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Alpha:
+                kind: List
+                site_role: default
+                base_template: 100
+                title: Alpha Things
+                renamed_from: [Alpha, Old Alpha]
+              Beta:
+                kind: List
+                site_role: default
+                base_template: 100
+                title: Beta Things
+                renamed_from: [Old Beta]
+        """,
+    )
+    release = load_release(FIXTURES / "release.yaml")
+    resolved = resolve(schema, bundle.mapping)
+    built = build_schema_json(schema, bundle, "default", resolved=resolved)
+    sources = {
+        lst["title"]: [r.get("implicit", False) for r in lst["renamed_from"]]
+        for lst in built["lists"]
+    }
+    assert not any(sources["Alpha Things"]) and any(sources["Beta Things"])
+    manifest = generate_manifest(
+        resolved=resolved, schema_json=built, findings=[], bundle=bundle,
+        source_mtime="2026-09-15T00:00:00Z", release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="schema.dbml", generated_at="2026-09-15T00:00:00Z",
+    )
+    rows = [x for x in manifest.splitlines() if "Renamed in place from" in x]
+    assert len(rows) == 2
+    noted = ["an implicit source" in x for x in rows]
+    assert noted == [False, True]

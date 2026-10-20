@@ -304,7 +304,7 @@ ownership evidence.
 {% endif %}
    - Exact ownership marker: {{ l.expected_marker }}
 {% if l.renamed_from %}
-   - Renamed in place from {% for r in l.renamed_from %}**{{ r.title }}** (marker: {{ r.expected_marker }}){% if not loop.last %}, or {% endif %}{% endfor %}, when exactly one exists carrying its marker and this title is absent{% if l.renamed_from | selectattr("implicit") | list %} (an implicit source is used only when it exists and carries its marker){% endif %}
+   - Renamed in place from {% for r in l.renamed_from %}**{{ r.title }}** (marker: {{ r.expected_marker }}){% if not loop.last %}, or {% endif %}{% endfor %}, when exactly one exists carrying its marker and this title is absent{% if l.renamed_from | selectattr("implicit", "defined") | list %} (an implicit source is used only when it exists and carries its marker){% endif %}
 {% endif %}
    {# Resolved above because trim_blocks eats the newline after a block tag, so an inline endif joined the next bullet onto this one. #}
 {% set versioning = "enabled, " ~ l.major_version_limit ~ " major versions" if l.enable_versioning else "disabled" %}
