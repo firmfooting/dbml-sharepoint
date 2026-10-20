@@ -1099,8 +1099,8 @@ class Mapping:
         """Every title this list may be found under on a site that has not
         migrated, each paired with the entity name whose marker it must carry.
 
-        Order: the current prefix with each previous name, then each previous
-        prefix with the current name and each previous name. The current
+        Order: for the current prefix and then each previous prefix, the entity
+        name and then each previous name. The current
         title is never a candidate, and nothing is listed twice.
         """
         entity = self.entities[entity_name]
@@ -1108,9 +1108,10 @@ class Mapping:
         seen: set[str] = set()
         out: list[tuple[str, str]] = []
         prefixes = [self.prefix, *self.previous_prefixes]
-        for i, prefix in enumerate(prefixes):
-            names = list(entity.renamed_from) if i == 0 else [entity_name, *entity.renamed_from]
-            for name in names:
+        for prefix in prefixes:
+            # The entity name is a candidate under every prefix: with `title:`
+            # set, `<prefix><name>` is what the list was called before it.
+            for name in [entity_name, *entity.renamed_from]:
                 title = prefix + name
                 if title == current or title in seen:
                     continue

@@ -112,7 +112,6 @@ def test_a_named_library_is_deployed_and_navigated_under_its_own_title(tmp_path:
     for generator in (generate_demo_js, generate_rollback_js):
         emitted = generator(schema=schema, bundle=bundle, release=release, **args)
         assert title in emitted
-        assert "APP_Document" not in emitted
     manifest = generate_manifest(
         resolved=resolve(schema, bundle.mapping),
         schema_json=built, findings=[], bundle=bundle,

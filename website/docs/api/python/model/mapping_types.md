@@ -899,8 +899,8 @@ def previous_titles(self, entity_name: str) -> list[tuple[str, str]]
 Every title this list may be found under on a site that has not
 migrated, each paired with the entity name whose marker it must carry.
 
-Order: the current prefix with each previous name, then each previous
-prefix with the current name and each previous name. The current
+Order: for the current prefix and then each previous prefix, the entity
+name and then each previous name. The current
 title is never a candidate, and nothing is listed twice.
 
 #### `Mapping.projections_for`
