@@ -12,6 +12,7 @@ or the cycle this module exists to close would move rather than close.
 """
 
 import re
+from collections.abc import Collection, Mapping
 
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES
 
@@ -53,6 +54,25 @@ def formula_column_refs(formula: str) -> frozenset[str]:
     return frozenset(
         FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
     )
+
+
+def calculated_cycle(formulas: Mapping[str, str], calc_names: Collection[str]) -> list[str]:
+    """Calculated columns that depend on each other with no valid order, sorted; empty if none.
+
+    A self-reference is not counted: it is not a creation-order problem between two columns.
+    """
+    remaining = {
+        name: (formula_column_refs(f) & set(calc_names)) - {name}
+        for name, f in formulas.items()
+        if name in calc_names
+    }
+    while remaining:
+        ready = [n for n, deps in remaining.items() if not deps & remaining.keys()]
+        if not ready:
+            return sorted(remaining)
+        for name in ready:
+            del remaining[name]
+    return []
 
 
 # `=[Created]+14` was confirmed in a library's calculated_date column on a live tenant, 2026-09-28.

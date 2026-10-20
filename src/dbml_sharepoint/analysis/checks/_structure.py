@@ -7,6 +7,7 @@ from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.checks.context import IndexTarget, ValidationContext
 from dbml_sharepoint.analysis.column_refs import (
+    calculated_cycle,
     calculated_formula_builtins,
     formula_column_refs,
 )
@@ -1485,25 +1486,16 @@ def _formula_cycle(
     a cycle has no valid creation order (each field's formula would
     reference a not-yet-existing column).
     """
-    remaining = {
-        name: (formula_column_refs(f) & calc_names) - {name}
-        for name, f in cols.items()
-        if name in calc_names
-    }
-    while remaining:
-        ready = [n for n, deps in remaining.items() if not deps & remaining.keys()]
-        if not ready:
-            return [Finding(
-                FindingCode.CALCULATED_FORMULA_CYCLE,
-                f"calculated_formulas[{entity_name}]: circular reference "
-                f"among {sorted(remaining)} -- no creation order can "
-                f"satisfy mutually dependent calculated columns.",
-                location=Location(
-                    Section.CALCULATED_FORMULAS, entity=entity_name,
-                ),
-            )]
-        for name in ready:
-            del remaining[name]
+    if members := calculated_cycle(cols, calc_names):
+        return [Finding(
+            FindingCode.CALCULATED_FORMULA_CYCLE,
+            f"calculated_formulas[{entity_name}]: circular reference "
+            f"among {members} -- no creation order can "
+            f"satisfy mutually dependent calculated columns.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=entity_name,
+            ),
+        )]
     return []
 
 
