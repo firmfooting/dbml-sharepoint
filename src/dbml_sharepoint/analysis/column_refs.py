@@ -61,8 +61,9 @@ def calculated_cycle(formulas: Mapping[str, str], calc_names: Collection[str]) -
 
     A self-reference is not counted: it is not a creation-order problem between two columns.
     """
+    names = set(calc_names)
     remaining = {
-        name: (formula_column_refs(f) & set(calc_names)) - {name}
+        name: (formula_column_refs(f) & names) - {name}
         for name, f in formulas.items()
         if name in calc_names
     }

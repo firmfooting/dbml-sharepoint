@@ -15,7 +15,7 @@ from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 
 # Text ordering (< >) is unmeasured, so the grid's text values are not evidence for it.
 NUMBERS: tuple[float | None, ...] = (None, 0.0, 1.0, 3.0, 12.0, -2.0)
-TEXTS: tuple[str | None, ...] = (None, "abc", "ABC", "  a  b ")
+TEXTS: tuple[str | None, ...] = (None, "abc", "ABC", "  a  b ", "0", "false", " ")
 # Month ends, year ends, 28 and 29 February (leap and not), the due day and the day after,
 # and the days either side of a daylight change in the site zone.
 DATES: tuple[date | None, ...] = (
@@ -114,8 +114,16 @@ def error_rows(
     ]
 
 
-def _json_row(row: Mapping[str, object], zone: str) -> dict[str, object]:
-    return {k: instant(v, zone) if isinstance(v, date) else v for k, v in row.items()}
+def _json_row(
+    row: Mapping[str, object], kinds: Mapping[str, ColumnKind], zone: str
+) -> dict[str, object]:
+    # A blank text or choice field reads as '' in a formatter (Learn's `[$Field] == ''` blank test).
+    return {
+        k: instant(v, zone)
+        if isinstance(v, date)
+        else ("" if v is None and kinds[k] in ("text", "choice") else v)
+        for k, v in row.items()
+    }
 
 
 def _same(expected: object, got: object, zone: str) -> bool:
@@ -156,7 +164,8 @@ def check_parity(
     expected = [_reference(formula, r, formulas, kinds, zone) for r in rows]
     kept = [(r, e) for r, e in zip(rows, expected, strict=True) if not isinstance(e, ColumnError)]
     assert kept, "every grid row is a column error, so nothing was compared"
-    sent = [_json_row(r, zone) for r, _ in kept]
+    stored = _stored(formula, formulas, kinds)
+    sent = [_json_row(r, stored, zone) for r, _ in kept]
     failures: list[str] = []
     for browser, now in itertools.product(browsers, nows or ("2026-10-20T12:00:00Z",)):
         got = evaluate_rows(expression, sent, browser_tz=browser, now=now)

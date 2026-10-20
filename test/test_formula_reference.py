@@ -149,7 +149,7 @@ def test_error_rows_name_the_rows_the_parity_check_skips() -> None:
     skipped = error_rows("[T]+1", {}, kinds, {})
 
     assert skipped and all(r["T"] is not None for r in skipped)
-    check_parity("[T]+1", "=[$T] + 1", {}, kinds, {}, ("UTC",))
+    check_parity("[T]+1", "=if([$T] == '', 1, [$T] + 1)", {}, kinds, {}, ("UTC",))
 
 
 CHOICES = {"Status": ("Open", "Done")}

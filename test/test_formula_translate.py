@@ -22,37 +22,42 @@ KINDS: dict[str, ColumnKind] = {
     "Status": "choice",
     "Risk": "choice",
     "Name": "text",
-    "Qty": "number",
-    "Price": "number",
+    "Score": "number",
     "Due": "date",
 }
 CHOICES = {"Status": ("Open", "Closed"), "Risk": ("Low", "High")}
-BROWSERS = ("Australia/Melbourne",)
+# Two offsets from the site zone: the translation must not depend on the browser's zone.
+BROWSERS = ("Australia/Melbourne", "America/Los_Angeles")
+# Numbers come from chained calculated columns, because a stored number column is refused.
+NUMBERS = {
+    "Qty": 'IF([Status]="Open",3,IF([Status]="Closed",0-2,12))',
+    "Price": 'IF([Risk]="High",0,IF([Risk]="Low",1,4))',
+}
 
 # id -> (formula, result type). One case per supported function and operator.
 PARITY: dict[str, tuple[str, str]] = {
     "IF": ('IF([Qty]>2,"big","small")', "text"),
     "nested IF": ('IF([Status]="Open",IF([Risk]="High",3,2),1)', "number"),
-    "AND OR NOT": ('IF(AND([Qty]>1,OR([Price]<3,NOT([Qty]=12))),"y","n")', "text"),
+    "AND": ('IF(AND([Qty]>1,[Price]<3),"y","n")', "text"),
+    "OR": ('IF(OR([Qty]>5,[Price]<1),"y","n")', "text"),
+    "NOT": ('IF(NOT([Qty]=12),"y","n")', "text"),
     "ISBLANK": ('IF(ISBLANK([Name]),"none",[Name])', "text"),
     "CHOOSE matrix": (
         'CHOOSE(IF([Status]="Open",1,2),CHOOSE(IF([Risk]="High",1,2),"a","b"),"c")',
         "text",
     ),
+    "CHOOSE literal index": ('CHOOSE(2,"a",[Name],"c")', "text"),
     "MIN": ("MIN([Qty]+0,[Price]+0,5)", "number"),
     "MAX": ("MAX([Qty]+0,[Price]+0,5)", "number"),
     "ABS": ("ABS([Qty]-5)", "number"),
     "INT": ("INT([Qty]/4)", "number"),
     "ROUND": ("ROUND(([Qty]+1)/2,0)", "number"),
+    "ROUND quarters": ("ROUND([Qty]/4,0)", "number"),
     "ampersand": ('[Name]&"-"&[Status]&5', "text"),
     "CONCATENATE": ('CONCATENATE([Name],"x",[Status])', "text"),
     "LEFT": ("LEFT([Name],2)", "text"),
     "LEFT default": ("LEFT([Name])", "text"),
-    "RIGHT": ("RIGHT([Name],2)", "text"),
-    "RIGHT longer than text": ("RIGHT([Name],9)", "text"),
-    "RIGHT zero": ("RIGHT([Name],0)", "text"),
     "MID": ("MID([Name],2,3)", "text"),
-    "LEN": ("LEN([Name])", "number"),
     "LOWER": ("LOWER([Name])", "text"),
     "UPPER": ("UPPER([Name])", "text"),
     "plus": ("[Qty]+[Price]", "number"),
@@ -76,9 +81,15 @@ PARITY: dict[str, tuple[str, str]] = {
 
 def _ctx(formula: str, result: str, **more: str) -> TranslationContext:
     return TranslationContext(
-        formulas={"Calc": formula, **more},
+        formulas={"Calc": formula, **NUMBERS, **more},
         kinds=KINDS,
-        result_types={"Calc": result, "B": "number", "C": "number", "A": "number"},
+        result_types={
+            "Calc": result,
+            "Qty": "number",
+            "Price": "number",
+            "B": "number",
+            "A": "number",
+        },
         choices=CHOICES,
         zone="Australia/Melbourne",
     )
@@ -89,6 +100,10 @@ def _parity(formula: str, result: str, **more: str) -> str:
     expression = translate_column("Calc", ctx).expression
     check_parity(formula, expression, ctx.formulas, KINDS, CHOICES, BROWSERS)
     return expression
+
+
+def _run(expression: str, row: dict[str, object]) -> object:
+    return evaluate_expression(expression, row, browser_tz="UTC", now="2026-10-20T12:00:00Z")
 
 
 @pytest.mark.parametrize(("formula", "result"), PARITY.values(), ids=PARITY.keys())
@@ -102,23 +117,12 @@ def test_every_supported_function_has_a_parity_case() -> None:
 
 
 def test_text_equality_is_case_insensitive() -> None:
-    expression = _parity('IF([Name]="ABC","y","n")', "text")
-    row = {"Name": "abc"}
-    assert evaluate_expression(expression, row, browser_tz="UTC", now="2026-10-20T12:00:00Z") == "y"
-
-
-def test_blank_number_in_arithmetic_counts_as_zero() -> None:
-    expression = _parity("[Qty]+1", "number")
-    got = evaluate_expression(
-        expression, {"Qty": None}, browser_tz="UTC", now="2026-10-20T12:00:00Z"
-    )
-    assert got == 1
+    assert _run(_parity('IF([Name]="ABC","y","n")', "text"), {"Name": "abc"}) == "y"
 
 
 def test_blank_text_joins_as_empty() -> None:
     expression = _parity("[Name]&[Status]", "text")
-    row: dict[str, object] = {"Name": None, "Status": None}
-    assert evaluate_expression(expression, row, browser_tz="UTC", now="2026-10-20T12:00:00Z") == ""
+    assert _run(expression, {"Name": "", "Status": ""}) == ""
 
 
 def test_an_empty_result_hides() -> None:
@@ -126,8 +130,7 @@ def test_an_empty_result_hides() -> None:
 
 
 def test_a_chained_calculated_column_is_translated_in_place() -> None:
-    b, c = 'IF([Status]="Open",1,2)', "[B]*10"
-    expression = _parity(c, "number", B=b)
+    expression = _parity("[B]*10", "number", B='IF([Status]="Open",1,2)')
     assert "$B" not in expression
 
 
@@ -150,61 +153,44 @@ def _refusal(formula: str, result: str = "number") -> tuple[FormulaRefusal, str]
     return found.value, found.value.finding("Task", "Calc", formula).message
 
 
-def test_unparseable_names_the_formula() -> None:
-    refusal, message = _refusal("IF([Qty]>1,")
-    assert refusal.code is FindingCode.FORM_FORMULA_UNPARSEABLE
-    assert "IF([Qty]>1," in message
+# formula, result type, expected code, the function, operator or column the detail must name
+REFUSED = [
+    ("IF([Qty]>1,", "number", FindingCode.FORM_FORMULA_UNPARSEABLE, "position"),
+    ('TRIM("  a   b  ")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "TRIM"),
+    ("LEN([Name])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "LEN"),
+    ("RIGHT([Name],2)", "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "RIGHT"),
+    ("[Qty]+NOW()", "number", FindingCode.FORM_FORMULA_VOLATILE, "NOW"),
+    ("[Owner]+1", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Owner"),
+    ("[Score]+1", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Score"),
+    ("[Qty]+1", "yesno", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "yesno"),
+    ("[Qty]>1", "text", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "yes/no"),
+    ("DATE(2026,1,1)", "date", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "DATE"),
+    ("YEAR([Due])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "YEAR"),
+    ("[Due]", "date", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "Due"),
+    ("ROUND([Qty]+0,2)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ROUND"),
+    ("LEFT([Name],[Qty])", "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "LEFT"),
+    ("ISBLANK([Qty])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ISBLANK"),
+    ('[Qty]&"x"', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "&"),
+    ('IF([Name]<"b",1,2)', "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "<"),
+    ("IF([Qty]>1,1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "IF"),
+    ("[Name]+1", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "+"),
+    ('CHOOSE([Qty],"a","b")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "CHOOSE"),
+    ('CHOOSE(1.5,"a","b")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "CHOOSE"),
+    (
+        'CHOOSE(IF([Qty]>1,1,1.5),"a","b")',
+        "text",
+        FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED,
+        "CHOOSE",
+    ),
+    ('CHOOSE(3,"a","b")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "CHOOSE"),
+]
 
 
-def test_unsupported_function_names_formula_and_function() -> None:
-    refusal, message = _refusal('TRIM("  a   b  ")', "text")
-    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
-    assert "TRIM" in message
-    assert 'TRIM("  a   b  ")' in message
-
-
-def test_volatile_names_formula_and_function() -> None:
-    refusal, message = _refusal("[Qty]+NOW()")
-    assert refusal.code is FindingCode.FORM_FORMULA_VOLATILE
-    assert "NOW" in message
-    assert "[Qty]+NOW()" in message
-
-
-def test_an_unsupported_column_names_the_formula() -> None:
-    refusal, message = _refusal("[Owner]+1")
-    assert refusal.code is FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED
-    assert "[Owner]+1" in message
-
-
-def test_an_unsupported_result_names_the_formula() -> None:
-    refusal, message = _refusal("[Qty]+1", "yesno")
-    assert refusal.code is FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED
-    assert "[Qty]+1" in message
-
-
-@pytest.mark.parametrize(
-    "formula",
-    ["DATE(2026,1,1)", "YEAR([Due])", "[Due]"],
-)
-def test_dates_are_refused_until_translated(formula: str) -> None:
-    refusal, _ = _refusal(formula, "date")
-    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
-
-
-@pytest.mark.parametrize(
-    "formula",
-    [
-        "[Qty]",  # a bare number column: its blank cannot be told from 0
-        "ROUND([Qty]+0,2)",
-        "LEFT([Name],[Qty])",
-        "ISBLANK([Qty])",
-        '[Qty]&"x"',
-        'IF([Name]<"b",1,2)',
-        "IF([Qty]>1,1)",
-        "[Name]+1",
-    ],
-)
-def test_inexact_or_unmeasured_forms_are_refused(formula: str) -> None:
-    result = "text" if formula.startswith(("LEFT", "[Qty]&")) else "number"
-    refusal, _ = _refusal(formula, result)
-    assert refusal.code.name.startswith("FORM_FORMULA_")
+@pytest.mark.parametrize(("formula", "result", "code", "named"), REFUSED)
+def test_a_refusal_names_the_formula_and_what_it_refused(
+    formula: str, result: str, code: FindingCode, named: str
+) -> None:
+    refusal, message = _refusal(formula, result)
+    assert refusal.code is code
+    assert named in refusal.detail
+    assert formula in message

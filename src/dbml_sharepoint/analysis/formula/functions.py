@@ -2,8 +2,8 @@
 
 from dbml_sharepoint.analysis.formula.syntax import Binary, Call, Expr, Neg, Percent, Ref
 
-# Each has an exact formatting equivalent (formatting syntax reference, Microsoft Learn). TRIM is
-# absent: it also collapses inner runs of spaces and formatting has no trim operator.
+# Each has an exact formatting equivalent (formatting syntax reference, Microsoft Learn).
+# TRIM, LEN and RIGHT are absent: translate.py refuses them with the reason.
 # Name to (minimum, maximum) argument count; None means no maximum.
 SUPPORTED: dict[str, tuple[int, int | None]] = {
     "IF": (2, 3),
@@ -19,9 +19,7 @@ SUPPORTED: dict[str, tuple[int, int | None]] = {
     "ROUND": (2, 2),
     "CONCATENATE": (1, None),
     "LEFT": (1, 2),
-    "RIGHT": (1, 2),
     "MID": (3, 3),
-    "LEN": (1, 1),
     "LOWER": (1, 1),
     "UPPER": (1, 1),
     "DATE": (3, 3),

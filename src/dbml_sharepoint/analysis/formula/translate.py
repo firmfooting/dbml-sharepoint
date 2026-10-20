@@ -35,7 +35,12 @@ from dbml_sharepoint.analysis.formula.syntax import (
 # tolerates exactly these.
 PENDING_DATES: frozenset[str] = frozenset({"DATE", "YEAR", "MONTH", "DAY"})
 
-_SENTINEL = chr(0xE000)
+# Refused with the reason, not merely absent from SUPPORTED.
+_NO_EQUIVALENT = {
+    "TRIM": "which also collapses inner runs of spaces, and formatting has no trim operator",
+    "LEN": "and the formatting reference documents no text-length operator",
+    "RIGHT": "and the formatting reference documents no text-length operator to count from the end",
+}
 # A choice column reads as text; its listed values do not matter to a formula.
 _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}
 
@@ -75,8 +80,6 @@ class TranslationContext:
 class _Tr:
     code: str
     kind: Literal["text", "number", "bool"]
-    # A number column read directly: Learn does not say if a blank is null or 0.
-    bare: bool = False
 
 
 def _refuse(code: FindingCode, detail: str) -> NoReturn:
@@ -101,10 +104,8 @@ def _lit(value: float) -> str:
 
 def _num(tr: _Tr, what: str) -> str:
     if tr.kind != "number":
-        _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"uses {what} on a {tr.kind} value")
-    # Number() is on the Learn page; it turns a null or empty blank into 0, which the measured
-    # blank-number rule (counts as 0 in arithmetic and comparison) needs.
-    return f"Number({tr.code})" if tr.bare else tr.code
+        _unsupported(what, f"which cannot take a {tr.kind} value")
+    return tr.code
 
 
 def _cond(tr: _Tr) -> str:
@@ -126,21 +127,21 @@ def _text_of(node: Expr, tr: _Tr, name: str) -> str:
     )
 
 
+def _whole_values(node: Expr) -> set[float] | None:
+    """Every value of a whole-number literal or an IF over such; None for anything else."""
+    if isinstance(node, Num):
+        return {node.value} if node.value == int(node.value) else None
+    if isinstance(node, Call) and node.name == "IF" and len(node.args) == 3:
+        branches = (_whole_values(node.args[1]), _whole_values(node.args[2]))
+        if branches[0] is not None and branches[1] is not None:
+            return branches[0] | branches[1]
+    return None
+
+
 def _whole(node: Expr, name: str, minimum: int) -> int:
     if not isinstance(node, Num) or node.value != int(node.value) or node.value < minimum:
         _unsupported(name, "with a count that is not a whole-number literal")
     return int(node.value)
-
-
-def _text_length(text: str) -> str:
-    # indexOf on the text plus a marker is the length workaround on the Learn page (indexOf);
-    # shortcut: exact only while the text holds no U+E000, upgrade when a column may.
-    return f"indexOf({text} + {_q(_SENTINEL)}, {_q(_SENTINEL)})"
-
-
-def _text_ref(name: str) -> str:
-    # length() is 0 for a blank and 1 for any other text (Learn: length), so a blank reads as ''.
-    return f"if(length([${name}]) == 0, '', [${name}])"
 
 
 class _Translator:
@@ -185,9 +186,15 @@ class _Translator:
             return self.column(name, stack)
         kind = self.stored_kind(name)
         if kind == "text":
-            return _Tr(_text_ref(name), "text")
+            # A blank text field reads as '': Learn's own blank test on one (the default file
+            # hover card sample in the formatting syntax reference) is `[$Field] == ''`.
+            return _Tr(f"[${name}]", "text")
         if kind == "number":
-            return _Tr(f"[${name}]", "number", bare=True)
+            # Learn never says what a blank number field is, so a header cannot match 0 or blank.
+            _refuse(
+                FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED,
+                f"reads the number column [{name}], whose blank value Learn does not document",
+            )
         if kind == "date":
             _translate_date_call(f"the date column [{name}]")
         return _refuse(
@@ -220,6 +227,8 @@ class _Translator:
                 FindingCode.FORM_FORMULA_VOLATILE,
                 f"calls {name}, whose value changes with no column changing",
             )
+        if name in _NO_EQUIVALENT:
+            _unsupported(name, _NO_EQUIVALENT[name])
         if name not in SUPPORTED:
             _unsupported(name, "which has no formatting equivalent")
         low, high = SUPPORTED[name]
@@ -239,12 +248,12 @@ class _Translator:
             or self.stored_kind(arg.name) != "text"
         ):
             _unsupported("ISBLANK", "which a header can test only on a text or choice column")
-        return _Tr(f"(length([${arg.name}]) == 0)", "bool")
+        return _Tr(f"([${arg.name}] == '')", "bool")
 
     def apply(self, name: str, args: tuple[Expr, ...], vals: list[_Tr]) -> _Tr:
         match name:
             case "IF" | "CHOOSE":
-                return self.branch(name, vals)
+                return self.branch(name, args, vals)
             case "AND" | "OR":
                 joiner = " && " if name == "AND" else " || "
                 return _Tr("(" + joiner.join(_cond(v) for v in vals) + ")", "bool")
@@ -263,7 +272,7 @@ class _Translator:
                 return _Tr("(" + " + ".join(parts) + ")", "text")
         return self.text_function(name, args, vals)
 
-    def branch(self, name: str, vals: list[_Tr]) -> _Tr:
+    def branch(self, name: str, args: tuple[Expr, ...], vals: list[_Tr]) -> _Tr:
         if name == "IF":
             if len(vals) < 3:
                 _unsupported("IF", "without an else value, which is not measured")
@@ -273,7 +282,10 @@ class _Translator:
         index = _num(vals[0], name)
         options = vals[1:]
         self.same_kind(name, options)
-        # Assumed: an out-of-range index is a column error (hidden); the last value is the default.
+        reach = _whole_values(args[0])
+        if reach is None or not reach <= set(range(1, len(options) + 1)):
+            _unsupported(name, "with an index not provably a whole number in range")
+        # The index is proven in range, so the last value is simply the else.
         code = self.value(options[-1])
         for i in range(len(options) - 1, 0, -1):
             code = f"if({index} == {i}, {self.value(options[i - 1])}, {code})"
@@ -281,11 +293,6 @@ class _Translator:
 
     @staticmethod
     def value(tr: _Tr) -> str:
-        if tr.bare:
-            _refuse(
-                FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED,
-                "returns a number column directly, and a header cannot tell its blank from 0",
-            )
         if tr.kind == "bool":
             _refuse(FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "returns a yes/no value")
         return tr.code
@@ -324,15 +331,9 @@ class _Translator:
                 return _Tr(f"toLowerCase({s.code})", "text")  # Learn: toLowerCase
             case "UPPER":
                 return _Tr(f"toUpperCase({s.code})", "text")  # Learn: toUpperCase
-            case "LEN":
-                return _Tr(_text_length(s.code), "number")
             case "LEFT":
                 count = _whole(args[1], name, 0) if len(args) > 1 else 1
                 return _Tr(f"substring({s.code}, 0, {count})", "text")  # Learn: substring
-            case "RIGHT":
-                count = _whole(args[1], name, 0) if len(args) > 1 else 1
-                size = _text_length(s.code)
-                return _Tr(f"substring({s.code}, {size} - {count}, {size})", "text")
         start = _whole(args[1], name, 1)
         length = _whole(args[2], name, 0)
         return _Tr(f"substring({s.code}, {start - 1}, {start - 1 + length})", "text")

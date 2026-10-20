@@ -30,9 +30,6 @@ const addDays = (d, n) => {
 const asDate = (v) => new Date(v); // Unary operators: Date()
 const toUpperCase = (s) => s.toUpperCase(); // Unary operators: toUpperCase
 const substring = (s, a, b) => s.substring(a, b); // Ternary operators: substring
-const indexOf = (s, x) => s.indexOf(x); // Binary operators: indexOf
-// Unary operators: length counts an array, else 1 when true and 0 when false.
-const length = (v) => (Array.isArray(v) ? v.length : v ? 1 : 0);
 const choose = (condition, yes, no) => (condition ? yes : no); // Conditional operator: if
 """
 
