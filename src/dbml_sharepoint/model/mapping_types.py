@@ -1100,22 +1100,27 @@ class Mapping:
         migrated, each paired with the entity name whose marker it must carry.
 
         Order: the current prefix with each previous name, then each previous
-        prefix with the current name and each previous name. The current
-        title is never a candidate, and nothing is listed twice.
+        prefix with the entity name and each previous name, then the current
+        prefix with the entity name. The current title is never a candidate,
+        and nothing is listed twice (compared case-insensitively).
         """
         entity = self.entities[entity_name]
-        current = self.list_title(entity_name)
+        current = self.list_title(entity_name).casefold()
         seen: set[str] = set()
         out: list[tuple[str, str]] = []
+
+        def add(title: str, name: str) -> None:
+            if title.casefold() not in seen | {current}:
+                seen.add(title.casefold())
+                out.append((title, name))
+
         prefixes = [self.prefix, *self.previous_prefixes]
         for i, prefix in enumerate(prefixes):
-            names = list(entity.renamed_from) if i == 0 else [entity_name, *entity.renamed_from]
-            for name in names:
-                title = prefix + name
-                if title == current or title in seen:
-                    continue
-                seen.add(title)
-                out.append((title, name))
+            for name in (entity.renamed_from if i == 0 else [entity_name, *entity.renamed_from]):
+                add(prefix + name, name)
+        # Last, so it never takes a title a declared historical pair produces.
+        # With `title:` set this is the list's name before `title:` existed.
+        add(self.prefix + entity_name, entity_name)
         return out
 
 @dataclass(frozen=True)

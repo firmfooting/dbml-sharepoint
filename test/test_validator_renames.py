@@ -188,3 +188,48 @@ def test_explicit_title_collides_with_resolved_alias_in_same_role() -> None:
     only(_rename_findings(entities), FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
     entities["Other"] = replace(entities["Other"], site_role="another")
     none_of(_rename_findings(entities), FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
+
+
+def _titled(name: str, title: str, *previous: str) -> EntityMapping:
+    return replace(_entity(name, *previous), title=title)
+
+
+def _titled_findings(entities: dict[str, EntityMapping]) -> list[Finding]:
+    schema = make_schema(*(make_table(n, "Title", note=f"{n} note") for n in entities))
+    bundle = make_bundle(
+        prefix="APP_", previous_prefixes=("", "ADOPT_"), entities=entities,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_title_with_current_prefix_finds_the_prefixed_name() -> None:
+    bundle = make_bundle(prefix="APP_", entities={"Risk": _titled("Risk", "Risks")})
+    assert ("APP_Risk", "Risk") in bundle.mapping.previous_titles("Risk")
+
+
+def test_an_entity_listing_its_own_name_with_previous_prefixes_is_not_claimed_twice() -> None:
+    found = _titled_findings({"Risk": _titled("Risk", "APP_Risk", "Risk")})
+    none_of(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
+
+
+def test_two_entities_claiming_one_title_still_refuse_with_title_and_prefixes() -> None:
+    found = _titled_findings({
+        "Risk": _titled("Risk", "Risks"),
+        "Other": _titled("Other", "Others", "Risk"),
+    })
+    assert any(f.code == FindingCode.RENAMED_FROM_CLAIMED_TWICE for f in found)
+
+
+def test_a_title_differing_only_by_case_from_the_generated_one_is_not_a_rename() -> None:
+    found = _titled_findings({"Risk": _titled("Risk", "APP_RISK")})
+    none_of(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
+
+
+def test_the_implicit_title_never_takes_a_declared_historical_pair() -> None:
+    bundle = make_bundle(
+        prefix="", previous_prefixes=("Old",),
+        entities={"OldRisk": _titled("OldRisk", "Risks", "Risk")},
+    )
+    assert bundle.mapping.previous_titles("OldRisk") == [
+        ("Risk", "Risk"), ("OldOldRisk", "OldRisk"), ("OldRisk", "Risk"),
+    ]

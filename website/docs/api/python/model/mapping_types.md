@@ -900,8 +900,9 @@ Every title this list may be found under on a site that has not
 migrated, each paired with the entity name whose marker it must carry.
 
 Order: the current prefix with each previous name, then each previous
-prefix with the current name and each previous name. The current
-title is never a candidate, and nothing is listed twice.
+prefix with the entity name and each previous name, then the current
+prefix with the entity name. The current title is never a candidate,
+and nothing is listed twice (compared case-insensitively).
 
 #### `Mapping.projections_for`
 

@@ -21,11 +21,13 @@ def check(vc: ValidationContext) -> list[Finding]:
         by_title = {mapping.list_title(name): name for name in entities}
         declared = []
         for name, entity in entities.items():
+            # The raw renamed_from stays a claim even when it names the
+            # entity's own title, so that mistake still errors.
             previous = [mapping.prefix + old for old in entity.renamed_from]
+            # A title reached both by name and by renamed_from is one claim.
             previous += [
-                prefix + old for prefix in mapping.previous_prefixes
-                for old in (name, *entity.renamed_from)
-                if prefix + old != mapping.list_title(name)
+                t for t, _ in mapping.previous_titles(name)
+                if t.casefold() not in {p.casefold() for p in previous}
             ]
             declared.append((mapping.list_title(name), tuple(previous)))
         def location(title: str, names: dict[str, str] = by_title) -> Location:
