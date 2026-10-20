@@ -5,16 +5,15 @@ equality, a system date column plus days); every other function follows the usua
 rule and is exercised only through the grid. A case nobody measured raises NotImplementedError
 rather than guess.
 
-A date column holds a `datetime.date`: the site-local calendar day. Its UTC instant is site-local
-midnight, so `2027-01-04T13:00:00Z` at +11 is the date 2027-01-05. A system date column (Created)
-holds an aware `datetime.datetime` instant; its day is taken in the site zone.
+A date-only column holds a `datetime.date`: the calendar day itself. A date and time column,
+Created and Modified hold an aware `datetime.datetime` instant; its day is taken in the site zone.
 """
 
 import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import cast
 from zoneinfo import ZoneInfo
@@ -330,8 +329,3 @@ def _join(a: Value, b: Value, zone: str) -> str | ColumnError:
         else left + right
     )
 
-
-def instant(day: date, zone: str) -> str:
-    """The UTC instant of site-local midnight on `day`, as a list read returns it."""
-    local = datetime(day.year, day.month, day.day, tzinfo=ZoneInfo(zone))
-    return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

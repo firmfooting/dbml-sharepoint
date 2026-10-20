@@ -34,7 +34,7 @@ def days_of(year: str, month: str, day: str) -> str:
 
 def parts_of(days: str) -> tuple[str, str, str]:
     """Expressions for the year, month and day of a day number."""
-    j = f"(({days}) - {FIRST_DAY})"
+    j = f"(({days}) + {-FIRST_DAY})"  # FIRST_DAY is before 1970, so a negative literal is avoided
     k = f"floor((4 * {j} + 3) / 1461)"  # whole March-based years since 1904-03-01
     doy = f"({j} - 365 * {k} - floor({k} / 4))"
     mp = f"floor((5 * {doy} + 2) / 153)"  # months since March

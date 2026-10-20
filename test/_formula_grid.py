@@ -3,11 +3,11 @@
 import itertools
 import math
 from collections.abc import Iterator, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from _format_eval import evaluate_rows
-from _formula_reference import DEFAULT_ZONE, ColumnError, evaluate, instant
+from _format_eval import date_field, evaluate_rows
+from _formula_reference import DEFAULT_ZONE, ColumnError, evaluate
 
 from dbml_sharepoint.analysis.formula.functions import refs
 from dbml_sharepoint.analysis.formula.parse import parse_formula
@@ -36,6 +36,33 @@ DATES: tuple[date | None, ...] = (
     date(2026, 10, 21),
 )
 UNLISTED = "Unlisted value"
+# Created and Modified are never blank.
+SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
+# Local times either side of midnight and noon, on the days of the dates above.
+_TIMES = (time(0, 0, 0), time(0, 0, 1), time(12, 0, 0), time(23, 59, 59))
+_EPOCH = date(1970, 1, 1)
+
+
+def instants(zone: str) -> tuple[datetime, ...]:
+    """Date-and-time values around the site zone's midnights and its 2026 changes of offset."""
+    tz = ZoneInfo(zone)
+    found = {
+        datetime.combine(day, at, tzinfo=tz).astimezone(UTC)
+        for day in DATES
+        if day is not None
+        for at in _TIMES
+    }
+    # Each second either side of an hour before and after every change of offset in 2026.
+    probe = datetime(2026, 1, 1, tzinfo=UTC)
+    step = datetime(2027, 1, 1, tzinfo=UTC)
+    previous = probe.astimezone(tz).utcoffset()
+    while probe < step:
+        probe += timedelta(minutes=30)
+        offset = probe.astimezone(tz).utcoffset()
+        if offset != previous:
+            found.update(probe + timedelta(minutes=m) for m in (-60, -31, -30, -1, 0, 1, 30, 60))
+            previous = offset
+    return tuple(sorted(found))
 
 
 def _choice_values(listed: tuple[str, ...]) -> list[str | None]:
@@ -45,9 +72,15 @@ def _choice_values(listed: tuple[str, ...]) -> list[str | None]:
 
 
 def grid(
-    columns: Mapping[str, ColumnKind], choices: Mapping[str, tuple[str, ...]]
+    columns: Mapping[str, ColumnKind],
+    choices: Mapping[str, tuple[str, ...]],
+    moments: frozenset[str] = frozenset(),
+    zone: str = DEFAULT_ZONE,
 ) -> Iterator[dict[str, object]]:
-    """Every combination of each column's hard values; a blank appears in each column."""
+    """Every combination of each column's hard values; a blank appears in each column.
+
+    A date column named in `moments` holds a date and time, else a date only.
+    """
     domains: list[list[object]] = []
     for name, kind in columns.items():
         match kind:
@@ -55,6 +88,9 @@ def grid(
                 domains.append(list(NUMBERS))
             case "text":
                 domains.append(list(TEXTS))
+            case "date" if name in moments or name in SYSTEM_MOMENTS:
+                blank = [] if name in SYSTEM_MOMENTS else [None]
+                domains.append([*blank, *instants(zone)])
             case "date":
                 domains.append(list(DATES))
             case "choice":
@@ -104,29 +140,36 @@ def error_rows(
     choices: Mapping[str, tuple[str, ...]],
     *,
     zone: str = DEFAULT_ZONE,
+    moments: frozenset[str] = frozenset(),
 ) -> list[dict[str, object]]:
     """The grid rows on which the formula is a column error; `check_parity` skips them."""
     stored = _stored(formula, formulas, kinds)
     return [
         r
-        for r in grid(stored, choices)
+        for r in grid(stored, choices, moments, zone)
         if isinstance(_reference(formula, r, formulas, kinds, zone), ColumnError)
     ]
 
 
 def _json_row(
-    row: Mapping[str, object], kinds: Mapping[str, ColumnKind], zone: str
+    row: Mapping[str, object], kinds: Mapping[str, ColumnKind]
 ) -> dict[str, object]:
     # A blank text or choice field reads as '' in a formatter (Learn's `[$Field] == ''` blank test).
-    return {
-        k: instant(v, zone)
-        if isinstance(v, date)
-        else ("" if v is None and kinds[k] in ("text", "choice") else v)
-        for k, v in row.items()
-    }
+    # A date column's value is its epoch milliseconds, the UTC midnight of a date-only value.
+    sent: dict[str, object] = {}
+    for k, v in row.items():
+        if isinstance(v, datetime):
+            sent[k] = date_field(int(v.timestamp() * 1000))
+        elif isinstance(v, date):
+            sent[k] = date_field((v - _EPOCH).days * 86_400_000)
+        elif v is None and kinds[k] == "date":
+            sent[k] = date_field(None)
+        else:
+            sent[k] = "" if v is None and kinds[k] in ("text", "choice") else v
+    return sent
 
 
-def _same(expected: object, got: object, zone: str) -> bool:
+def _same(expected: object, got: object) -> bool:
     if expected is None:
         return got in (None, "")
     if isinstance(expected, bool):
@@ -137,11 +180,6 @@ def _same(expected: object, got: object, zone: str) -> bool:
             and not isinstance(got, bool)
             and math.isclose(got, expected, rel_tol=1e-9, abs_tol=1e-9)
         )
-    if isinstance(expected, date):
-        if not isinstance(got, str):
-            return False
-        moment = datetime.fromisoformat(got).astimezone(UTC)
-        return moment.astimezone(ZoneInfo(zone)).date() == expected
     return got == expected
 
 
@@ -155,17 +193,18 @@ def check_parity(
     nows: tuple[str, ...] = (),
     *,
     zone: str = DEFAULT_ZONE,
+    moments: frozenset[str] = frozenset(),
 ) -> None:
     """Fail when the expression differs from the formula on any grid row, in any browser zone.
 
     Rows on which the formula is a column error are skipped (see `error_rows`).
     """
-    rows = list(grid(_stored(formula, formulas, kinds), choices))
+    rows = list(grid(_stored(formula, formulas, kinds), choices, moments, zone))
     expected = [_reference(formula, r, formulas, kinds, zone) for r in rows]
     kept = [(r, e) for r, e in zip(rows, expected, strict=True) if not isinstance(e, ColumnError)]
     assert kept, "every grid row is a column error, so nothing was compared"
     stored = _stored(formula, formulas, kinds)
-    sent = [_json_row(r, stored, zone) for r, _ in kept]
+    sent = [_json_row(r, stored) for r, _ in kept]
     failures: list[str] = []
     for browser, now in itertools.product(browsers, nows or ("2026-10-20T12:00:00Z",)):
         got = evaluate_rows(expression, sent, browser_tz=browser, now=now)
@@ -173,6 +212,6 @@ def check_parity(
             f"{formula!r} vs {expression!r} in {browser} at {now}: "
             f"row {row} gave {g!r}, expected {e!r}"
             for (row, e), g in zip(kept, got, strict=True)
-            if not _same(e, g, zone)
+            if not _same(e, g)
         ]
     assert not failures, f"{len(failures)} differing rows, first: {failures[0]}"

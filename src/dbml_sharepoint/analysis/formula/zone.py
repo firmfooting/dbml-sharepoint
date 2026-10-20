@@ -2,22 +2,26 @@
 
 A zone is accepted when it is one fixed offset, or two offsets switched on "nth or last weekday of
 a month at a wall time", and only over the years the rule is verified for (to the end of the
-table). No translation uses it yet: building the instant of site-local midnight, or the site day of
-an instant, has no documented formatting route (see the date notes in translate.py), so a date
-formula that needs the zone is refused there instead.
+table). `site_day` turns an epoch-millisecond instant into the site's day number with arithmetic
+alone, so no browser-zone reader is involved.
 """
 
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from functools import cache
 
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.formula.civil import days_of
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
 from dbml_sharepoint.analysis.timezones import WINDOW_START, zone_table
 
 _FIRST_WINDOW_YEAR = WINDOW_START.year
 _LAST_YEAR = 2049
+_MS_DAY = 86_400_000
+_MS_MINUTE = 60_000
+_MEAN_YEAR_MS = 31_556_952_000  # 365.2425 days
+_EPOCH_ORDINAL = date(1970, 1, 1).toordinal()
 # Self-imposed guard, not a platform fact: a rule that began later leaves too few years behind it.
 _LATEST_FIRST_YEAR = 2010
 
@@ -133,3 +137,53 @@ def _checked(rule: ZoneRule) -> ZoneRule:
             f"follow one rule only from {rule.first_year}, too recently for the dates a form holds",
         )
     return rule
+
+
+def _literal(value: int) -> str:
+    # The syntax reference lists no unary minus, so a negative literal is written as a subtraction.
+    return str(value) if value >= 0 else f"(0 - {-value})"
+
+
+def _first_of_month(year: str, month: int) -> str:
+    return days_of(year, str(month), "1")
+
+
+def _switch_day(year: str, sw: Switch) -> str:
+    """Day number of the switch in the calendar `year` (an expression), by the verified rule."""
+    # Day 0 is a Thursday and the rule's weekdays count from Sunday, so weekday = (day + 4) % 7.
+    if sw.nth > 0:
+        first = _first_of_month(year, sw.month)
+        return f"({first}) + (({sw.weekday} + 7 - (({first}) + 4) % 7) % 7) + {7 * (sw.nth - 1)}"
+    last = f"({_first_of_month(year, sw.month + 1)} - 1)"
+    return f"{last} - ((({last} + 4) % 7 - {sw.weekday} + 7) % 7)"
+
+
+def _span_days(year: int, month: int) -> int:
+    return date(year, month, 1).toordinal() - _EPOCH_ORDINAL
+
+
+def out_of_span_instant(ms: str, rule: ZoneRule) -> str:
+    """True when an instant is within a day of, or outside, the years the rule is verified for."""
+    low = (_span_days(rule.first_year, 1) + 1) * _MS_DAY
+    high = (_span_days(rule.last_year + 1, 1) - 1) * _MS_DAY
+    # The quotient is 0 only inside [low, high).
+    return f"(floor((({ms}) - {low}) / {high - low}) != 0)"
+
+
+def site_day(ms: str, rule: ZoneRule) -> str:
+    """Day number on the site's calendar of the epoch-millisecond instant `ms`."""
+    std = _literal(rule.standard * _MS_MINUTE)
+    if rule.daylight is None or rule.switches is None:
+        return f"floor((({ms}) + {std}) / {_MS_DAY})"
+    to_daylight, to_standard = rule.switches
+    dst = _literal(rule.daylight * _MS_MINUTE)
+    # The mean-year index can be a year out within a day of new year, where a switch is never
+    # within a month, so the state it picks there is still right.
+    year = f"(floor((({ms}) + {std}) / {_MEAN_YEAR_MS}) + 1970)"
+    up_day, down_day = _switch_day(year, to_daylight), _switch_day(year, to_standard)
+    up_at = f"({up_day}) * {_MS_DAY} + {to_daylight.minute * _MS_MINUTE} - {std}"
+    down_at = f"({down_day}) * {_MS_DAY} + {to_standard.minute * _MS_MINUTE} - {dst}"
+    # Between the two switches in a northern year, outside them in a southern one.
+    joiner = " && " if rule.northern else " || "
+    flag = f"(({ms}) >= ({up_at}){joiner}({ms}) < ({down_at}))"
+    return f"floor((({ms}) + if({flag}, {dst}, {std})) / {_MS_DAY})"

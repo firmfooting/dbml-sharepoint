@@ -158,3 +158,27 @@ CALCULATED_NUMBER_DISPLAY = {
 }
 
 HEADER_SIZE_LIMIT = {"largest_saved": 1048576, "first_refused": None, "refusal": "", "cap": 1048576}
+
+# Measured: Number([$D]) of a date field is its epoch milliseconds. A date-only value is the UTC
+# midnight of its date; a date and time value is the exact instant.
+DATE_FIELD_EPOCH_MS = {
+    "date only": {"2026-07-15T00:00:00Z": 1784073600000, "2026-10-04T00:00:00Z": 1791072000000},
+    "date and time": {
+        "2026-07-14T14:30:00Z": 1784039400000,
+        "2026-10-03T14:30:00Z": 1791037800000,
+        "2026-10-04T12:30:00Z": 1791117000000,
+    },
+}
+
+# Measured: a blank date field.
+BLANK_DATE_FIELD = {"Number": 0, "toString": "", "equals_empty_text": False, "Date_is_epoch": True}
+
+# Measured with the browser in the site's own zone: the browser-zone parts of the date-only value
+# 2026-10-04 (getMonth counts from 0).
+BROWSER_PARTS_OF_DATE_ONLY = {
+    "browser": "Australia/Melbourne",
+    "value": "2026-10-04T00:00:00Z",
+    "getDate": 4,
+    "getMonth": 9,
+    "getYear": 2026,
+}

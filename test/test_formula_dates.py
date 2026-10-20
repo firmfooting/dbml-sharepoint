@@ -1,17 +1,24 @@
-"""Date formulas as whole-day arithmetic, and the zone rule reader.
+"""Date formulas: day numbers on the site calendar, date columns read through epoch milliseconds.
 
-A date inside a formula is a day number, so these formulas have no zone to depend on; what is
-refused for lack of a documented formatting route is pinned below as a list of refusals.
+A date inside a formula is a day number, so these formulas have no browser zone to depend on. A
+date column is `Number([$D])`; a date and time value (and Created or Modified) becomes its site
+day with the zone rule. Shapes with no measured behaviour are pinned below as refusals.
 """
 
 import calendar
 import re
 from datetime import UTC, date, datetime, timedelta
 from functools import cache
+from zoneinfo import ZoneInfo
 
 import pytest
-from _format_eval import evaluate_expression, evaluate_rows
-from _formula_facts import DATE_OVERFLOW
+from _format_eval import date_field, evaluate_expression, evaluate_rows
+from _formula_facts import (
+    BLANK_DATE_FIELD,
+    BROWSER_PARTS_OF_DATE_ONLY,
+    DATE_FIELD_EPOCH_MS,
+    DATE_OVERFLOW,
+)
 from _formula_grid import check_parity
 from _node import NODE
 
@@ -30,26 +37,33 @@ from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
-from dbml_sharepoint.analysis.formula.zone import zone_rule
+from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
 from dbml_sharepoint.analysis.timezones import ZoneTable, known_zones
 
 SITE = "Australia/Melbourne"
-KINDS: dict[str, ColumnKind] = {"Status": "choice", "Created": "date", "Due": "date"}
+KINDS: dict[str, ColumnKind] = {
+    "Status": "choice",
+    "Created": "date",
+    "Due": "date",
+    "Seen": "date",
+}
+MOMENTS = frozenset({"Seen"})  # a date and time column; Created is one too
 CHOICES = {"Status": ("Open", "Closed")}
-# The site zone, a zone eight hours away, and UTC.
-BROWSERS = (SITE, "America/Los_Angeles", "UTC")
+# The site zone, a zone eight hours behind it, UTC, a zone west of UTC and one east of the site.
+BROWSERS = (SITE, "Europe/Athens", "UTC", "America/Los_Angeles", "Pacific/Auckland")
 _NOW = "2026-10-20T12:00:00Z"
 _OPEN = 'IF([Status]="Open",{},{})'
 
 
-def _ctx(formula: str, result: str, more: dict[str, str]) -> TranslationContext:
+def _ctx(formula: str, result: str, more: dict[str, str], site: str = SITE) -> TranslationContext:
     return TranslationContext(
         formulas={"Calc": formula, **more},
         kinds=KINDS,
         result_types={"Calc": result, **dict.fromkeys(more, "date")},
         choices=CHOICES,
-        zone=SITE,
+        zone=site,
+        moments=MOMENTS,
     )
 
 
@@ -57,10 +71,12 @@ def _translate(formula: str, result: str = "number", **more: str) -> str:
     return translate_column("Calc", _ctx(formula, result, more)).expression
 
 
-def _parity(formula: str, result: str = "number", **more: str) -> str:
-    expression = _translate(formula, result, **more)
-    ctx = _ctx(formula, result, more)
-    check_parity(formula, expression, ctx.formulas, KINDS, CHOICES, BROWSERS, zone=SITE)
+def _parity(formula: str, result: str = "number", site: str = SITE, **more: str) -> str:
+    ctx = _ctx(formula, result, more, site)
+    expression = translate_column("Calc", ctx).expression
+    check_parity(
+        formula, expression, ctx.formulas, KINDS, CHOICES, BROWSERS, zone=site, moments=MOMENTS
+    )
     return expression
 
 
@@ -78,12 +94,22 @@ def _ymd(date_formula: str) -> str:
     return f"YEAR({date_formula})*10000+MONTH({date_formula})*100+DAY({date_formula})"
 
 
+def _day_ms(day: date) -> dict[str, int | None]:
+    return date_field((day - date(1970, 1, 1)).days * 86_400_000)
+
+
+def _ms(moment: datetime) -> dict[str, int | None]:
+    return date_field(int(moment.timestamp() * 1000))
+
+
 node = pytest.mark.skipif(NODE is None, reason="node is required")
 
 
 _DUE = {"D": f"DATE(2026,{_OPEN.format('1', '11')},31)"}
 _SHIFTED = 'DATE(YEAR([D]),MONTH([D])+IF([Status]="Open",12,3),DAY([D]))'
 _FIRST = f"DATE(2026,3,{_OPEN.format('1', '31')})"
+_FILLED = "IF(ISBLANK([Due]),{},{})"
+_SEEN = "IF(ISBLANK([Seen]),{},{})"
 # id -> (formula, result type, chained columns)
 PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
     "month arithmetic": (_ymd(_SHIFTED), "number", _DUE),
@@ -99,6 +125,58 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
         "number",
         {},
     ),
+    "date-only parts": (_FILLED.format("0", _ymd("[Due]")), "number", {}),
+    "date-only filled test": (f"IF(NOT(ISBLANK([Due])),{_ymd('[Due]')},0)", "number", {}),
+    "date-only filled and a choice": (
+        f'IF(AND(NOT(ISBLANK([Due])),[Status]="Open"),{_ymd("[Due]")},0)',
+        "number",
+        {},
+    ),
+    "date-only blank or a choice": (
+        f'IF(OR(ISBLANK([Due]),[Status]="Closed"),0,{_ymd("[Due]")})',
+        "number",
+        {},
+    ),
+    "date-only blank text": (_FILLED.format('"blank"', '"filled"'), "text", {}),
+    "date-only plus days": (_FILLED.format("0", _ymd("[Due]+30")), "number", {}),
+    "date-only minus days": (_FILLED.format("0", _ymd("[Due]-45")), "number", {}),
+    "date-only month arithmetic": (
+        _FILLED.format("0", _ymd("DATE(YEAR([Due]),MONTH([Due])+1,DAY([Due]))")),
+        "number",
+        {},
+    ),
+    "date-only month-end clamp": (
+        _FILLED.format("0", _ymd("DATE(YEAR([Due]),MONTH([Due])+3,MIN(DAY([Due]),28))")),
+        "number",
+        {},
+    ),
+    "date-only difference": (_FILLED.format("0", "[Due]-DATE(2026,1,1)"), "number", {}),
+    "date-only comparison": (
+        _FILLED.format('"none"', 'IF([Due]>DATE(2026,3,15),"late","early")'),
+        "text",
+        {},
+    ),
+    "date-only equality": (
+        _FILLED.format('"none"', 'IF([Due]=DATE(2026,10,4),"same","other")'),
+        "text",
+        {},
+    ),
+    "created parts": (_ymd("[Created]"), "number", {}),
+    "created plus days": (_ymd("[Created]+30"), "number", {}),
+    "created minus days": (_ymd("[Created]-1"), "number", {}),
+    "created compared with a date": (
+        _FILLED.format('"none"', 'IF([Created]+0>[Due],"after","on or before")'),
+        "text",
+        {},
+    ),
+    "created days since a date": (_FILLED.format("0", "([Created]+0)-[Due]"), "number", {}),
+    "date-time parts": (_SEEN.format("0", _ymd("[Seen]")), "number", {}),
+    "date-time plus days": (_SEEN.format("0", _ymd("[Seen]+1")), "number", {}),
+    "date-time blank text": (
+        _SEEN.format('"blank"', 'IF([Seen]+0=DATE(2026,10,4),"same","other")'),
+        "text",
+        {},
+    ),
 }
 
 
@@ -108,6 +186,18 @@ def test_translation_matches_the_reference(
     formula: str, result: str, more: dict[str, str]
 ) -> None:
     _parity(formula, result, **more)
+
+
+@node
+@pytest.mark.parametrize(
+    "site", ["America/Los_Angeles", "Europe/London", "Pacific/Auckland", "UTC"]
+)
+def test_a_date_and_time_column_is_read_in_other_site_zones(site: str) -> None:
+    for formula, result in (
+        (_ymd("[Created]+3"), "number"),
+        ("IF(DATE(YEAR([Created]),MONTH([Created])+1,DAY([Created]))>[Created]+0,1,0)", "number"),
+    ):
+        _parity(formula, result, site=site)
 
 
 @node
@@ -216,12 +306,26 @@ def test_the_date_functions_each_have_a_parity_case() -> None:
 
 # formula, result, code, what the detail must name
 _FN = FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+_COLUMN = FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED
+_RESULT = FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED
 REFUSED = [
-    ("[Due]+1", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Due"),
-    ("YEAR([Created])", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Created"),
-    ("DATE(2026,1,1)", "date", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "ISO 8601"),
-    ("DATE(2026,1,1)+1", "date", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "ISO 8601"),
+    # A date column that can be blank, read outside the branch an ISBLANK test leaves it filled in.
+    ("[Due]+1", "number", _COLUMN, "Due"),
+    ("YEAR([Seen])", "number", _COLUMN, "Seen"),
+    ("IF(ISBLANK([Due]),0,1)+DAY([Due])", "number", _COLUMN, "Due"),
+    ("IF(NOT(ISBLANK([Due])),0,DAY([Due]))", "number", _COLUMN, "Due"),
+    ("IF(OR(NOT(ISBLANK([Due])),[Status]=\"Open\"),DAY([Due]),0)", "number", _COLUMN, "Due"),
+    ("IF(AND(ISBLANK([Due]),[Status]=\"Open\"),0,DAY([Due]))", "number", _COLUMN, "Due"),
+    # A time of day is not measured: comparing, subtracting or returning a date and time value.
+    ("[Created]-DATE(2026,1,1)", "number", _FN, "-"),
+    ('IF([Created]>DATE(2026,1,1),"a","b")', "text", _FN, ">"),
+    ('IF([Created]=[Created],"a","b")', "text", _FN, "="),
+    ("[Created]", "date", _RESULT, "display"),
+    ("DATE(2026,1,1)", "date", _RESULT, "display"),
+    ("[Created]+1", "date", _RESULT, "display"),
+    ("ISBLANK([Created])", "number", _FN, "ISBLANK"),
     ("MIN(DATE(2026,1,1),DATE(2026,2,1))", "number", _FN, "MIN"),
+    ("MAX([Created]+0,DATE(2026,2,1))", "number", _FN, "MAX"),
     ("DATE(2026,1,1)+DATE(2026,1,1)", "number", _FN, "+"),
     ("5-DATE(2026,1,1)", "number", _FN, "-"),
     ("IF(DATE(2026,1,1)>5,1,2)", "number", _FN, ">"),
@@ -242,6 +346,116 @@ def test_a_refusal_names_the_formula_and_what_it_refused(
     assert refusal.code is code
     assert named in refusal.detail
     assert formula in refusal.finding("Task", "Calc", formula).message
+
+
+def test_a_date_and_time_column_in_a_zone_without_a_rule_is_refused_by_name() -> None:
+    name = _zone_where(r"only from (\d{4})", 2026, 2049)
+    ctx = TranslationContext(
+        formulas={"Calc": "YEAR([Created])"},
+        kinds=KINDS,
+        result_types={"Calc": "number"},
+        choices=CHOICES,
+        zone=name,
+    )
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", ctx)
+    assert found.value.code is FindingCode.FORM_FORMULA_ZONE_UNSUPPORTED
+    assert name in found.value.detail
+
+
+def test_a_date_only_column_needs_no_zone() -> None:
+    name = _zone_where(r"only from (\d{4})", 2026, 2049)
+    ctx = TranslationContext(
+        formulas={"Calc": "IF(ISBLANK([Due]),0,DAY([Due]+1))"},
+        kinds=KINDS,
+        result_types={"Calc": "number"},
+        choices=CHOICES,
+        zone=name,
+    )
+    assert translate_column("Calc", ctx).expression.startswith("=if(")
+
+
+def test_no_translation_reads_a_date_through_the_browser_zone() -> None:
+    expression = _translate(_FILLED.format("0", f"{_ymd('[Due]')}+{_ymd('[Created]')}"), "number")
+    for reader in ("getDate", "getMonth", "getYear", "getFullYear", "Date(", "toLocale"):
+        assert reader not in expression
+    assert "Number([$Due])" in expression
+    assert "toString([$Due]) == ''" in expression
+
+
+def test_a_site_zone_west_of_utc_writes_no_negative_literal() -> None:
+    # The syntax reference lists no unary minus, so the offsets are subtractions from 0.
+    ctx = _ctx("YEAR([Created])", "number", {}, "America/Los_Angeles")
+    expression = translate_column("Calc", ctx).expression
+    assert "- -" not in expression
+    assert "+ -" not in expression
+    assert "(0 - 28800000)" in expression
+
+
+# --------------------------------------------------------------------- date fields at runtime
+
+
+@node
+def test_the_evaluator_models_what_was_measured_of_a_date_field() -> None:
+    for kind, cases in DATE_FIELD_EPOCH_MS.items():
+        for stored, ms in cases.items():
+            assert int(datetime.fromisoformat(stored).timestamp() * 1000) == ms, kind
+            assert _run("=Number([$D])", {"D": date_field(ms)}) == ms
+    blank: dict[str, object] = {"D": date_field(None)}
+    assert _run("=Number([$D])", blank) == BLANK_DATE_FIELD["Number"]
+    assert _run("=toString([$D])", blank) == BLANK_DATE_FIELD["toString"]
+    assert (_run("=[$D] == ''", blank) is True) == BLANK_DATE_FIELD["equals_empty_text"]
+    filled: dict[str, object] = {"D": date_field(1791072000000)}
+    assert _run("=toString([$D]) == ''", filled) is False
+    assert _run("=toString([$D]) == ''", blank) is True
+
+
+@node
+def test_the_browser_parts_of_a_date_only_value_move_with_the_browser_zone() -> None:
+    # A date-only value is a UTC midnight, so west of UTC a part reader gives the day before.
+    facts = BROWSER_PARTS_OF_DATE_ONLY
+    row = {"D": date_field(DATE_FIELD_EPOCH_MS["date only"][facts["value"]])}
+    read = {"getDate": "=getDate([$D])", "getMonth": "=getMonth([$D])", "getYear": "=getYear([$D])"}
+    own = {
+        part: evaluate_expression(text, row, browser_tz=facts["browser"], now=_NOW)
+        for part, text in read.items()
+    }
+    assert own == {part: facts[part] for part in read}
+    west = evaluate_expression(read["getDate"], row, browser_tz="America/Los_Angeles", now=_NOW)
+    assert west == facts["getDate"] - 1
+
+
+@node
+def test_a_translation_is_blank_rather_than_wrong_outside_the_verified_years() -> None:
+    expression = _translate("IF([Status]=\"Open\",1,YEAR([Created]))")
+    old, new = datetime(2001, 6, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC)
+    rows = [
+        {"Status": "Open", "Created": _ms(old)},
+        {"Status": "Closed", "Created": _ms(old)},
+        {"Status": "Closed", "Created": _ms(new)},
+    ]
+    assert evaluate_rows(expression, rows, browser_tz="UTC", now=_NOW) == [1, "", 2026]
+
+
+@node
+def test_a_date_only_value_outside_the_calendar_range_is_blank_where_it_is_read() -> None:
+    expression = _translate(_FILLED.format("0", "DAY([Due])"))
+    rows = [
+        {"Due": _day_ms(date(1850, 1, 1))},
+        {"Due": _day_ms(date(1904, 3, 1))},
+        {"Due": _day_ms(date(2100, 2, 28))},
+        {"Due": _day_ms(date(2100, 3, 1))},
+        {"Due": date_field(None)},
+    ]
+    assert evaluate_rows(expression, rows, browser_tz="UTC", now=_NOW) == ["", 1, 28, "", 0]
+
+
+@node
+def test_a_date_built_from_a_column_outside_the_calendar_range_is_blank() -> None:
+    next_year = "DAY(DATE(YEAR([Due])+1,MONTH([Due]),DAY([Due])))"
+    expression = _translate(_FILLED.format("0", next_year))
+    rows = [{"Due": _day_ms(date(y, 3, 5))} for y in (2026, 2099, 1850)]
+    assert evaluate_rows(expression, rows, browser_tz="UTC", now=_NOW) == [5, "", ""]
 
 
 # --------------------------------------------------------------------------- the zone rule
@@ -359,3 +573,77 @@ def test_a_zone_whose_switch_days_follow_no_weekday_rule_is_refused(
     _synthetic(monkeypatch, steps)
     with pytest.raises(FormulaRefusal, match="Test/Synthetic"):
         zone_rule.__wrapped__("Test/Synthetic")
+
+# ------------------------------------------------------------------ the site day of an instant
+
+_SITE_DAY_ZONES = [SITE, "America/Los_Angeles", "Europe/London", "Pacific/Auckland", "UTC"]
+_DAY_ZERO = date(1970, 1, 1)
+
+
+def _site_days(name: str, instants: list[datetime]) -> tuple[list[object], list[int]]:
+    rule = zone_rule(name)
+    rows = [{"V": int(t.timestamp() * 1000)} for t in instants]
+    got = evaluate_rows("=" + site_day("[$V]", rule), rows, browser_tz="UTC", now=_NOW)
+    tz = ZoneInfo(name)
+    return got, [(t.astimezone(tz).date() - _DAY_ZERO).days for t in instants]
+
+
+def _transitions(name: str, rule: zone.ZoneRule) -> list[datetime]:
+    table = timezones.zone_table(name)
+    return [at for at, _ in table.transitions if rule.first_year <= at.year <= rule.last_year]
+
+
+@node
+@pytest.mark.parametrize("name", _SITE_DAY_ZONES)
+def test_every_instant_around_a_change_and_a_midnight_has_the_right_site_day(name: str) -> None:
+    rule = zone_rule(name)
+    offsets = [timedelta(0)]
+    for mark in (60, 61, 120, 121, 180):
+        offsets += [timedelta(minutes=mark), timedelta(minutes=-mark)]
+    offsets += [timedelta(seconds=1), timedelta(seconds=-1)]
+    instants = [at + step for at in _transitions(name, rule) for step in offsets]
+    # Local midnights, either side, for every day of the verified years.
+    tz = ZoneInfo(name)
+    day = date(rule.first_year, 1, 2)
+    while day < date(rule.last_year + 1, 1, 1) - timedelta(days=2):
+        midnight = datetime(day.year, day.month, day.day, tzinfo=tz).astimezone(UTC)
+        instants += [midnight - timedelta(seconds=1), midnight, midnight + timedelta(seconds=1)]
+        day += timedelta(days=1)
+    got, expected = _site_days(name, instants)
+    wrong = [(t, g, e) for t, g, e in zip(instants, got, expected, strict=True) if g != e]
+    assert not wrong, wrong[:3]
+
+
+@node
+@pytest.mark.parametrize("name", _SITE_DAY_ZONES)
+def test_the_site_day_follows_the_clock_a_day_either_side_of_new_year(name: str) -> None:
+    rule = zone_rule(name)
+    instants: list[datetime] = []
+    for year in range(rule.first_year + 1, rule.last_year):
+        start = datetime(year, 1, 1, tzinfo=UTC)
+        instants += [start + timedelta(hours=h) for h in range(-30, 31, 3)]
+    got, expected = _site_days(name, instants)
+    assert got == expected
+
+
+def _in_span(name: str, instants: list[datetime]) -> list[object]:
+    rule = zone_rule(name)
+    rows = [{"V": int(t.timestamp() * 1000)} for t in instants]
+    code = out_of_span_instant("[$V]", rule)
+    return evaluate_rows("=" + code, rows, browser_tz="UTC", now=_NOW)
+
+
+@node
+def test_an_instant_within_a_day_of_the_verified_years_is_outside_them() -> None:
+    first, last = zone_rule(SITE).first_year, zone_rule(SITE).last_year
+    edges = [
+        datetime(first, 1, 1, tzinfo=UTC),
+        datetime(first, 1, 1, 23, 59, tzinfo=UTC),
+        datetime(first, 1, 2, tzinfo=UTC),
+        datetime(last + 1, 1, 1, tzinfo=UTC) - timedelta(days=1, seconds=1),
+        datetime(last + 1, 1, 1, tzinfo=UTC) - timedelta(days=1),
+        datetime(last + 1, 1, 1, tzinfo=UTC),
+        datetime(first - 1, 6, 1, tzinfo=UTC),
+        datetime(last + 1, 6, 1, tzinfo=UTC),
+    ]
+    assert _in_span(SITE, edges) == [True, True, False, False, True, True, True, True]

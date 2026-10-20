@@ -5,7 +5,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
-from _format_eval import evaluate_expression
+from _format_eval import date_field, evaluate_expression
 from _formula_facts import (
     BLANK_COERCION,
     BLANK_OPERANDS,
@@ -202,8 +202,8 @@ def test_the_formatting_functions_give_what_learn_documents(
 
 
 def test_a_field_reads_from_the_row_and_the_browser_zone_applies() -> None:
-    row = {"Due": "2026-10-19T13:00:00Z"}
-    expression = "=getDate(Date([$Due]))"
+    row = {"Due": date_field(1792414800000)}  # 2026-10-19T13:00:00Z
+    expression = "=getDate([$Due])"
 
     assert evaluate_expression(expression, row, browser_tz="UTC", now="2026-10-20T00:00:00Z") == 19
     assert (
@@ -239,10 +239,10 @@ def test_an_unmeasured_behaviour_is_refused_not_guessed(formula: str) -> None:
 
 
 def test_a_difference_in_one_browser_zone_only_is_caught() -> None:
-    # The date is site-local midnight, so only a browser east of the site's day sees the 20th.
+    # A date-only value is a UTC midnight, so a browser west of UTC reads the day before.
     kinds: dict[str, ColumnKind] = {"D": "date"}
     formula = "IF(ISBLANK([D]),0,DAY([D]))"
-    same = "=if(Number([$D]) == 0, 0, getDate(Date([$D])))"
-    check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne",))
+    same = "=if(toString([$D]) == '', 0, getDate([$D]))"
+    check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "UTC"))
     with pytest.raises(AssertionError, match="differing rows"):
-        check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "UTC"))
+        check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "America/Los_Angeles"))
