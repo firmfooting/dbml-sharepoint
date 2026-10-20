@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.2](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.1...v0.26.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **renames:** keep the implicit prefixed source out of assessment when the title is in place ([#902](https://github.com/firmfooting/dbml-sharepoint/issues/902)) ([35a8991](https://github.com/firmfooting/dbml-sharepoint/commit/35a89915cf6c5169efbabe945d609c4e740ec699))
+
 ## [0.26.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.0...v0.26.1) (2026-10-20)
 
 
