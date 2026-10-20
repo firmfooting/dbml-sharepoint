@@ -9,13 +9,23 @@ https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/forma
 each cited where it is emitted.
 """
 
-from collections.abc import Mapping
+import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, NoReturn
 
 from dbml_sharepoint.analysis.column_refs import calculated_cycle, formula_column_refs
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.formula.civil import (
+    END_DAY,
+    FIRST_DAY,
+    days_of,
+    from_day_number,
+    parts_of,
+    to_day_number,
+)
 from dbml_sharepoint.analysis.formula.functions import SUPPORTED, VOLATILE
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
@@ -31,22 +41,13 @@ from dbml_sharepoint.analysis.formula.syntax import (
     Ref,
     Text,
 )
-from dbml_sharepoint.analysis.formula.zone import (
-    ZoneRule,
-    day_of_instant,
-    days_of,
-    midnight_ms,
-    out_of_span_day,
-    out_of_span_instant,
-    parts_of,
-    zone_rule,
-)
+from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
 
-# Date columns a formula may read: never blank, and Learn documents a date field as a date that
-# Date() and Number() accept. Any other date column is refused, as Learn leaves a blank one open.
-_SYSTEM_DATES = frozenset({"Created", "Modified"})
-# An expression longer than this is refused: nested date arithmetic repeats its operands.
-_MAX_EXPRESSION = 250_000
+# A date is a whole-day number on a fixed calendar, so its arithmetic never touches a zone. Date
+# fields and date results are refused: Learn documents no site-calendar day for a field (the date
+# parts read the browser zone) and no instant built from an offset string or milliseconds.
+# Enumeration bound for the values a number or date can take, so a date's range can be proven.
+_MAX_VALUES = 4096
 
 # Refused with the reason, not merely absent from SUPPORTED.
 _NO_EQUIVALENT = {
@@ -75,12 +76,32 @@ class TranslationContext:
 
 @dataclass(frozen=True, slots=True)
 class _Tr:
-    """A translated value. A "date" is a day number on the site's calendar, an "instant" is epoch
-    milliseconds (a system date column); `whole` is True when the value is provably an integer."""
+    """A translated value. A "date" is a day number on a fixed calendar. `values` is every value a
+    number or date can take (None when unknown), which is how a date's range is proven."""
 
     code: str
-    kind: Literal["text", "number", "bool", "date", "instant"]
-    whole: bool = False
+    kind: Literal["text", "number", "bool", "date"]
+    values: frozenset[float] | None = None
+
+    @property
+    def whole(self) -> bool:
+        return self.values is not None and all(v == int(v) for v in self.values)
+
+
+def _combine(a: _Tr, b: _Tr, fn: Callable[[float, float], float]) -> frozenset[float] | None:
+    if a.values is None or b.values is None or len(a.values) * len(b.values) > _MAX_VALUES:
+        return None
+    return frozenset(fn(x, y) for x in a.values for y in b.values)
+
+
+def _union(*trs: _Tr) -> frozenset[float] | None:
+    if any(t.values is None for t in trs):
+        return None
+    return frozenset().union(*(t.values or frozenset() for t in trs))
+
+
+def _mapped(tr: _Tr, fn: Callable[[float], float]) -> frozenset[float] | None:
+    return None if tr.values is None else frozenset(fn(v) for v in tr.values)
 
 
 def _refuse(code: FindingCode, detail: str) -> NoReturn:
@@ -135,6 +156,24 @@ def _whole_values(node: Expr) -> set[float] | None:
     return None
 
 
+def _calendar_day(year: int, month: int, day: int) -> tuple[int, int]:
+    """Day numbers of the month's first day and of DATE(year, month, day), with overflow carried."""
+    if year < 1:
+        _unsupported("DATE", "with a year before 1")
+    try:
+        first = date(year + (month - 1) // 12, (month - 1) % 12 + 1, 1)
+        return to_day_number(first), to_day_number(first + timedelta(days=day - 1))
+    except (ValueError, OverflowError):
+        _unsupported("DATE", "on a date outside years 1 to 9999")
+
+
+def _in_range(name: str, days: set[float]) -> frozenset[float]:
+    """The dates, when every one is where the calendar arithmetic is exact."""
+    if not days or len(days) > _MAX_VALUES or not all(FIRST_DAY <= d < END_DAY for d in days):
+        _unsupported(name, "on a date not known to fall between March 1904 and February 2100")
+    return frozenset(days)
+
+
 def _whole(node: Expr, name: str, minimum: int) -> int:
     if not isinstance(node, Num) or node.value != int(node.value) or node.value < minimum:
         _unsupported(name, "with a count that is not a whole-number literal")
@@ -144,26 +183,6 @@ def _whole(node: Expr, name: str, minimum: int) -> int:
 class _Translator:
     def __init__(self, ctx: TranslationContext) -> None:
         self.ctx = ctx
-        # Conditions under which a date is outside the verified years; they blank the whole result.
-        self.out_of_span: list[str] = []
-        self._rule: ZoneRule | None = None
-
-    @property
-    def rule(self) -> ZoneRule:
-        if self._rule is None:
-            self._rule = zone_rule(self.ctx.zone)
-        return self._rule
-
-    def day(self, tr: _Tr) -> str:
-        """The day number of a date, or of an instant read on the site's calendar."""
-        if tr.kind == "date":
-            return tr.code
-        self.out_of_span.append(out_of_span_instant(tr.code, self.rule))
-        return day_of_instant(tr.code, self.rule)
-
-    def span_checked(self, days: str) -> str:
-        self.out_of_span.append(out_of_span_day(days, self.rule))
-        return days
 
     def column(self, name: str, stack: tuple[str, ...]) -> _Tr:
         try:
@@ -174,21 +193,22 @@ class _Translator:
 
     def go(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
         tr = self.node(node, stack)
-        if len(tr.code) > _MAX_EXPRESSION:  # stop before nested dates repeat themselves further
+        if len(tr.code) > FORMATTER_SAVED_SIZE_FLOOR:  # nested dates repeat their operands
             _unsupported("date arithmetic", "nested so deeply that its expression is too large")
         return tr
 
     def node(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
         match node:
             case Num(value=value):
-                return _Tr(_lit(value), "number", whole=value == int(value))
+                return _Tr(_lit(value), "number", frozenset({value}))
             case Text(value=value):
                 return _Tr(_q(value), "text")
             case Ref(name=name):
                 return self.ref(name, stack)
             case Neg(operand=operand):
                 inner = self.go(operand, stack)
-                return _Tr(f"(0 - {_num(inner, 'a minus sign')})", "number", inner.whole)
+                values = _mapped(inner, lambda v: -v)
+                return _Tr(f"(0 - {_num(inner, 'a minus sign')})", "number", values)
             case Percent(operand=operand):
                 return _Tr(f"({_num(self.go(operand, stack), '%')} / 100)", "number")
             case Binary(op=op, left=left, right=right):
@@ -220,12 +240,10 @@ class _Translator:
                 f"reads the number column [{name}], whose blank value Learn does not document",
             )
         if kind == "date":
-            if name in _SYSTEM_DATES:
-                # Learn: a Date/Time field is a date; Number(Date(..)) is milliseconds since 1970.
-                return _Tr(f"Number(Date([${name}]))", "instant")
             _refuse(
                 FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED,
-                f"reads the date column [{name}], whose blank value Learn does not document",
+                f"reads the date column [{name}], whose site-calendar day a header cannot take: "
+                "Learn gives only browser-local date parts and is silent on a blank date field",
             )
         return _refuse(
             FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED,
@@ -234,7 +252,7 @@ class _Translator:
 
     def binary(self, op: str, left: Expr, right: Expr, stack: tuple[str, ...]) -> _Tr:
         a, b = self.go(left, stack), self.go(right, stack)
-        if op in ("+", "-") and {a.kind, b.kind} & {"date", "instant"}:
+        if op in ("+", "-") and "date" in {a.kind, b.kind}:
             return self.date_sum(op, a, b)
         if op == "&":
             return _Tr(f"({_text_of(left, a, '&')} + {_text_of(right, b, '&')})", "text")
@@ -242,26 +260,24 @@ class _Translator:
             return self.compare(op, a, b)
         x, y = _num(a, op), _num(b, op)
         # pow and the arithmetic signs are on the Learn page (Binary operators).
-        return _Tr(
-            f"pow({x}, {y})" if op == "^" else f"({x} {op} {y})",
-            "number",
-            a.whole and b.whole and op in ("+", "-", "*"),
-        )
+        ops: dict[str, Callable[[float, float], float]] = {
+            "+": lambda p, q: p + q,
+            "-": lambda p, q: p - q,
+            "*": lambda p, q: p * q,
+        }
+        values = _combine(a, b, ops[op]) if op in ops else None
+        return _Tr(f"pow({x}, {y})" if op == "^" else f"({x} {op} {y})", "number", values)
 
     def date_sum(self, op: str, a: _Tr, b: _Tr) -> _Tr:
         """Date plus or minus whole days, or the difference of two dates in days."""
-        dates = (a.kind == "date", b.kind == "date")
-        if all(dates) and op == "-":
-            return _Tr(f"({a.code} - {b.code})", "number", whole=True)
-        count, moment = (b, a) if a.kind in ("date", "instant") else (a, b)
-        if (
-            count.kind != "number"
-            or not count.whole
-            or (moment is b and op == "-")
-            or moment.kind == "bool"
-        ):
+        sign = 1 if op == "+" else -1
+        if a.kind == b.kind == "date" and op == "-":
+            return _Tr(f"({a.code} - {b.code})", "number", _combine(a, b, lambda p, q: p - q))
+        moment, count = (a, b) if a.kind == "date" else (b, a)
+        if count.kind != "number" or not count.whole or (moment is b and op == "-"):
             _unsupported(op, "which a header reproduces only for a date and a whole number of days")
-        return _Tr(f"({self.day(moment)} {op} {count.code})", "date")
+        values = _combine(moment, count, lambda p, q: p + sign * q)
+        return _Tr(f"({moment.code} {op} {count.code})", "date", values)
 
     def compare(self, op: str, a: _Tr, b: _Tr) -> _Tr:
         js = {"=": "==", "<>": "!="}.get(op, op)
@@ -315,10 +331,11 @@ class _Translator:
                 return _Tr(f"if({_cond(vals[0])}, 0 == 1, 0 == 0)", "bool")
             case "MIN" | "MAX":
                 parts = [_num(v, name) for v in vals]
-                return _Tr(self.extreme(name, parts), "number", all(v.whole for v in vals))
+                return _Tr(self.extreme(name, parts), "number", self.extremes(name, vals))
             case "ABS" | "INT":
                 fn = "abs" if name == "ABS" else "floor"  # Learn: abs, floor
-                return _Tr(f"{fn}({_num(vals[0], name)})", "number", name == "INT" or vals[0].whole)
+                shape = abs if name == "ABS" else math.floor
+                return _Tr(f"{fn}({_num(vals[0], name)})", "number", _mapped(vals[0], shape))
             case "ROUND":
                 return self.round(args, vals)
             case "CONCATENATE":
@@ -329,16 +346,31 @@ class _Translator:
     def date_call(self, name: str, vals: list[_Tr]) -> _Tr:
         if name == "DATE":
             if not all(v.kind == "number" and v.whole for v in vals):
-                _unsupported(name, "with an argument that is not provably a whole number")
-            return _Tr(days_of(*(v.code for v in vals)), "date")
+                _unsupported(name, "with an argument not known to be a whole number")
+            y, m, d = vals
+            found = [
+                _calendar_day(int(yy), int(mm), int(dd))
+                for yy in y.values or ()
+                for mm in m.values or ()
+                for dd in d.values or ()
+            ]
+            # The month's first day matters too: the leap count is exact only inside the range.
+            _in_range(name, {first for first, _ in found})
+            return _Tr(
+                days_of(y.code, m.code, d.code), "date", _in_range(name, {day for _, day in found})
+            )
         moment = vals[0]
-        if moment.kind not in ("date", "instant"):
+        if moment.kind != "date":
             _unsupported(name, f"of a {moment.kind} value")
-        days = self.day(moment)
-        if moment.kind == "date":
-            self.span_checked(days)
-        year, month, day = parts_of(days)
-        return _Tr({"YEAR": year, "MONTH": month, "DAY": day}[name], "number", whole=True)
+        _in_range(name, set(moment.values or ()))
+        year, month, day = parts_of(moment.code)
+        pick: dict[str, Callable[[date], int]] = {
+            "YEAR": lambda x: x.year,
+            "MONTH": lambda x: x.month,
+            "DAY": lambda x: x.day,
+        }
+        values = _mapped(moment, lambda v: pick[name](from_day_number(int(v))))
+        return _Tr({"YEAR": year, "MONTH": month, "DAY": day}[name], "number", values)
 
     def branch(self, name: str, args: tuple[Expr, ...], vals: list[_Tr]) -> _Tr:
         if name == "IF":
@@ -349,7 +381,7 @@ class _Translator:
             return _Tr(
                 f"if({_cond(vals[0])}, {self.value(yes)}, {self.value(no)})",
                 yes.kind,
-                yes.whole and no.whole,
+                _union(yes, no),
             )
         index = _num(vals[0], name)
         options = vals[1:]
@@ -361,7 +393,7 @@ class _Translator:
         code = self.value(options[-1])
         for i in range(len(options) - 1, 0, -1):
             code = f"if({index} == {i}, {self.value(options[i - 1])}, {code})"
-        return _Tr(code, options[0].kind, all(o.whole for o in options))
+        return _Tr(code, options[0].kind, _union(*options))
 
     @staticmethod
     def value(tr: _Tr) -> str:
@@ -373,6 +405,14 @@ class _Translator:
     def same_kind(name: str, vals: list[_Tr]) -> None:
         if len({v.kind for v in vals}) > 1:
             _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"gives {name} values of different types")
+
+    @staticmethod
+    def extremes(name: str, vals: list[_Tr]) -> frozenset[float] | None:
+        pick = min if name == "MIN" else max
+        found = vals[0]
+        for nxt in vals[1:]:
+            found = _Tr("", "number", _combine(found, nxt, pick))
+        return found.values
 
     @staticmethod
     def extreme(name: str, parts: list[str]) -> str:
@@ -391,7 +431,8 @@ class _Translator:
             )
         x = _num(vals[0], "ROUND")
         # Half away from zero, built from floor (Learn: floor) because the page lists no round.
-        return _Tr(f"if({x} < 0, 0 - floor(0 - {x} + 0.5), floor({x} + 0.5))", "number", True)
+        values = _mapped(vals[0], lambda v: -math.floor(0.5 - v) if v < 0 else math.floor(v + 0.5))
+        return _Tr(f"if({x} < 0, 0 - floor(0 - {x} + 0.5), floor({x} + 0.5))", "number", values)
 
     @staticmethod
     def text_function(name: str, args: tuple[Expr, ...], vals: list[_Tr]) -> _Tr:
@@ -430,25 +471,18 @@ def translate_column(column: str, ctx: TranslationContext) -> Translation:
         _refuse(
             FindingCode.FORM_FORMULA_UNPARSEABLE, f"is part of a circular reference among {members}"
         )
-    translator = _Translator(ctx)
-    tr = translator.column(column, ())
-    if tr.kind == "instant":
+    tr = _Translator(ctx).column(column, ())
+    if tr.kind == "date":
         _refuse(
             FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
-            "returns a date with a time of day, which a header cannot show the same way",
+            "returns a date, whose instant at site-local midnight a header cannot build: "
+            "Learn documents no Date() of an ISO 8601 string with an offset or of a number of "
+            "milliseconds",
         )
-    if tr.kind == "date":
-        days = translator.span_checked(tr.code)
-        tr = _Tr(f"Date({midnight_ms(days, translator.rule)})", "date")
     code = _Translator.value(tr)
     if tr.kind != declared:
         _refuse(
             FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
             f"returns a {tr.kind} but the column is {declared}",
         )
-    if translator.out_of_span:
-        # One blank for the whole result: a date outside the verified years has no exact offset.
-        code = f"if({' || '.join(dict.fromkeys(translator.out_of_span))}, '', {code})"
-    if len(code) > _MAX_EXPRESSION:
-        _unsupported("date arithmetic", "nested so deeply that its expression is too large")
     return Translation("=" + code, declared)

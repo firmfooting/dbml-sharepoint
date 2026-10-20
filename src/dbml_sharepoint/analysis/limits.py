@@ -448,6 +448,10 @@ LIST_VIEW_THRESHOLD_FALLBACK_ROWS = 1_250
 #: refusal.
 INDEX_CHANGE_CEILING = 20_000
 
+#: The largest column formatter a live save accepted, in characters. No refusal was found, so this
+#: is a floor and not a SharePoint limit: a translation that reaches it is refused as unproven.
+FORMATTER_SAVED_SIZE_FLOOR = 1_048_576
+
 # ------------------------------------------------- lookup target scope
 
 # No constant: `analysis/checks/_naming.py` enforces a Lookup's target list being in
