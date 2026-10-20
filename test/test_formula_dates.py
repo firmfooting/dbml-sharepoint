@@ -185,6 +185,19 @@ def test_days_of_carries_month_and_day_overflow() -> None:
         assert value == _calendar(y, m, d), (y, m, d)
 
 
+def test_a_date_with_too_many_possible_arguments_is_refused_quickly() -> None:
+    # 18 values each for year, month and day is 5832 combinations, over the work bound.
+    def many(base: int, bits: int) -> str:
+        text = str(base)
+        for n in range(bits):
+            text = f'IF([Status]="s{n}",{text},{base + n + 1})'
+        return text
+
+    refusal = _refusal(f"DAY(DATE({many(2000, 17)},{many(1, 17)},{many(1, 17)}))")
+    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "DATE" in refusal.detail
+
+
 def test_a_nested_date_that_outgrows_a_saved_formatter_is_refused() -> None:
     chain = {"D0": "DATE(2026,1,1)"}
     for n in range(1, 8):

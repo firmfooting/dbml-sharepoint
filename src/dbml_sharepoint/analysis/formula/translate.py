@@ -47,7 +47,7 @@ from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
 # fields and date results are refused: Learn documents no site-calendar day for a field (the date
 # parts read the browser zone) and no instant built from an offset string or milliseconds.
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
-_MAX_VALUES = 4096
+_MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
 # Refused with the reason, not merely absent from SUPPORTED.
 _NO_EQUIVALENT = {
@@ -348,6 +348,8 @@ class _Translator:
             if not all(v.kind == "number" and v.whole for v in vals):
                 _unsupported(name, "with an argument not known to be a whole number")
             y, m, d = vals
+            if len(y.values or ()) * len(m.values or ()) * len(d.values or ()) > _MAX_VALUES:
+                _unsupported(name, "with too many possible arguments to check its dates")
             found = [
                 _calendar_day(int(yy), int(mm), int(dd))
                 for yy in y.values or ()
