@@ -1750,3 +1750,10 @@ def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
         entity, versioning_default=Versioning(enable_versioning=False, enable_minor_versions=True),
     )
     only(findings, FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS)
+
+
+def test_folder_default_with_an_xml_illegal_control_character_is_refused(
+    tmp_path: Path,
+) -> None:
+    findings = _defaults_findings(tmp_path, _one("FolderA", "Note", '"a\\x01b"'))
+    assert "control character" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message

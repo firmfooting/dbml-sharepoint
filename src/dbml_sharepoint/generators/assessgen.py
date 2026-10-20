@@ -9,9 +9,10 @@ guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 """
 
 from collections.abc import Mapping as AbcMapping
+from collections.abc import Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_usage import clock_usage
@@ -29,6 +30,7 @@ from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin, rende
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
+from dbml_sharepoint.generators.folder_defaults_payload import folder_defaults_payload
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import (
@@ -149,17 +151,11 @@ def _named_pairs(rows: list[tuple[str, list[tuple[str, str]]]]) -> list[JsonValu
 
 
 def _declared_folder_defaults(
-    title: str, entity: EntityMapping,
+    title: str, entity: EntityMapping, folders: Sequence[str],
 ) -> list[tuple[str, list[JsonValue]]]:
-    """The library's `folder_defaults` as the assess payload carries them, or nothing."""
-    if not (entity.is_library and entity.folder_defaults):
-        return []
-    return [(title, [
-        {"folder": folder, "values": [
-            {"field": column, "value": value} for column, value in values.items()
-        ]}
-        for folder, values in entity.folder_defaults.items()
-    ])]
+    """The library's folder defaults as the assess payload carries them, or nothing."""
+    payload = folder_defaults_payload(entity, folders)
+    return [(title, cast("list[JsonValue]", payload))] if payload else []
 
 
 def _declared_switches(
@@ -302,7 +298,7 @@ def _collect(
                 bundle.mapping.list_title(table_name), entity.settings.require_checkout,
             ))
         library_folder_defaults += _declared_folder_defaults(
-            bundle.mapping.list_title(table_name), entity,
+            bundle.mapping.list_title(table_name), entity, entity_folders,
         )
         library_switches += _declared_switches(
             bundle.mapping.list_title(table_name), entity.settings,

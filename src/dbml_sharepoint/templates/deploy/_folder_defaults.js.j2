@@ -9,15 +9,24 @@
   const DEFAULTS_RECEIVER_ASSEMBLY = 'Microsoft.Office.DocumentManagement, Version=16.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c';
   const ITEM_ADDED = 10001;
   const readReceivers = async (title) => {
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType`), {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType,Synchronization`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) throw new Error(`event receiver read failed: HTTP ${r.status} ${spError(await r.text())}`);
-    return ((((await r.json()) || {}).d || {}).results) || [];
+    const results = (((await r.json()) || {}).d || {}).results;
+    // Fail before registering: an unreadable collection must not look like an absent receiver.
+    if (!Array.isArray(results)) throw new Error('event receiver read returned no collection');
+    return results;
   };
-  const hasDefaultsReceiver = (receivers) => receivers.some((e) => e.ReceiverClass === DEFAULTS_RECEIVER_CLASS && e.EventType === ITEM_ADDED);
+  // Synchronization 1 is synchronous; 0 and 2 run the receiver after the upload is visible.
+  const defaultsReceivers = (receivers) => receivers.filter((e) => e.ReceiverClass === DEFAULTS_RECEIVER_CLASS && e.EventType === ITEM_ADDED);
+  const hasDefaultsReceiver = (receivers) => defaultsReceivers(receivers).some((e) => e.Synchronization === 1);
   async function reconcileDefaultsReceiver(list) {
-    if (hasDefaultsReceiver(await readReceivers(list.title))) return;
+    const present = await readReceivers(list.title);
+    if (hasDefaultsReceiver(present)) return;
+    if (defaultsReceivers(present).length) {
+      throw new Error('the library has a location-based defaults event receiver that is not synchronous; remove it in the site so the deploy can register the synchronous one');
+    }
     await assertDeclaredListOwnedNow(list.title);
     const put = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/EventReceivers`), {
       method: 'POST',
@@ -72,7 +81,6 @@
     && want.every((v) => have.get(v.field) === v.value);
   for (const list of SCHEMA.lists.filter((l) => l.is_library && (l.folder_defaults || []).length)) {
     try {
-      await reconcileDefaultsReceiver(list);
       const root = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/RootFolder?$select=ServerRelativeUrl`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
@@ -97,7 +105,11 @@
         const want = wanted.get(path) || [];
         return have ? sameValues(have.values, want) : want.length === 0;
       });
-      if (settled) continue;
+      if (settled) {
+        // After the file is reconciled, so a failed reconcile never leaves stale defaults live.
+        await reconcileDefaultsReceiver(list);
+        continue;
+      }
       const kept = existing.filter((e) => !declaredPaths.has(e.path)).map((e) => e.raw);
       const written = [...wanted.entries()].filter(([, values]) => values.length).map(([path, values]) =>
         `<a href="${xmlEscape(path)}">${values.map((v) =>
@@ -115,6 +127,7 @@
       if ((await read()) !== text) {
         throw new Error('the defaults file did not read back as written');
       }
+      await reconcileDefaultsReceiver(list);
       log('OK', `Wrote folder defaults for '${list.title}' (${wanted.size} folder(s) declared).`);
       logChange({ key: `list-setting:${list.title}:folder-defaults`, kind: 'list-setting', target: list.title,
         oldValue: `${existing.length} entr${existing.length === 1 ? 'y' : 'ies'}`,

@@ -390,7 +390,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
         return respond(200, { d: { results: RECEIVER ? [{
           ReceiverClass: 'Microsoft.Office.DocumentManagement'
             + '.LocationBasedMetadataDefaultsReceiver',
-          EventType: 10001 }] : [] } });
+          EventType: 10001, Synchronization: 1 }] : [] } });
       }
       if (u.includes('RootFolder')) {
         return respond(200, { d: { ServerRelativeUrl: '/sites/test/APP_Docs' } });
@@ -899,7 +899,10 @@ def _switches_verify_js(
     base = as_library(make_bundle(entities=["Docs"]), "Docs")
     entity = base.mapping.entities["Docs"]
     bundle = replace(base, mapping=replace(base.mapping, entities={
-        "Docs": replace(entity, settings=settings, folder_defaults=folder_defaults or {}),
+        "Docs": replace(
+            entity, settings=settings, folder_defaults=folder_defaults or {},
+            folder_source=tuple(folder_defaults or ()),
+        ),
     }))
     assert verify_targets(schema, bundle, "default")["library_settings"]
     return generate_verify_js(
@@ -1074,3 +1077,16 @@ def test_a_library_without_the_defaults_receiver_is_a_mismatch() -> None:
     out = _run_verify_full(js, DEFAULTS_FILE=json.dumps(_DEFAULTS_ENTRY), RECEIVER="false")
     assert out["verdict"] == "MISMATCH"
     assert any("no location-based defaults event receiver" in ln for ln in out["log"])
+
+
+def test_verify_targets_cover_declared_folders_without_defaults() -> None:
+    schema = make_schema(make_table("Docs", column("Title", required=True), column("Note")))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = replace(
+        base.mapping.entities["Docs"], folder_source=("A", "B"),
+        folder_defaults={"A": {"Note": "x"}},
+    )
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+    entry = verify_targets(schema, bundle, "default")["library_settings"][0]
+    assert entry["folder_defaults"][0]["folder"] == "A"
+    assert entry["folder_defaults"][1].value == {"folder": "B", "values": []}

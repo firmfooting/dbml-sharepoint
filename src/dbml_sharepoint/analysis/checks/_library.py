@@ -7,6 +7,8 @@ or `_structure.py`, because both of those sit at or near the complexity
 ceiling and a library rule should read as one function per question.
 """
 
+import re
+
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
@@ -153,6 +155,10 @@ def _folder_defaults(
     return findings
 
 
+# XML 1.0 forbids these in the defaults document.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def _default_value_problem(vc: ValidationContext, column: Column, value: str) -> str | None:
     """Why `value` cannot be a folder default for `column`, or None.
 
@@ -164,6 +170,8 @@ def _default_value_problem(vc: ValidationContext, column: Column, value: str) ->
             f"{column.name} is a lookup, person or multi-value column, which a folder "
             f"default does not support yet."
         )
+    if _XML_ILLEGAL.search(value):
+        return f"the value holds a control character XML cannot store ({value!r})."
     members = vc.enum_members_by_name.get(column.type)
     if members is not None and value not in members:
         return f"{value!r} is not a member of {column.type} ({', '.join(members)})."

@@ -35,7 +35,7 @@ _HARNESS = textwrap.dedent(r"""
     let file = STATE.file;
     const receivers = STATE.receiverPresent ? [{
       ReceiverClass: 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver',
-      EventType: 10001,
+      EventType: 10001, Synchronization: STATE.receiverSync ?? 1,
     }] : [];
     globalThis.fetch = async (url, opts = {}) => {
       const method = opts.method || 'GET';
@@ -51,6 +51,7 @@ _HARNESS = textwrap.dedent(r"""
           if (!STATE.ignoreReceiver) receivers.push(JSON.parse(opts.body));
           return reply(200, '{}');
         }
+        if (STATE.malformedReceivers) return reply(200, JSON.stringify({ d: {} }));
         return reply(200, JSON.stringify({ d: { results: receivers } }));
       }
       if (url.includes('RootFolder')) {
@@ -231,3 +232,28 @@ def test_a_receiver_that_does_not_read_back_is_an_error() -> None:
         [_library({"FolderA": {"Division": "Corporate"}})],
     )
     assert "did not read back after registration" in result["summary"]["errors"][0]["error"]
+
+
+def test_an_asynchronous_defaults_receiver_is_an_error_not_a_duplicate() -> None:
+    result = _run_phase(
+        _state(receiverSync=0), [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    assert "not synchronous" in result["summary"]["errors"][0]["error"]
+    assert len(result["receivers"]) == 1
+
+
+def test_a_malformed_receiver_read_registers_nothing() -> None:
+    result = _run_phase(
+        _state(receiverPresent=False, malformedReceivers=True),
+        [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    assert "returned no collection" in result["summary"]["errors"][0]["error"]
+    assert result["receivers"] == []
+
+
+def test_the_receiver_is_registered_only_after_the_file_is_reconciled() -> None:
+    result = _run_phase(
+        _state(receiverPresent=False, refuseWrite=True),
+        [_library({"FolderA": {"Division": "Corporate"}})],
+    )
+    assert result["summary"]["errors"] and result["receivers"] == []
