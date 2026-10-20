@@ -6017,3 +6017,48 @@ def test_settings_reject_draft_visibility_outside_reader_author_approver(
 def test_enable_folder_creation_must_be_a_bool(tmp_path: Path) -> None:
     path = _library_settings(tmp_path, "              enable_folder_creation: maybe")
     _refuses(path, MappingShapeError, "enable_folder_creation")
+
+
+def _folder_defaults(tmp_path: Path, block: str) -> Path:
+    write_mapping(tmp_path, f"""
+        entities:
+          Document:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folder_defaults:
+{block}
+    """, name="mapping.yaml")
+    return tmp_path / "mapping.yaml"
+
+
+def test_folder_defaults_are_read_as_text(tmp_path: Path) -> None:
+    path = _folder_defaults(
+        tmp_path,
+        "              FolderA:\n                Division: Corporate\n                Rank: 3",
+    )
+    entity = load_mapping(path).mapping.entities["Document"]
+    assert entity.folder_defaults == {"FolderA": {"Division": "Corporate", "Rank": "3"}}
+
+
+def test_folder_defaults_absent_is_empty(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Document:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+    """, name="mapping.yaml")
+    entity = load_mapping(tmp_path / "mapping.yaml").mapping.entities["Document"]
+    assert entity.folder_defaults == {}
+
+
+@pytest.mark.parametrize("value", ["[a, b]", "true", "{x: 1}"])
+def test_folder_default_values_must_be_text_or_numbers(tmp_path: Path, value: str) -> None:
+    path = _folder_defaults(tmp_path, f"              FolderA:\n                Division: {value}")
+    _refuses(path, MappingShapeError, "Division")
+
+
+def test_folder_defaults_must_map_folders_to_columns(tmp_path: Path) -> None:
+    path = _folder_defaults(tmp_path, "              FolderA: oops")
+    _refuses(path, MappingShapeError)

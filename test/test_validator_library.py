@@ -1669,6 +1669,78 @@ def test_library_settings_are_accepted_on_a_library() -> None:
     none_of(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)
 
 
+def _defaults_findings(
+    tmp_path: Path, defaults: str, *, kind: str = "DocumentLibrary", template: int = 101,
+    extra_columns: str = "",
+) -> list[Finding]:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Field operations"\n  Corporate\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division", "Note nvarchar", extra_columns)
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: [FolderA]
+                folder_defaults:
+{defaults}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def _one(folder: str, column: str, value: str) -> str:
+    return f"                  {folder}:\n                    {column}: {value}"
+
+
+_GOOD_DEFAULTS = _one("FolderA", "Division", "Corporate") + "\n                    Note: x"
+
+
+def test_valid_folder_defaults_are_accepted(tmp_path: Path) -> None:
+    findings = _defaults_findings(tmp_path, _GOOD_DEFAULTS)
+    for code in (
+        FindingCode.FOLDER_DEFAULT_FOLDER_UNDECLARED, FindingCode.FOLDER_DEFAULT_COLUMN_UNKNOWN,
+        FindingCode.FOLDER_DEFAULT_VALUE_INVALID, FindingCode.FOLDER_DEFAULTS_ON_A_LIST,
+    ):
+        none_of(findings, code)
+
+
+def test_folder_default_for_an_undeclared_folder_is_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(tmp_path, _one("Elsewhere", "Note", "x"))
+    f = only(findings, FindingCode.FOLDER_DEFAULT_FOLDER_UNDECLARED)
+    assert "Elsewhere" in f.message
+
+
+def test_folder_default_for_an_unknown_column_is_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(tmp_path, _one("FolderA", "Nope", "x"))
+    assert "Nope" in only(findings, FindingCode.FOLDER_DEFAULT_COLUMN_UNKNOWN).message
+
+
+def test_folder_default_choice_outside_its_enum_is_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(tmp_path, _one("FolderA", "Division", "Finance"))
+    assert "Finance" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
+
+
+@pytest.mark.parametrize("column", ["Owner person", "Related int [ref: > Docs.Id]"])
+def test_folder_default_on_a_person_or_lookup_column_is_refused(
+    tmp_path: Path, column: str,
+) -> None:
+    name = column.split(maxsplit=1)[0]
+    findings = _defaults_findings(
+        tmp_path, _one("FolderA", name, "1"), extra_columns=column,
+    )
+    only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID)
+
+
+def test_folder_defaults_on_a_list_are_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(tmp_path, _GOOD_DEFAULTS, kind="List", template=100)
+    only(findings, FindingCode.FOLDER_DEFAULTS_ON_A_LIST)
+
+
 def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
     entity = EntityMapping(
         name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
@@ -1678,3 +1750,17 @@ def test_draft_visibility_needs_versioning_as_well_as_minor_versions() -> None:
         entity, versioning_default=Versioning(enable_versioning=False, enable_minor_versions=True),
     )
     only(findings, FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS)
+
+
+def test_folder_default_with_an_xml_illegal_control_character_is_refused(
+    tmp_path: Path,
+) -> None:
+    findings = _defaults_findings(tmp_path, _one("FolderA", "Note", '"a\\x01b"'))
+    assert "control character" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
+
+
+def test_folder_default_on_a_unique_column_is_refused(tmp_path: Path) -> None:
+    findings = _defaults_findings(
+        tmp_path, _one("FolderA", "Code", "x"), extra_columns="Code nvarchar [unique]",
+    )
+    assert "[unique]" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message

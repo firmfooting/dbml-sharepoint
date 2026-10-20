@@ -126,6 +126,7 @@
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_checkout": [],
+  "library_folder_defaults": [],
   "library_folders": [],
   "library_roots": [],
   "library_switches": [],

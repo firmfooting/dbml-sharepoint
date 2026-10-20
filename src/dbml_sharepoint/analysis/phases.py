@@ -56,6 +56,9 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
         # MEASURED 2026-09-03, `library.folder.filesystem-object-type` in
         # folder-probe.js), and seeding files each demonstration file into one.
         PhaseStep("folders", "declared folders", "deploy/_folders.js.j2"),
+        # After the folders it addresses, before seeding files into them.
+        PhaseStep("folder_defaults", "folder default values",
+                  "deploy/_folder_defaults.js.j2"),
         PhaseStep("lookups", "deferred lookups", "deploy/_lookups.js.j2"),
         PhaseStep("indexes", "indexed columns", "deploy/_indexes.js.j2"),
         PhaseStep("defaults", "field defaults", "deploy/_field_defaults.js.j2"),

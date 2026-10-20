@@ -189,6 +189,7 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folder_defaults": [],
       "folders": [],
       "is_library": false,
       "item_security": null,
@@ -269,6 +270,7 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folder_defaults": [],
       "folders": [],
       "is_library": false,
       "item_security": null,
@@ -301,6 +303,7 @@
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "fields_phase1": [],
+      "folder_defaults": [],
       "folders": [],
       "is_library": false,
       "item_security": null,

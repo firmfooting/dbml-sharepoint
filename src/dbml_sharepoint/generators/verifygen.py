@@ -28,6 +28,8 @@ from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
+from dbml_sharepoint.generators.folder_defaults_payload import folder_defaults_payload
+from dbml_sharepoint.generators.schema_types import FolderDefaults
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
@@ -148,6 +150,7 @@ class _LibrarySetting(TypedDict):
     require_checkout: NotRequired[bool]
     enable_folder_creation: NotRequired[bool]
     draft_version_visibility: NotRequired[int]
+    folder_defaults: NotRequired[list[FolderDefaults]]
 
 
 class VerifyTargets(TypedDict):
@@ -387,14 +390,22 @@ def _not_after_now(row: _Row) -> bool:
     return value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0
 
 
-def _library_settings(mapping: Mapping, table_names: list[str]) -> list[_LibrarySetting]:
+def _library_settings(
+    mapping: Mapping, table_names: list[str], resolved: ResolvedMapping,
+) -> list[_LibrarySetting]:
     """Each library's declared settings, by deployed title; an unmanaged one is left out."""
     declared: list[_LibrarySetting] = []
     for name in table_names:
-        settings = mapping.entities[name].settings
-        if settings is None:
-            continue
+        entity = mapping.entities[name]
+        settings = entity.settings
         entry: _LibrarySetting = {"title": mapping.list_title(name)}
+        payload = folder_defaults_payload(entity, resolved.require_folders(name))
+        if payload:
+            entry["folder_defaults"] = payload
+        if settings is None:
+            if len(entry) > 1:
+                declared.append(entry)
+            continue
         if settings.require_checkout is not None:
             entry["require_checkout"] = settings.require_checkout
         if settings.enable_folder_creation is not None:
@@ -462,7 +473,7 @@ def verify_targets(
         ],
         "checks": targets.checks,
         "rule": rule,
-        "library_settings": _library_settings(mapping, table_names),
+        "library_settings": _library_settings(mapping, table_names, resolved),
         # Values travel here for the standalone script only; the script logs names, never values.
         "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
     }

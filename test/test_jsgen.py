@@ -448,3 +448,26 @@ def test_folder_creation_and_draft_visibility_are_emitted_as_stored_values() -> 
     assert emitted(LibrarySettings(draft_version_visibility="approver")) == (None, 2)
     assert emitted(LibrarySettings(draft_version_visibility="reader")) == (None, 0)
     assert emitted(None) == (None, None)
+
+
+def test_folder_defaults_are_emitted_for_declared_folders_only() -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    schema = make_schema(make_table("Docs", column("Title", required=True), column("Note")))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = replace(
+        base.mapping.entities["Docs"], folder_source=("A", "B"),
+        folder_defaults={"B": {"Note": "x"}},
+    )
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+    (entry,) = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["lists"]
+    assert entry["folder_defaults"] == [
+        {"folder": "B", "values": [{"field": "Note", "value": "x"}]},
+    ]

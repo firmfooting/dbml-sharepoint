@@ -37,7 +37,7 @@ from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
-    "folders", "title", "internal_name", "settings",
+    "folders", "title", "internal_name", "settings", "folder_defaults",
 })
 
 _FOLDER_SOURCE_KEYS = frozenset({"from_enum"})
@@ -72,6 +72,7 @@ def read(sc: SectionContext) -> LoadedFields:
             # Shape only here; the rest is the validator's.
             folder_source=_folder_source(spec, f"entities.{name}"),
             settings=_library_settings(spec, f"entities.{name}"),
+            folder_defaults=_folder_defaults(spec, f"entities.{name}"),
         )
     titles: set[tuple[str, str]] = set()
     roots: set[tuple[str, str]] = set()
@@ -167,6 +168,30 @@ def _draft_visibility(block: Mapping[str, object], where: str) -> DraftVisibilit
             f"{', '.join(DRAFT_VISIBILITY_VALUES)}; got {value!r}",
         )
     return value
+
+
+def _folder_defaults(spec: Mapping[str, object], context: str) -> dict[str, dict[str, str]]:
+    """`folder_defaults`: folder -> column -> value, every value held as text."""
+    if "folder_defaults" not in spec:
+        return {}
+    where = f"{context}.folder_defaults"
+    raw = _require_mapping(spec["folder_defaults"], where)
+    out: dict[str, dict[str, str]] = {}
+    for folder, columns in raw.items():
+        if not isinstance(folder, str):
+            raise MappingShapeError(f"{where} keys must be folder names, got {folder!r}")
+        values: dict[str, str] = {}
+        for column, value in _require_mapping(columns, f"{where}.{folder}").items():
+            # bool is an int subclass; a YAML `yes` must not become "True".
+            if not isinstance(column, str) or isinstance(value, bool) or not isinstance(
+                value, str | int | float,
+            ):
+                raise MappingShapeError(
+                    f"{where}.{folder}.{column} must be a text or number value, got {value!r}",
+                )
+            values[column] = str(value)
+        out[folder] = values
+    return out
 
 
 def _folder_source(spec: Mapping[str, object], context: str) -> FolderSource:

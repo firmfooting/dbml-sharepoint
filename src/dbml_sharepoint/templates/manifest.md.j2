@@ -334,6 +334,25 @@ existing folder is verified and skipped; nothing inside a folder is touched.
 _(none; no document library declares folders)_
 {% endif %}
 
+## Phase {{ phase_num['folder_defaults'] }}: folder default values
+
+{% set defaulted = lists | selectattr('folder_defaults') | list %}
+{% if defaulted %}
+Each listed library gets an ItemAdded event receiver of the location-based
+defaults class, registered once and read back, and its
+`Forms/client_LocationBasedDefaults.html` is rebuilt so the declared folders
+hold exactly the values below; entries for any other folder are carried over
+unchanged. The file is read back after the write. With the receiver
+registered, the defaults apply to files uploaded into the folder.
+
+{% for l in defaulted %}
+- **{{ l.title }}**: {% for d in l.folder_defaults %}{{ d.folder }} ({% for v in d['values'] %}{{ v.field }}={{ v.value }}{% if not loop.last %}, {% endif %}{% endfor %}){% if not loop.last %}; {% endif %}{% endfor %}
+
+{% endfor %}
+{% else %}
+_(none; no document library declares folder defaults)_
+{% endif %}
+
 ## Phase {{ phase_num['lookups'] }}: deferred lookups
 
 {% if phase2 %}

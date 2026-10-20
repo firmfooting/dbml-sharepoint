@@ -124,6 +124,7 @@
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_checkout": [],
+  "library_folder_defaults": [],
   "library_folders": [],
   "library_roots": [],
   "library_switches": [],
@@ -385,6 +386,26 @@
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
     return cachedDigest;
   }
+  // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
+  const unescapeDefaults = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const folderDefaultPaths = (text) => [...String(text).matchAll(/<a\s+href="([^"]*)"\s*>/g)].map((m) => {
+    const path = unescapeDefaults(m[1]);
+    try { return decodeURIComponent(path); } catch { return path; }
+  });
+  const folderDefaultValues = (text, path) => {
+    const unescape = unescapeDefaults;
+    for (const entry of String(text).matchAll(/<a\s+href="([^"]*)"\s*>([\s\S]*?)<\/a>/g)) {
+      let found = unescape(entry[1]);
+      try { found = decodeURIComponent(found); } catch { /* compare the stored text */ }
+      if (found !== path) continue;
+      const values = new Map();
+      for (const v of entry[2].matchAll(/<DefaultValue\s+FieldName="([^"]*)"\s*>([\s\S]*?)<\/DefaultValue>/g)) {
+        values.set(unescape(v[1]), unescape(v[2]));
+      }
+      return values;
+    }
+    return new Map();
+  };
 
   // The READ half of the $batch transport, and only the read half: this
   // script includes `_http_batch_read.js.j2` where the write-capable scripts
@@ -1566,6 +1587,45 @@
       } else {
         finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; its ${prop} could not be read (${r.ok ? 'no value of the declared type reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }
+    }
+
+    // Declared folder defaults against the stored file, read only and INFO.
+    for (const [title, declaredFolders] of (TARGETS.library_folder_defaults || [])) {
+      const key = `library_folder_defaults:${title}`;
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const rootUrl = root.ok && root.d ? root.d.ServerRelativeUrl : null;
+      let text = null;
+      if (typeof rootUrl === 'string') {
+        const file = await fetchWithRetry(apiUrl(`web/GetFileByServerRelativeUrl('${`${rootUrl}/Forms/client_LocationBasedDefaults.html`.replace(/'/g, "''")}')/$value`));
+        text = file.ok ? await file.text() : (file.status === 404 ? '' : null);
+      }
+      if (text === null) {
+        finding(2, key, 'INFO', `Library '${title}' declares folder defaults; the defaults file could not be read, so the deploy decides.`);
+        continue;
+      }
+      const rc = await probeGet(`web/lists/getbytitle('${odataName(title)}')/EventReceivers?$select=ReceiverClass,EventType,Synchronization`);
+      if (rc.ok && rc.d && Array.isArray(rc.d.results)) {
+        const ours = rc.d.results.filter((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001);
+        if (ours.length && !ours.some((e) => e.Synchronization === 1)) {
+          finding(2, `${key}:receiver`, 'BLOCKED', `Library '${title}' has a location-based defaults event receiver that is not synchronous; remove it in the site so the deploy can register the synchronous one.`);
+        } else if (!ours.length) {
+          finding(2, `${key}:receiver`, 'INFO', `Library '${title}' declares folder defaults but has no location-based defaults event receiver, which the deploy will register.`);
+        }
+      }
+      // Same refusal the deploy makes: registering the receiver would activate entries nobody declared.
+      const declaredPaths = declaredFolders.map((d) => `${rootUrl}/${d.folder}`);
+      const unmanaged = folderDefaultPaths(text).filter((path) => !declaredPaths.includes(path));
+      const synchronous = rc.ok && rc.d && Array.isArray(rc.d.results) && rc.d.results.some((e) => e.ReceiverClass === 'Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver' && e.EventType === 10001 && e.Synchronization === 1);
+      if (unmanaged.length && rc.ok && !synchronous) {
+        finding(2, `${key}:unmanaged`, 'BLOCKED', `the defaults file holds entries for folders this mapping does not declare (${unmanaged.join(', ')}); registering the receiver would start applying them, so nothing was written. Declare those folders or remove their entries`);
+      }
+      const differing = declaredFolders.filter((d) => {
+        const held = folderDefaultValues(text, `${rootUrl}/${d.folder}`);
+        return d.values.some((v) => held.get(v.field) !== v.value) || held.size !== d.values.length;
+      }).map((d) => d.folder);
+      finding(2, key, 'INFO', differing.length
+        ? `Library '${title}' declares folder defaults; ${differing.join(', ')} differ from the stored file, which the deploy will change.`
+        : `Library '${title}' declares folder defaults; the stored file already holds them.`);
     }
 
     // CSOM ProcessQuery availability (read-only Current-Web-Title query),

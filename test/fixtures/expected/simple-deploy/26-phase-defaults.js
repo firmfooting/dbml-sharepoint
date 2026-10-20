@@ -1,9 +1,9 @@
-  markPhase('Phase 2.5: field defaults');
-  // === Phase 2.5: reconcile declared field defaults ===
+  markPhase('Phase 2.6: field defaults');
+  // === Phase 2.6: reconcile declared field defaults ===
   // Defaults are included in create-field bodies, but existing columns are
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
   // idempotent and lets a provisioned constant replace after-create flows.
-  log('INFO', 'Starting Phase 2.5: field defaults.');
+  log('INFO', 'Starting Phase 2.6: field defaults.');
   {
     // Post-schema, so the same batch gate as the other write phases: prove
     // every target list before the first MERGE, and refuse the phase instead
@@ -11,7 +11,7 @@
     const defaultsOwned = SCHEMA.field_defaults.length > 0
       ? await surveyOwnedListsForWrites(
         SCHEMA.field_defaults.map(fieldDefault => fieldDefault.list),
-        '2.5', 'Field default',
+        '2.6', 'Field default',
       )
       : new Map();
     if (!defaultsOwned) {

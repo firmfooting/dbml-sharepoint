@@ -53,6 +53,7 @@ _BEFORE_SCHEMA = (
     "_http_write.js.j2",
     "_http_batch.js.j2",
     "_digest_cached.js.j2",
+    "_folder_defaults_read.js.j2",
     "_assess_body.js.j2",
     "deploy/_shape_probes.js.j2",
     "deploy/_helpers.js.j2",

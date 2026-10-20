@@ -9,6 +9,8 @@ entities:
     folders:
       - "Field operations"
       - "Corporate"
+    folder_defaults:
+      Corporate: { Division: Corporate, Status: Complete }
 
 cross_site_reference_columns: []
 

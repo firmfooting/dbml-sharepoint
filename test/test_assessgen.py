@@ -3531,6 +3531,76 @@ def test_assess_reports_declared_and_live_folder_creation_as_info() -> None:
     assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
 
 
+def _assess_folder_defaults(
+    stored: str | None, *, all_findings: bool = False,
+    receivers: list[dict[str, object]] | None = None,
+) -> list[Json]:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": replace(
+        entity, folder_source=("A",), folder_defaults={"A": {"Division": "Corporate"}},
+    )}))
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assert targets["library_folder_defaults"] == [[
+        "APP_Docs", [{"folder": "A", "values": [{"field": "Division", "value": "Corporate"}]}],
+    ]]
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="s.dbml",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
+    )
+    wrap = f"""
+{{
+  const _under = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {{
+    const u = String(url);
+    if (u.includes('RootFolder')) {{
+      const body = {{ d: {{ ServerRelativeUrl: '/sites/test/APP_Docs' }} }};
+      return {{ ok: true, status: 200, url: u, headers: {{ get: () => null }},
+        json: async () => body, text: async () => JSON.stringify(body) }};
+    }}
+    if (u.includes('EventReceivers')) {{
+      const body = {{ d: {{ results: {json.dumps(receivers or [])} }} }};
+      return {{ ok: true, status: 200, url: u, headers: {{ get: () => null }},
+        json: async () => body, text: async () => JSON.stringify(body) }};
+    }}
+    if (u.includes('GetFileByServerRelativeUrl')) {{
+      const stored = {json.dumps(stored)};
+      return {{ ok: stored !== null, status: stored === null ? 404 : 200, url: u,
+        headers: {{ get: () => null }}, text: async () => stored || '' }};
+    }}
+    return _under(url, opts);
+  }};
+}}
+"""
+    summary = _run_assess(
+        _declared_descriptions((schema, bundle)), harness=_healthy_harness(), js=js,
+        wrap=wrap, capture=True,
+    )
+    return [
+        f for f in summary["findings"]
+        if f["key"] == "library_folder_defaults:APP_Docs"
+        or (all_findings and f["key"].startswith("library_folder_defaults:APP_Docs:"))
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_reports_declared_folder_defaults_against_the_stored_file_as_info() -> None:
+    held = (
+        '<MetadataDefaults><a href="/sites/test/APP_Docs/A">'
+        '<DefaultValue FieldName="Division">Corporate</DefaultValue></a></MetadataDefaults>'
+    )
+    (same,) = _assess_folder_defaults(held)
+    assert same["level"] == "INFO" and "already holds them" in same["detail"]
+    (differs,) = _assess_folder_defaults(held.replace("Corporate", "Finance"))
+    assert differs["level"] == "INFO" and "will change" in differs["detail"]
+    (absent,) = _assess_folder_defaults(None)
+    assert absent["level"] == "INFO" and "will change" in absent["detail"]
+
+
 def _assess_checkout(live: object, *, declared: bool = False) -> list[Json]:
     schema, bundle = _checkout_pack(declared)
     js = generate_assess_js(
@@ -3581,3 +3651,48 @@ def test_assess_reports_declared_and_live_require_checkout_as_info() -> None:
 def test_assess_says_so_when_force_checkout_is_not_a_boolean() -> None:
     (unreadable,) = _assess_checkout(None)
     assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_sees_a_stale_extra_folder_default_as_a_change() -> None:
+    held = (
+        '<MetadataDefaults><a href="/sites/test/APP_Docs/A">'
+        '<DefaultValue FieldName="Division">Corporate</DefaultValue>'
+        '<DefaultValue FieldName="Old">x</DefaultValue></a></MetadataDefaults>'
+    )
+    (finding,) = _assess_folder_defaults(held)
+    assert "will change" in finding["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_says_the_deploy_will_register_a_missing_defaults_receiver() -> None:
+    found = _assess_folder_defaults("", all_findings=True)
+    assert any("will register" in f["detail"] for f in found)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_blocks_on_an_asynchronous_defaults_receiver() -> None:
+    found = _assess_folder_defaults("", all_findings=True, receivers=[{
+        "ReceiverClass": "Microsoft.Office.DocumentManagement"
+        ".LocationBasedMetadataDefaultsReceiver",
+        "EventType": 10001, "Synchronization": 0,
+    }])
+    (blocked,) = [f for f in found if f["key"].endswith(":receiver")]
+    assert blocked["level"] == "BLOCKED" and "not synchronous" in blocked["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_blocks_on_unmanaged_entries_when_no_synchronous_receiver_exists() -> None:
+    held = (
+        '<MetadataDefaults><a href="/sites/test/APP_Docs/HandMade">'
+        '<DefaultValue FieldName="Division">Hand</DefaultValue></a></MetadataDefaults>'
+    )
+    found = _assess_folder_defaults(held, all_findings=True)
+    (blocked,) = [f for f in found if f["key"].endswith(":unmanaged")]
+    assert blocked["level"] == "BLOCKED"
+    assert "/sites/test/APP_Docs/HandMade" in blocked["detail"]
+    assert "nothing was written" in blocked["detail"]
+    sync: list[dict[str, object]] = [{"ReceiverClass": "Microsoft.Office.DocumentManagement"
+             ".LocationBasedMetadataDefaultsReceiver", "EventType": 10001, "Synchronization": 1}]
+    again = _assess_folder_defaults(held, all_findings=True, receivers=sync)
+    assert not [f for f in again if f["key"].endswith(":unmanaged")]

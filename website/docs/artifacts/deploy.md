@@ -17,7 +17,7 @@ when the structure changes; the groups are stable:
 | Group | Steps |
 | --- | --- |
 | PREPARE | site assessment · read-only preflight · list renames · permission levels and site groups · operator self-enrolment · identity enrolment (every identity a group enrols) · deployment run and change logs · maintenance unseal |
-| STRUCTURE | list creation · declared folders · deferred lookups · indexed columns · field defaults |
+| STRUCTURE | list creation · declared folders · folder default values · deferred lookups · indexed columns · field defaults |
 | PRESENTATION | views · form formatting · hidden field links |
 | PROTECTION | seal declared columns · role inheritance and assignments |
 | DATA | seed items (extension-provided) |

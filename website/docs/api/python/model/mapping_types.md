@@ -168,6 +168,7 @@ class EntityMapping:
     title: str | None = None
     internal_name: str | None = None
     settings: dbml_sharepoint.model.mapping_types.LibrarySettings | None = None
+    folder_defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 ```
 
 SP physical mapping for one entity (kind, base template, site role).

@@ -1,6 +1,6 @@
-  markPhase('Phase 2.4: indexed columns');
-  // === Phase 2.4: indexed columns ===
-  log('INFO', 'Starting Phase 2.4: indexed columns.');
+  markPhase('Phase 2.5: indexed columns');
+  // === Phase 2.5: indexed columns ===
+  log('INFO', 'Starting Phase 2.5: indexed columns.');
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -8,7 +8,7 @@
     // batch rather than index the lists ahead of it and refuse the rest.
     const indexOwned = SCHEMA.indexed_columns.length > 0
       ? await surveyOwnedListsForWrites(
-        SCHEMA.indexed_columns.map(idx => idx.list), '2.4', 'Index',
+        SCHEMA.indexed_columns.map(idx => idx.list), '2.5', 'Index',
       )
       : new Map();
     if (!indexOwned) {
@@ -79,7 +79,7 @@
       // the field through the list TITLE, so a replacement answers with a
       // different field Id, or with none, and fails that column's comparison.
       const verifyOwned = await surveyOwnedListsForWrites(
-        indexTargets.map(entry => entry.idx.list), '2.4', 'Index readback',
+        indexTargets.map(entry => entry.idx.list), '2.5', 'Index readback',
       );
       let shapes = null;
       try {

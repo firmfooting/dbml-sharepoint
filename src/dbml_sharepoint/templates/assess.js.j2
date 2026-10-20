@@ -25,6 +25,7 @@
   log('INFO', 'Read-only assessment. No changes are made.');
 
 {% include "_digest_cached.js.j2" %}
+{% include "_folder_defaults_read.js.j2" %}
 
   // The READ half of the $batch transport, and only the read half: this
   // script includes `_http_batch_read.js.j2` where the write-capable scripts

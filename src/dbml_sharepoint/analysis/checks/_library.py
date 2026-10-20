@@ -7,18 +7,21 @@ or `_structure.py`, because both of those sit at or near the complexity
 ceiling and a library rule should read as one function per question.
 """
 
+import re
+
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.analysis.typemap import element_type
+from dbml_sharepoint.analysis.typemap import element_type, is_multi_value, is_person
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
     EntityMapping,
     FoldersFromEnum,
     ViewDef,
 )
+from dbml_sharepoint.model.parser import Column
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -58,6 +61,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
             ))
         findings += _draft_visibility_needs_minor_versions(vc, entity_name, entity)
+        findings += _folder_defaults(vc, entity_name, entity, folders)
         findings += _folders(
             entity_name, entity, folders or (),
             declared=bool(entity.folder_source),
@@ -99,6 +103,84 @@ def _draft_visibility_needs_minor_versions(
         f"or remove the key.",
         location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
     )]
+
+
+def _folder_defaults(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+    folders: tuple[str, ...] | None,
+) -> list[Finding]:
+    """Every folder, column and value in `folder_defaults` must be one the deploy can write."""
+    if not entity.folder_defaults:
+        return []
+    at = Location(Section.ENTITIES, entity=entity_name, sub="folder_defaults")
+    if not entity.is_library:
+        return [Finding(
+            FindingCode.FOLDER_DEFAULTS_ON_A_LIST,
+            f"entities[{entity_name}].folder_defaults: {entity_name} is a {entity.kind}, "
+            f"and only a DocumentLibrary holds folders. Remove the key, or declare "
+            f"kind: DocumentLibrary with base_template: 101.",
+            location=at,
+        )]
+    table = vc.tables_by_name.get(entity_name)
+    columns: dict[str, Column] = {c.name: c for c in table.columns} if table is not None else {}
+    findings: list[Finding] = []
+    for folder, values in entity.folder_defaults.items():
+        # `folders` is None when the enum behind it is unknown, reported elsewhere.
+        if folders is not None and folder not in folders:
+            findings.append(Finding(
+                FindingCode.FOLDER_DEFAULT_FOLDER_UNDECLARED,
+                f"entities[{entity_name}].folder_defaults: {folder!r} is not one of "
+                f"{entity_name}'s declared folders. Declare the folder under folders, "
+                f"or remove its defaults.",
+                location=at,
+            ))
+        for column_name, value in values.items():
+            column = columns.get(column_name)
+            if column is None:
+                findings.append(Finding(
+                    FindingCode.FOLDER_DEFAULT_COLUMN_UNKNOWN,
+                    f"entities[{entity_name}].folder_defaults[{folder!r}]: "
+                    f"{column_name!r} is not a column of {entity_name}.",
+                    location=at,
+                ))
+                continue
+            reason = _default_value_problem(vc, column, value)
+            if reason is not None:
+                findings.append(Finding(
+                    FindingCode.FOLDER_DEFAULT_VALUE_INVALID,
+                    f"entities[{entity_name}].folder_defaults[{folder!r}].{column_name}: "
+                    f"{reason}",
+                    location=at,
+                ))
+    return findings
+
+
+# XML 1.0 forbids these in the defaults document.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _default_value_problem(vc: ValidationContext, column: Column, value: str) -> str | None:
+    """Why `value` cannot be a folder default for `column`, or None.
+
+    Lookup and person columns are refused in this release: a default for one
+    is a user or item id the folder file cannot name portably.
+    """
+    if column.ref is not None or is_person(column.type) or is_multi_value(column.type):
+        return (
+            f"{column.name} is a lookup, person or multi-value column, which a folder "
+            f"default does not support yet."
+        )
+    if column.unique:
+        return (
+            f"{column.name} is declared [unique], so every file filed in the folder would "
+            f"receive the same value and the second upload could not keep it."
+        )
+    if _XML_ILLEGAL.search(value):
+        return f"the value holds a control character XML cannot store ({value!r})."
+    members = vc.enum_members_by_name.get(column.type)
+    if members is not None and value not in members:
+        return f"{value!r} is not a member of {column.type} ({', '.join(members)})."
+    return None
 
 
 def _external_file_scopes(vc: ValidationContext) -> list[Finding]:

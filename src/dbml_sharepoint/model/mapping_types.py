@@ -194,6 +194,8 @@ class EntityMapping:
     title: str | None = None
     internal_name: str | None = None
     settings: LibrarySettings | None = None
+    # {folder: {column: value}}, library only; the folder defaults phase applies it.
+    folder_defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
     def is_library(self) -> bool:
