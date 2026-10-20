@@ -1045,12 +1045,14 @@ def build_schema_json(
                 parts["bodyJSONFormatter"] = body
             if declared_form.footer is not None:
                 parts["footerJSONFormatter"] = declared_form.footer
-            form_formatting_out.append({
-                "list": list_title,
-                "client_form_custom_formatter": json.dumps(
-                    parts, separators=(",", ":"), sort_keys=True,
-                ),
-            })
+            # A tree-only entity carries no JSON part; writing "{}" would clear the live formatter.
+            if parts:
+                form_formatting_out.append({
+                    "list": list_title,
+                    "client_form_custom_formatter": json.dumps(
+                        parts, separators=(",", ":"), sort_keys=True,
+                    ),
+                })
 
         field_links = hidden_field_links(bundle.mapping, table_name)
         if field_links:
