@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: THE FORMULA FACTS A FORM HEADER DEPENDS ON ----
  *
- * REVISION: f450e8ed
+ * REVISION: d94a8fd5
  *
  * QUESTION: what does the server do with the corners of a calculated column's
  * formula that a header evaluator written outside the server would have to
@@ -357,7 +357,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision f450e8ed. Quote this when reporting results.');
+  log('INFO', 'probe revision d94a8fd5. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'build'; // 'build', then 'read', then 'size'
@@ -538,7 +538,7 @@
   };
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
   const said = (what, r) => log(r.ok ? 'INFO' : 'FAIL', `${what}: HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`);
-  const CAPACITY = /too many (calculated )?(columns|fields)|row size|8,?000 bytes/i;
+  const CAPACITY = /too many (calculated )?(columns|fields)|row size|8,?000 bytes|\b(columns?|fields?|rows?)\b[^.]*\b(exceed\w*|limit|maximum)\b|\b(exceed\w*|limit|maximum)\b[^.]*\b(columns?|fields?|row)\b/i;
   const MERGE = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
 
   // standList finds or makes one scratch list and reads it back; false once a row says why it could not.
@@ -819,13 +819,22 @@
     FACTS[key] = `INCONCLUSIVE: ${why}`;
     record(id, question, 'NOT ESTABLISHED', why, 'open');
   };
-  const overflowRead = unreadOf(OVERFLOW_CASES.map(([n]) => n));
+  // FieldValuesAsText keys an encoded internal name in a form the item does not use (the OData_ prefix and an escaped underscore, _x005f_), so match each key after undoing both.
+  const textKeyOf = (n) => {
+    const want = (present.get(n) || n).replace(/^OData_/, '');
+    const body = unanswered(asText) ? {} : asText.body;
+    return Object.keys(body).find((k) => k.replace(/^OData_/, '').replace(/_x005f_/gi, '_') === want);
+  };
+  const shownOf = (n) => { const k = textKeyOf(n); return k === undefined ? undefined : asText.body[k]; };
+  const overflowRead = [...unreadOf(OVERFLOW_CASES.map(([n]) => n)),
+    ...(unanswered(asText) ? [`FieldValuesAsText ${unanswered(asText)}`]
+      : OVERFLOW_CASES.filter(([n]) => typeof shownOf(n) !== 'string').map(([n]) => `FieldValuesAsText.${n} is absent or not text (keys like it: ${Object.keys(asText.body).filter((k) => /ov\d|eq\d/i.test(k)).join(', ') || 'none'})`))];
   if (live(F_OVERFLOW) && overflowRead.length) {
     unresolved(F_OVERFLOW, 'date_overflow', 'what DATE gives for a month or day out of range, and a leap day plus one year', overflowRead);
   } else if (live(F_OVERFLOW)) {
-    FACTS.date_overflow = Object.fromEntries(OVERFLOW_CASES.map(([n, call]) => [call, cell(n)]));
+    FACTS.date_overflow = Object.fromEntries(OVERFLOW_CASES.map(([n, call]) => [call, { instant: cell(n), displayed: shownOf(n) }]));
     record(F_OVERFLOW, 'what DATE gives for a month or day out of range, and a leap day plus one year', 'MEASURED',
-      OVERFLOW_CASES.map(([n, call]) => `${call} = ${cell(n)}`).join('; '));
+      OVERFLOW_CASES.map(([n, call]) => `${call} = ${cell(n)}, displayed ${shownOf(n)}`).join('; '));
   }
   const blankRead = unreadOf(CASES.slice(0, BLANK_CASES).map((c) => c.name));
   if (live(F_BLANK) && blankRead.length) {
@@ -849,7 +858,7 @@
     FACTS.text_equality_case = { literal: cell('Teq1'), column: cell('Teq2') };
     record(F_TEXT, 'whether text equality ignores case', 'MEASURED', `"a"="A" gives ${cell('Teq1')}; TextA="ABC" gives ${cell('Teq2')}`);
   }
-  const createdRead = unreadOf(['CpdZero', 'CpdOne'], 'date');
+  const createdRead = [...unreadOf(['CpdZero', 'CpdOne'], 'date'), ...textFailure(['CpdZero', 'CpdOne', 'Cdr'])];
   if (zone && live(F_CREATED) && createdRead.length) {
     unresolved(F_CREATED, 'created_plus_days_day', 'whether [Created]+n takes its day in site-local time', createdRead);
   } else if (zone && live(F_CREATED)) {
@@ -859,7 +868,17 @@
     const utc = dayAt(0);
     const standard = dayAt(-(Bias + StandardBias));
     const daylight = dayAt(-(Bias + DaylightBias));
-    const zero = day(cell('CpdZero'));
+    // The displayed date decides: instants cannot, since +0 and +24 h are the same under either reading. The text's field order is learned from Cdr, whose date is known (2026-03-15).
+    const order = [['dmy', /^15\D+0?3\D+2026$/], ['mdy', /^0?3\D+15\D+2026$/], ['ymd', /^2026\D+0?3\D+15$/]].find(([, re]) => re.test(String(textOf('Cdr')).trim()));
+    const shown = (n) => {
+      const p = String(textOf(n)).trim().match(/^(\d{1,4})\D+(\d{1,2})\D+(\d{1,4})(?!\d)/);
+      if (!order || !p) return null;
+      const [y, m, d] = order[0] === 'dmy' ? [p[3], p[2], p[1]] : order[0] === 'mdy' ? [p[3], p[1], p[2]] : [p[1], p[2], p[3]];
+      return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    };
+    const zero = shown('CpdZero');
+    const one = shown('CpdOne');
+    const nextDay = (d) => new Date(Date.parse(d) + 86400000).toISOString().slice(0, 10);
     const discriminates = standard !== utc && daylight !== utc;
     // Minutes east of UTC. The local day differs from the UTC day only in the last (east) or first (west) m minutes of the UTC day, m the smaller offset.
     const east = [-(Bias + StandardBias), -(Bias + DaylightBias)];
@@ -872,14 +891,15 @@
     const buildWindow = east.every((o) => o > 0) || east.every((o) => o < 0)
       ? `${clock(from + east[0])} to ${clock(to + east[0])} local on standard time, ${clock(from + east[1])} to ${clock(to + east[1])} local on daylight time`
       : null;
-    const verdict = !zero ? 'UNREADABLE'
+    const verdict = !zero || !one ? 'UNREADABLE'
       : !discriminates ? `NOT DISCRIMINATED: the local day equals the UTC day; ${buildWindow ? `build again between ${buildWindow}` : 'this zone has no window where the local day differs from the UTC day under both offsets'}`
-        : zero === utc ? 'UTC DAY' : [standard, daylight].includes(zero) ? 'SITE-LOCAL DAY' : 'OTHER DAY';
+        : one !== nextDay(zero) ? 'OTHER DAY'
+          : zero === utc ? 'UTC DAY' : [standard, daylight].includes(zero) ? 'SITE-LOCAL DAY' : 'OTHER DAY';
     FACTS.created_plus_days_day = { created: item.body.Created, utc_day: utc, standard_local_day: standard,
-      daylight_local_day: daylight, plus_zero: cell('CpdZero'), plus_one: cell('CpdOne'), verdict };
-    const settled = discriminates && zero;
+      daylight_local_day: daylight, plus_zero: cell('CpdZero'), plus_one: cell('CpdOne'), shown_zero: zero, shown_one: one, verdict };
+    const settled = discriminates && ['UTC DAY', 'SITE-LOCAL DAY'].includes(verdict);
     record(F_CREATED, 'whether [Created]+n takes its day in site-local time', settled ? verdict : 'NOT ESTABLISHED',
-      `${verdict}; created ${item.body.Created}, +0 reads ${cell('CpdZero')}, +1 reads ${cell('CpdOne')}`, settled ? undefined : 'open');
+      `${verdict}; created ${item.body.Created}, +0 reads ${cell('CpdZero')}, +1 reads ${cell('CpdOne')}; displayed ${zero} and ${one}`, settled ? undefined : 'open');
   }
   const dateRead = [...unreadOf(['Cdr', 'CdrTime'], 'date'), ...textFailure(['Cdr', 'CdrTime', 'Created'])];
   if (live(F_DATE_READ) && dateRead.length) {

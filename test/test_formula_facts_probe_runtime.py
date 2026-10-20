@@ -149,8 +149,12 @@ _MOCK = textwrap.dedent(r"""
         return answer(200, { value: standing.hasItem ? [{ Id: 1 }] : [] });
       }
       if (rest.startsWith('/items(1)/FieldValuesAsText')) {
+        // Displayed text escapes an encoded name (OData_, _x005f_); the item never does.
+        const shown = Object.fromEntries([1, 2, 3, 4, 5].map((i) => [
+          'OData__x005f_x0044_ov' + i, '1/0' + i + '/2027']));
         return answer(200, { Created: '21/10/2026 6:00 AM', Cdr: '15/03/2026',
-          CdrTime: '21/10/2026', Ndisp: '1.67', NdispWhole: '10' });
+          CdrTime: '21/10/2026', Ndisp: '1.67', NdispWhole: '10', ...shown,
+          CpdZero: CONFIG.cpdZeroText || '21/10/2026 7:00 AM', CpdOne: '22/10/2026 7:00 AM' });
       }
       if (rest.startsWith('/items(1)')) {
         const wanted = decodeURIComponent(rest.split('$select=')[1]).split(',');
@@ -279,8 +283,17 @@ def test_a_read_run_reaches_columns_whose_internal_name_the_server_encoded() -> 
     selects = " ".join(s["path"].text for s in sent if "$select=" in s["path"].text)
     assert "OData__x0044_ov1" in selects and "OData__x0054_eq1" in selects
     facts = _facts(output)
-    assert facts["date_overflow"]["DATE(2026,13,5)"] == "v_Dov1"
+    assert facts["date_overflow"]["DATE(2026,13,5)"] == {
+        "instant": "v_Dov1", "displayed": "1/01/2027"}
     assert facts["text_equality_case"]["literal"] == "v_Teq1"
+
+
+def test_a_displayed_overflow_date_is_found_under_its_escaped_key() -> None:
+    # Fails without the escaped-key lookup: the mock offers only the OData_ and _x005f_ spelling.
+    _rows, _sent, output = _run(PRIOR, READ)
+
+    overflow = _facts(output)["date_overflow"]
+    assert [v["displayed"] for k, v in overflow.items()] == [f"1/0{i}/2027" for i in range(1, 6)]
 
 
 def test_the_created_day_is_reported_against_both_candidate_local_days() -> None:
@@ -289,6 +302,7 @@ def test_the_created_day_is_reported_against_both_candidate_local_days() -> None
     created = _facts(output)["created_plus_days_day"]
     assert created["utc_day"] == "2026-10-20" and created["standard_local_day"] == "2026-10-21"
     assert created["verdict"] == "SITE-LOCAL DAY"
+    assert (created["shown_zero"], created["shown_one"]) == ("2026-10-21", "2026-10-22")
     assert rows[CREATED]["state"] == "settled"
 
 
