@@ -24,6 +24,8 @@ from dbml_sharepoint.model.form_tree import (
 
 _VALUE = "{value}"
 DATE_ORDERS = ("dmy", "mdy", "ymd")
+CHIP_ALIGNS = ("top", "middle", "bottom")
+_HEADER_ONLY = ("icon", "title", "chips_align")
 
 
 def _text(raw: object, context: str) -> str:
@@ -78,14 +80,21 @@ def _title(raw: object, context: str) -> Title:
 def _subtitle_part(raw: object, context: str) -> SubtitlePart:
     if isinstance(raw, str):
         return SubtitlePart(column=_nonblank(raw, context))
-    block = _known_keys(raw, {"text", "columns", "when"}, context)
+    block = _known_keys(raw, {"text", "columns", "fallback", "when"}, context)
+    text = _nonblank(block.get("text"), f"{context}.text")
+    if block.get("columns") is None:
+        if block.get("fallback") is not None:
+            raise MappingShapeError(f"{context}: a fallback needs columns to wait for")
+        return SubtitlePart(text=text, when=_when(block, context))
     columns = tuple(
         _nonblank(c, f"{context}.columns")
-        for c in _list(block.get("columns"), f"{context}.columns", empty="name a column")
+        for c in _list(block["columns"], f"{context}.columns", empty="name a column")
     )
+    fallback = block.get("fallback")
     return SubtitlePart(
-        text=_nonblank(block.get("text"), f"{context}.text"),
+        text=text,
         columns=columns,
+        fallback=None if fallback is None else _nonblank(fallback, f"{context}.fallback"),
         when=_when(block, context),
     )
 
@@ -202,13 +211,29 @@ def _many[T](
     return tuple(parse(item, f"{context}.{key}[{i}]") for i, item in enumerate(items))
 
 
-def parse_header(raw: object, context: str) -> HeaderTree:
-    """A header or footer component tree; an unknown key is refused by name."""
-    block = _known_keys(raw, {"title", "subtitle", "chips", "rows", "banner"}, context)
+def parse_header(raw: object, context: str, *, footer: bool = False) -> HeaderTree:
+    """A header or footer component tree; an unknown key is refused by name.
+
+    A footer has no title, icon tile or header bar, so those keys are refused on one.
+    """
+    block = _known_keys(
+        raw, {"icon", "title", "subtitle", "chips", "chips_align", "rows", "banner"}, context,
+    )
+    if footer:
+        for key in _HEADER_ONLY:
+            if block.get(key) is not None:
+                raise MappingShapeError(f"{context}.{key}: a footer takes no {key}; use a header")
+    align = block.get("chips_align")
+    if align is not None and align not in CHIP_ALIGNS:
+        raise MappingValueError(
+            f"{context}.chips_align: expected one of {', '.join(CHIP_ALIGNS)}, got {align!r}"
+        )
     return HeaderTree(
+        icon=None if block.get("icon") is None else _nonblank(block["icon"], f"{context}.icon"),
         title=None if block.get("title") is None else _title(block["title"], f"{context}.title"),
         subtitle=_many(block, "subtitle", context, _subtitle_part),
         chips=_many(block, "chips", context, _chip),
+        chips_align=align,
         rows=_many(block, "rows", context, _row),
         banner=(
             None if block.get("banner") is None

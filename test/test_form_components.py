@@ -157,3 +157,44 @@ def test_a_bubble_without_a_date_order_has_none() -> None:
 def test_any_other_date_order_is_refused_naming_the_key(order: object) -> None:
     with pytest.raises(MappingValueError, match=r"date_order"):
         _parse(_row({"column": "Review", "date_order": order}))
+
+
+def test_a_header_icon_parses() -> None:
+    assert _parse({"icon": "Shield", "title": {"column": "Title", "blank": "New"}}).icon == "Shield"
+    assert _parse({"title": {"column": "Title", "blank": "New"}}).icon is None
+
+
+def test_a_header_icon_must_not_be_empty() -> None:
+    with pytest.raises(MappingShapeError, match=r"header\.icon"):
+        _parse({"icon": ""})
+
+
+def test_a_static_subtitle_part_needs_no_columns() -> None:
+    assert _parse({"subtitle": [{"text": "Plain."}]}).subtitle == (SubtitlePart(text="Plain."),)
+
+
+def test_a_subtitle_fallback_parses_and_needs_columns() -> None:
+    part = _parse({"subtitle": [{"text": "Due {Due}", "columns": ["Due"], "fallback": "No date"}]})
+    assert part.subtitle[0].fallback == "No date"
+    with pytest.raises(MappingShapeError, match="fallback needs columns"):
+        _parse({"subtitle": [{"text": "Plain.", "fallback": "x"}]})
+
+
+def test_chips_align_parses_and_refuses_other_values() -> None:
+    assert _parse({"chips_align": "bottom"}).chips_align == "bottom"
+    assert _parse({}).chips_align is None
+    with pytest.raises(MappingValueError, match=r"chips_align.*top, middle, bottom"):
+        _parse({"chips_align": "centre"})
+
+
+@pytest.mark.parametrize("key", ["icon", "title", "chips_align"])
+def test_a_footer_refuses_header_only_keys(key: str) -> None:
+    raw = {"icon": "Shield", "title": {"column": "T", "blank": "x"}, "chips_align": "top"}
+    with pytest.raises(MappingShapeError, match=f"footer.{key}: a footer takes no {key}"):
+        parse_header({key: raw[key]}, "footer", footer=True)
+
+
+def test_a_footer_parses_the_shared_components() -> None:
+    tree = parse_header({"subtitle": [{"text": "Hi."}], "rows": [{"items": [{"column": "A"}]}]},
+                        "footer", footer=True)
+    assert tree.subtitle and tree.rows

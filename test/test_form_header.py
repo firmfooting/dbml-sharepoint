@@ -622,3 +622,124 @@ def test_a_person_column_is_refused_by_name() -> None:
         _bubble(Bubble("Owner"))
     assert found.value.finding.code is FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED
     assert re.search(r"Task\.Owner", found.value.finding.message)
+
+
+EXPECTED_ICON_HEADER = (
+    '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"display":"flex","flex-direction":"row","align-items":"center"},"children":[{"elmType":"div","attributes":{"class":"ms-bgColor-neutralLighter"},"style":{"flex":"none","width":"56px","height":"56px","border-radius":"8px","display":"flex","align-items":"center","justify-content":"center","margin-right":"12px"},"children":[{"elmType":"div","attributes":{"iconName":"Shield","aria-hidden":"true","class":"ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary"}}]},{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"},{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Plain."}]}]}]}'  # noqa: E501 -- byte-exact golden
+)
+
+
+# --- header icon tile and strapline ------------------------------------------------------------
+
+
+def test_the_header_icon_tile_sits_beside_the_title_block() -> None:
+    tree = HeaderTree(
+        icon="Shield", title=Title("Title", "New"), subtitle=(SubtitlePart(text="Plain."),),
+    )
+    assert json.dumps(_render(tree), separators=(",", ":")) == EXPECTED_ICON_HEADER
+
+
+def test_an_unknown_header_icon_is_refused_through_resolve() -> None:
+    schema_, base = _bundle(HeaderTree(icon="Calendar"))
+    _, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HEADER_ICON_UNKNOWN]
+    assert "the header icon 'Calendar'" in findings[0].message
+
+
+def test_the_icon_header_still_obeys_the_size_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(form_header, "FORM_HEADER_MAX_CHARS", 400)
+    with pytest.raises(form_header.HeaderRefusal) as found:
+        _render(HeaderTree(icon="Shield", title=Title("Title", "x" * 600)))
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TOO_LARGE
+
+
+def test_a_lone_static_subtitle_is_plain_text() -> None:
+    node = _kids(_render(HeaderTree(subtitle=(SubtitlePart(text="One sentence."),))))[0]
+    strap = _kids(node)[0]
+    assert strap["txtContent"] == "One sentence."
+
+
+def test_a_static_subtitle_part_shows_beside_a_column_part() -> None:
+    tree = HeaderTree(subtitle=(SubtitlePart(text="Static."), SubtitlePart(column="Case")))
+    strap = _kids(_kids(_render(tree))[0])[0]
+    assert _ev(strap["txtContent"], {"Case": "C1"}) == "Static. · C1"
+    assert _ev(strap["txtContent"], {"Case": ""}) == "Static."
+
+
+def test_a_subtitle_fallback_shows_while_a_column_is_empty() -> None:
+    part = SubtitlePart(text="Case {Case}", columns=("Case",), fallback="No case yet")
+    strap = _kids(_kids(_render(HeaderTree(subtitle=(part,))))[0])[0]
+    assert _ev(strap["txtContent"], {"Case": "C1"}) == "Case C1"
+    assert _ev(strap["txtContent"], {"Case": ""}) == "No case yet"
+    assert _ev(_style(strap, "display"), {"Case": ""}) == "block"
+
+EXPECTED_BAR = (
+    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
+)
+EXPECTED_FOOTER = (
+    '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Static."}]},{"elmType":"div","style":{"display":"=if((([$Status] == \'Open\')), \'flex\', \'none\')","align-items":"center","padding":"6px 8px","margin":"8px 0 0 0"},"attributes":{"class":"ms-bgColor-themeLighter ms-fontColor-themePrimary"},"children":[{"elmType":"span","style":{"padding":"0 8px 0 0"},"attributes":{"iconName":"Lightbulb"}},{"elmType":"span","attributes":{"class":"ms-fontWeight-bold"},"style":{"padding":"0 8px 0 0"},"txtContent":"Notice"},{"elmType":"span","txtContent":"=if(([$Status] == \'Open\'), \'Open now\', \'\')"}]}]}'  # noqa: E501
+)
+
+
+def _bar(tree: HeaderTree) -> dict[str, object]:
+    return _kids(_render(tree))[0]
+
+
+@pytest.mark.parametrize(
+    ("align", "value"),
+    [("middle", "center"), ("top", "flex-start"), ("bottom", "flex-end")],
+)
+def test_chips_align_places_the_chip_group_in_the_bar(align: str, value: str) -> None:
+    tree = HeaderTree(
+        title=Title("Title", "New"), chips=(LinkChip("Go", "ContactLink", url="u"),),
+        chips_align=align,
+    )
+    bar = _bar(tree)
+    want = EXPECTED_BAR.replace('"align-self":"@"', f'"align-self":"{value}"')
+    assert json.dumps(bar, separators=(",", ":")) == want
+    assert _style(_kids(bar)[1], "align-self") == value
+
+
+def test_chips_with_an_icon_default_to_the_middle_of_the_bar() -> None:
+    tree = HeaderTree(icon="Shield", chips=(LinkChip("Go", "ContactLink", url="u"),))
+    assert _style(_kids(_bar(tree))[1], "align-self") == "center"
+
+
+def test_chips_stack_below_the_title_without_icon_or_alignment() -> None:
+    tree = HeaderTree(title=Title("Title", "New"), chips=(LinkChip("Go", "ContactLink", url="u"),))
+    kids = _kids(_render(tree))
+    assert len(kids) == 2
+    assert "align-self" not in json.dumps(kids)
+
+
+def test_a_footer_renders_byte_exact_through_the_same_renderer() -> None:
+    tree = HeaderTree(subtitle=(SubtitlePart(text="Static."),), banner=Banner(
+        "Notice", "Lightbulb", (BannerRule(OPEN, "Open now"),)))
+    assert json.dumps(_render(tree), separators=(",", ":")) == EXPECTED_FOOTER
+
+
+@pytest.mark.parametrize(
+    ("tree", "code"),
+    [
+        (HeaderTree(rows=(Row((Bubble("Nope"),)),)), FindingCode.FORM_HEADER_COLUMN_UNKNOWN),
+        (HeaderTree(banner=Banner("L", "Calendar", (BannerRule(OPEN, "t"),))),
+         FindingCode.FORM_HEADER_ICON_UNKNOWN),
+        (HeaderTree(rows=(Row((Bubble("Risk", due=True),)),)),
+         FindingCode.FORM_HEADER_DUE_NEEDS_DATE),
+    ],
+)
+def test_a_footer_is_refused_for_the_header_rules(tree: HeaderTree, code: FindingCode) -> None:
+    schema_, base = _bundle(HeaderTree())
+    base = dataclasses.replace(base, form_trees={"Task": {"footer": tree}})
+    resolved, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [code]
+    assert resolved.mapping.form_formatting["Task"].footer is None
+
+
+def test_an_oversize_footer_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(form_header, "FORM_HEADER_MAX_CHARS", 400)
+    schema_, base = _bundle(HeaderTree())
+    tree = HeaderTree(subtitle=(SubtitlePart(text="x" * 600),))
+    base = dataclasses.replace(base, form_trees={"Task": {"footer": tree}})
+    _, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HEADER_TOO_LARGE]

@@ -1270,7 +1270,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formatting reference does not say how the second is read."
     ),
     FindingCode.FORM_HEADER_ICON_UNKNOWN: (
-        "A header or footer chip or banner names an icon outside the fleet "
+        "A header or footer icon, chip or banner names an icon outside the fleet "
         "icon vocabulary. SharePoint shows an unknown icon as nothing, with "
         "no error anywhere."
     ),

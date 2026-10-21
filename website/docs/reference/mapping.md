@@ -1356,13 +1356,15 @@ and `/` between the parts of a computed date.
 
 ### Components
 
-A header or footer tree takes `title`, `subtitle`, `chips`, `rows` and
-`banner`. An unknown key is refused by name.
+A header or footer tree takes `icon`, `title`, `subtitle`, `chips`,
+`chips_align`, `rows` and `banner`. An unknown key is refused by name.
 
 | Component | Keys |
 | --- | --- |
+| `icon` | a fleet icon name, shown as a tile beside the title block |
+| `chips_align` | `top`, `middle` (the default) or `bottom`: where the chips sit against the header bar, beside the title block. It applies when the header has an `icon` or names `chips_align`; otherwise the chips stack below the title block |
 | `title` | `column`, `blank` (shown when the column is empty), `when` |
-| `subtitle` | a list of parts. A part is a column name, or `{ text, columns, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value |
+| `subtitle` | a list of parts. A part is a column name, or `{ text, columns, fallback, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value, or `fallback` (plain text) shows in its place. A part with `text` and no `columns` is a static sentence |
 | `chips` | a list of `{ text, icon, url \| (url_column + url_template), when }`. `url_template` must contain `{value}` |
 | `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
 | `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text }` and the banner shows when a rule matches |
@@ -1377,10 +1379,16 @@ states how a calculated date is written, because core cannot read the site's
 regional order. It is required to show a calculated date and refused on any
 other column. A stored date is shown in the site's own format. The tokens are
 `good`, `low`, `warning`, `severe`, `blocked`, `neutral` and `muted`. A token
-map may name `default` to set the fallback style. A chip or banner icon must be
-in the fleet icon vocabulary described in
+map may name `default` to set the fallback style. A header, chip or banner
+icon must be in the fleet icon vocabulary described in
 [the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 `when` takes the condition grammar of `views[].where`.
+
+A `footer` takes the same components as a header except `icon`, `title` and
+`chips_align`, which a footer refuses by name. It renders into the form's
+footer formatter through the same renderer, with the same refusals and the
+same size budget as a header (core measures no separate footer limit). `footer:
+{ file: <path> }` still names a raw JSON file instead.
 
 ### Calculated columns
 

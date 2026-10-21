@@ -21,6 +21,7 @@ class SubtitlePart:
     column: str | None = None
     text: str | None = None
     columns: tuple[str, ...] = ()
+    fallback: str | None = None  # shown in place of `text` while a named column is empty
     when: Condition | None = None
 
 
@@ -75,8 +76,10 @@ class Banner:
 
 @dataclass(frozen=True)
 class HeaderTree:
+    icon: str | None = None
     title: Title | None = None
     subtitle: tuple[SubtitlePart, ...] = ()
     chips: tuple[LinkChip, ...] = ()
+    chips_align: str | None = None  # top, middle or bottom, against the header bar
     rows: tuple[Row, ...] = ()
     banner: Banner | None = None
