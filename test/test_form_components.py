@@ -222,3 +222,13 @@ def test_web_token_is_leading_only() -> None:
     assert ok.chips[0].url_template == "{web}/{list}/x?{value}"
     with pytest.raises(MappingValueError, match=r"leading"):
         _parse({"chips": [{**chip, "url_template": "x/{web}/{value}"}]})
+
+
+def test_chip_title_and_bubble_blank_parse() -> None:
+    chip = {"text": "H", "icon": "Link", "url": "u", "title": "Help centre"}
+    assert _parse({"chips": [chip]}).chips[0].title == "Help centre"
+    assert _parse(_row({"column": "Risk", "blank": "Not set"})).rows[0].items[0] == Bubble(
+        "Risk", blank="Not set",
+    )
+    with pytest.raises(MappingShapeError, match="blank"):
+        _parse(_row({"column": "Risk", "blank": ""}))

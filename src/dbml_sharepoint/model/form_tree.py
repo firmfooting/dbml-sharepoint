@@ -33,6 +33,7 @@ class LinkChip:
     url: str | None = None
     url_column: str | None = None
     url_template: str | None = None
+    title: str | None = None  # replaces the default tooltip, the text plus the new-tab note
     when: Condition | None = None
 
 
@@ -46,6 +47,7 @@ class Bubble:
     due: bool = False
     date_order: str | None = None  # dmy, mdy or ymd: how a computed date is written
     label_colon: bool = True  # False writes the label as given, with no colon added
+    blank: str | None = None  # shown alone while the column is empty; without it the bubble hides
     when: Condition | None = None
 
 

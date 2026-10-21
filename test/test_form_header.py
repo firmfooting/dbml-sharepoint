@@ -674,7 +674,7 @@ def test_a_subtitle_fallback_shows_while_a_column_is_empty() -> None:
     assert _ev(_style(strap, "display"), {"Case": ""}) == "block"
 
 EXPECTED_BAR = (
-    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
+    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer","title":"Go, opens in a new tab"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink","aria-hidden":"true"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
 )
 EXPECTED_FOOTER = (
     '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Static."}]},{"elmType":"div","style":{"display":"=if((([$Status] == \'Open\')), \'flex\', \'none\')","align-items":"center","padding":"6px 8px","margin":"8px 0 0 0"},"attributes":{"class":"ms-bgColor-themeLighter ms-fontColor-themePrimary"},"children":[{"elmType":"span","style":{"padding":"0 8px 0 0"},"attributes":{"iconName":"Lightbulb"}},{"elmType":"span","attributes":{"class":"ms-fontWeight-bold"},"style":{"padding":"0 8px 0 0"},"txtContent":"Notice"},{"elmType":"span","txtContent":"=if(([$Status] == \'Open\'), \'Open now\', \'\')"}]}]}'  # noqa: E501
@@ -833,3 +833,36 @@ def test_resolve_marks_only_required_numbers_with_a_default_as_showable() -> Non
     _, findings = resolve_form_headers(schema_, base, SITE)
     assert [f.code for f in findings] == [FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED]
     assert "Cost" in findings[0].message
+
+
+def test_a_chip_carries_a_tooltip_naming_the_new_tab_and_hides_its_icon() -> None:
+    chips = _kids(_kids(_render(HeaderTree(chips=(
+        LinkChip("Open case", "Feedback", url="u"),
+        LinkChip("Help", "Feedback", url="u", title="Help centre"),
+    ))))[0])
+    assert _attr(chips[0], "title") == "Open case, opens in a new tab"
+    assert _attr(chips[1], "title") == "Help centre"
+    assert _attr(_kids(chips[0])[0], "aria-hidden") == "true"
+    assert _attr(chips[0], "target") == "_blank"
+
+
+def test_a_bubble_blank_text_shows_alone_while_the_column_is_empty() -> None:
+    bubble = _bubble(Bubble("Risk", label="Risk", blank="Not set", tokens={"High": "severe"}))
+    assert _text(bubble) == "=if(toString([$Risk]) == '', 'Not set', 'Risk: ' + [$Risk])"
+    assert _shown(bubble, {"Risk": ""}) == (
+        "inline-flex", f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary", "Not set",
+    )
+    assert _shown(bubble, {"Risk": "High"})[2] == "Risk: High"
+    assert str(_shown(bubble, {"Risk": "High"})[1]).startswith(TOKENS["severe"].classes)
+
+
+def test_a_blank_text_keeps_hide_values_and_a_blank_due_date_is_not_overdue() -> None:
+    hid = _bubble(Bubble("Risk", blank="Not set", hide_values=("None",)))
+    assert _shown(hid, {"Risk": "None"})[0] == "none"
+    assert _shown(hid, {"Risk": ""})[0] == "inline-flex"
+    due = _bubble(Bubble("Due", blank="No date", due=True))
+    empty = {"Due": date_field(None), "Due.displayValue": ""}
+    shown = _shown(due, empty)
+    assert shown[0] == "inline-flex"
+    assert shown[1] == f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary"
+    assert shown[2] == "No date"

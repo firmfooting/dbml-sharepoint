@@ -106,19 +106,21 @@ def _subtitle_part(raw: object, context: str) -> SubtitlePart:
 
 def _chip(raw: object, context: str) -> LinkChip:
     block = _known_keys(
-        raw, {"text", "icon", "url", "url_column", "url_template", "when"}, context,
+        raw, {"text", "icon", "url", "url_column", "url_template", "title", "when"}, context,
     )
     url, column, template = (block.get(k) for k in ("url", "url_column", "url_template"))
     if url is not None and (column is not None or template is not None):
         raise MappingShapeError(f"{context}: give either url or url_column with url_template")
     if url is None and (column is None or template is None):
         raise MappingShapeError(f"{context}: give url, or both url_column and url_template")
+    title = block.get("title")
     return LinkChip(
         _nonblank(block.get("text"), f"{context}.text"),
         _nonblank(block.get("icon"), f"{context}.icon"),
         None if url is None else _nonblank(url, f"{context}.url"),
         None if column is None else _nonblank(column, f"{context}.url_column"),
         None if template is None else _template(template, f"{context}.url_template", url=True),
+        None if title is None else _nonblank(title, f"{context}.title"),
         _when(block, context),
     )
 
@@ -136,7 +138,7 @@ def _bubble(raw: object, context: str) -> Bubble:
     block = _known_keys(
         raw,
         {
-            "column", "label", "label_colon", "text", "hide_values", "tokens", "due",
+            "column", "label", "label_colon", "blank", "text", "hide_values", "tokens", "due",
             "date_order", "when",
         },
         context,
@@ -174,6 +176,7 @@ def _bubble(raw: object, context: str) -> Bubble:
         due=due,
         date_order=order,
         label_colon=colon,
+        blank=None if block.get("blank") is None else _nonblank(block["blank"], f"{context}.blank"),
         when=_when(block, context),
     )
 

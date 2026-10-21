@@ -1365,24 +1365,25 @@ A header or footer tree takes `icon`, `title`, `subtitle`, `chips`,
 | `chips_align` | `top`, `middle` (the default) or `bottom`: where the chips sit against the header bar, beside the title block. It applies when the header has an `icon` or names `chips_align`; otherwise the chips stack below the title block |
 | `title` | `column`, `blank` (shown when the column is empty), `prefix` (static text written before the value, such as `"Workspace: "`; the `blank` text is shown alone), `when` |
 | `subtitle` | a list of parts. A part is a column name, or `{ text, columns, fallback, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value, or `fallback` (plain text) shows in its place. A part with `text` and no `columns` is a static sentence |
-| `chips` | a list of `{ text, icon, url \| (url_column + url_template), when }`. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the entity's `internal_name` (refused when none is declared), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
+| `chips` | a list of `{ text, icon, url \| (url_column + url_template), title, when }`. `title` is the tooltip, by default the text plus `, opens in a new tab`; the icon is hidden from assistive technology. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the entity's `internal_name` (refused when none is declared), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
 | `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
 | `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text }` and the banner shows when a rule matches |
 
 A bubble takes `column`, `label`, `text` (a template containing `{value}`),
-`label_colon` (`false` writes the label exactly as given, with no colon or
-space added, so end it with the separator you want),
-`hide_values` (values for which the bubble is hidden), `tokens` (a map from a
-value to a style token), `due`, `date_order` and `when`. A bubble is hidden
-when its column is blank. A `due: true` bubble turns the `blocked` style from
-the day after the date, counted in the site's time zone, and needs a date or
-calculated date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It
-states how a calculated date is written, because core cannot read the site's
-regional order. It is required to show a calculated date and refused on any
-other column. A stored date is shown in the site's own format. The tokens are
-`good`, `low`, `warning`, `severe`, `blocked`, `neutral` and `muted`. A token
-map may name `default` to set the fallback style. A header, chip or banner
-icon must be in the fleet icon vocabulary described in
+`label_colon` (`false` writes the label exactly as given, with no colon or space
+added, so end it with the separator you want), `blank` (text shown alone while
+the column is empty, instead of hiding the bubble), `hide_values` (values for
+which the bubble is hidden), `tokens` (a map from a value to a style token),
+`due`, `date_order` and `when`. Without `blank`, a bubble is hidden when its
+column is blank. A `due: true` bubble turns the `blocked` style from the day
+after the date, counted in the site's time zone, and needs a date or calculated
+date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It states how a
+calculated date is written, because core cannot read the site's regional order.
+It is required to show a calculated date and refused on any other column. A
+stored date is shown in the site's own format. The tokens are `good`, `low`,
+`warning`, `severe`, `blocked`, `neutral` and `muted`. A token map may name
+`default` to set the fallback style. A header, chip or banner icon must be in
+the fleet icon vocabulary described in
 [the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 `when` takes the condition grammar of `views[].where`.
 

@@ -528,12 +528,17 @@ class _Render:
                 "align-items": "center",
                 "padding": "2px 10px 2px 0",
             },
-            "attributes": {"href": href, "target": "_blank", "rel": "noopener noreferrer"},
+            "attributes": {
+                "href": href,
+                "target": "_blank",
+                "rel": "noopener noreferrer",
+                "title": self.plain(chip.title or f"{chip.text}, opens in a new tab", "chip title"),
+            },
             "children": [
                 {
                     "elmType": "span",
                     "style": {"padding": "0 4px"},
-                    "attributes": {"iconName": chip.icon},
+                    "attributes": {"iconName": chip.icon, "aria-hidden": "true"},
                 },
                 {"elmType": "span", "txtContent": self.plain(chip.text, "chip")},
             ],
@@ -589,12 +594,19 @@ class _Render:
         fallback = TOKENS[bubble.tokens.get("default", "neutral")].classes
         if bubble.due:
             overdue, guard = self.overdue(column)
-            hidden += guard
+            # With a blank text a blank date stays visible, so it must not count as overdue.
+            hidden += [f"({v.filled} && {g})" for g in guard] if bubble.blank else guard
             pairs.insert(0, (overdue, TOKENS["blocked"].classes))
+        if bubble.blank is not None:
+            hidden = hidden[1:]  # the blank test no longer hides the bubble
+            pairs.insert(0, (v.blank, fallback))
         pieces = self.template(bubble.text, v.code, "text", column) if bubble.text else [v.code]
         if bubble.label is not None:
             colon = ": " if bubble.label_colon else ""
             pieces.insert(0, self.lit(f"{bubble.label}{colon}", "label", column))
+        if bubble.blank is not None:
+            shown = self.lit(bubble.blank, "blank", column)
+            pieces = [f"if({v.blank}, {shown}, {' + '.join(pieces)})"]
         css = (
             f"={_chain(pairs, fallback)} + {quoted(' ' + _SECONDARY)}"
             if pairs
@@ -604,7 +616,9 @@ class _Render:
             "elmType": "div",
             "style": {
                 "display": _display(
-                    "inline-flex", when=self.when(bubble.when), hidden=_any(hidden)
+                    "inline-flex",
+                    when=self.when(bubble.when),
+                    hidden=_any(hidden) if hidden else None,
                 ),
                 **_PILL,
             },
