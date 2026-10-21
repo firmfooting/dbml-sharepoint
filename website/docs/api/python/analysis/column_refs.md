@@ -45,6 +45,16 @@ String literals are stripped first so bracket text inside a quoted
 constant is not misread as a reference. Shared with jsgen, which orders
 Phase-1 field creation by these references.
 
+### `calculated_cycle`
+
+```python
+def calculated_cycle(formulas: Mapping[str, str], calc_names: Collection[str]) -> list[str]
+```
+
+Calculated columns that depend on each other with no valid order, sorted; empty if none.
+
+A self-reference is not counted: it is not a creation-order problem between two columns.
+
 ### `CALCULATED_FORMULA_BUILTINS`
 
 ```python

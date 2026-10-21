@@ -5,7 +5,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
-from _format_eval import evaluate_expression
+from _format_eval import date_field, evaluate_expression
 from _formula_facts import (
     BLANK_COERCION,
     BLANK_OPERANDS,
@@ -133,8 +133,9 @@ def test_the_grid_covers_blanks_unlisted_values_case_variants_and_month_ends() -
         "DONE",
         "Unlisted value",
     }
-    assert {r["D"] for r in rows} >= {
-        None,
+    assert None in {r["D"] for r in rows}
+    site = ZoneInfo("Australia/Melbourne")
+    assert {r["D"].astimezone(site).date() for r in rows if isinstance(r["D"], datetime)} >= {
         date(2024, 2, 29),
         date(2026, 2, 28),
         date(2025, 12, 31),
@@ -149,7 +150,7 @@ def test_error_rows_name_the_rows_the_parity_check_skips() -> None:
     skipped = error_rows("[T]+1", {}, kinds, {})
 
     assert skipped and all(r["T"] is not None for r in skipped)
-    check_parity("[T]+1", "=[$T] + 1", {}, kinds, {}, ("UTC",))
+    check_parity("[T]+1", "=if([$T] == '', 1, [$T] + 1)", {}, kinds, {}, ("UTC",))
 
 
 CHOICES = {"Status": ("Open", "Done")}
@@ -202,8 +203,8 @@ def test_the_formatting_functions_give_what_learn_documents(
 
 
 def test_a_field_reads_from_the_row_and_the_browser_zone_applies() -> None:
-    row = {"Due": "2026-10-19T13:00:00Z"}
-    expression = "=getDate(Date([$Due]))"
+    row = {"Due": date_field(1792414800000)}  # 2026-10-19T13:00:00Z
+    expression = "=getDate([$Due])"
 
     assert evaluate_expression(expression, row, browser_tz="UTC", now="2026-10-20T00:00:00Z") == 19
     assert (
@@ -239,10 +240,10 @@ def test_an_unmeasured_behaviour_is_refused_not_guessed(formula: str) -> None:
 
 
 def test_a_difference_in_one_browser_zone_only_is_caught() -> None:
-    # The date is site-local midnight, so only a browser east of the site's day sees the 20th.
+    # A stored instant at UTC midnight is the previous day for a browser west of UTC.
     kinds: dict[str, ColumnKind] = {"D": "date"}
     formula = "IF(ISBLANK([D]),0,DAY([D]))"
-    same = "=if(Number([$D]) == 0, 0, getDate(Date([$D])))"
+    same = "=if(toString([$D]) == '', 0, getDate([$D]))"
     check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne",))
     with pytest.raises(AssertionError, match="differing rows"):
-        check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "UTC"))
+        check_parity(formula, same, {}, kinds, {}, ("Australia/Melbourne", "America/Los_Angeles"))
