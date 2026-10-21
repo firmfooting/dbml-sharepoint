@@ -95,13 +95,16 @@ class _Tr:
     """A translated value. A "date" is a day number on a fixed calendar. `values` is every value a
     number or date can take (None when unknown), which is how a date's range is proven; a value
     of unknown range is checked when the formula runs instead. `moment` marks a date that came
-    from a date-and-time column, whose time of day the day number drops."""
+    from a date-and-time column, whose time of day the day number drops. `instant` names the stored
+    date column a value was read from: a calculated column sees such a column as a fractional
+    serial of its instant, so comparing or subtracting it is not whole days."""
 
     code: str
     kind: Literal["text", "number", "bool", "date"]
     values: frozenset[float] | None = None
     integral: bool = False  # a whole number by construction, when `values` is unknown
     moment: bool = False
+    instant: str = ""
     truth: bool | None = None  # the value of a condition built from constants alone
 
     @property
@@ -334,7 +337,9 @@ class _Translator:
         rule = zone_rule(self.ctx.zone)
         if rule.daylight is not None:  # a fixed offset is exact for any instant
             self.fails.append(out_of_span_instant(ms, rule))
-        return _Tr(site_day(ms, rule), "date", moment=system or name in self.ctx.moments)
+        return _Tr(
+            site_day(ms, rule), "date", moment=system or name in self.ctx.moments, instant=name
+        )
 
     def binary(self, op: str, left: Expr, right: Expr, stack: tuple[str, ...]) -> _Tr:
         a, b = self.go(left, stack), self.go(right, stack)
@@ -368,13 +373,17 @@ class _Translator:
         if count.kind != "number" or not count.whole or (moment is b and op == "-"):
             _unsupported(op, "which a header reproduces only for a date and a whole number of days")
         values = _combine(moment, count, lambda p, q: p + sign * q)
-        # Whole days on the site calendar, so the time of day is dropped.
-        return _Tr(f"({moment.code} {op} {count.code})", "date", values)
+        # The day number drops the time of day, so a display is exact; a comparison is not.
+        return _Tr(f"({moment.code} {op} {count.code})", "date", values, instant=moment.instant)
 
     @staticmethod
     def no_time_of_day(op: str, *dates: _Tr) -> None:
-        if any(d.moment for d in dates):
-            _unsupported(op, "which compares a date and time column's time of day, not measured")
+        if named := next((d.instant for d in dates if d.instant), ""):
+            _unsupported(
+                op,
+                f"which compares or subtracts the date column [{named}] by its instant, and a "
+                "calculated column sees that as a fraction of a day, not a whole one",
+            )
 
     def compare(self, op: str, a: _Tr, b: _Tr) -> _Tr:
         js = {"=": "==", "<>": "!="}.get(op, op)
@@ -592,6 +601,7 @@ class _Translator:
             _union(*options),
             integral=all(o.whole for o in options),
             moment=any(o.moment for o in options),
+            instant=next((o.instant for o in options if o.instant), ""),
         )
 
     @staticmethod

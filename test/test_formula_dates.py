@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from _format_eval import date_field, evaluate_expression, evaluate_rows
 from _formula_facts import (
+    BLANK_COERCION,
     BLANK_DATE_FIELD,
     BROWSER_PARTS_OF_DATE_ONLY,
     DATE_FIELD_EPOCH_MS,
@@ -21,7 +22,7 @@ from _formula_facts import (
     DATE_OVERFLOW,
     HEADER_SIZE_LIMIT,
 )
-from _formula_grid import check_parity
+from _formula_grid import check_parity, instants
 from _node import NODE
 
 from dbml_sharepoint.analysis import timezones
@@ -152,26 +153,9 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
         "number",
         {},
     ),
-    "date-only difference": (_FILLED.format("0", "[Due]-DATE(2026,1,1)"), "number", {}),
-    "date-only comparison": (
-        _FILLED.format('"none"', 'IF([Due]>DATE(2026,3,15),"late","early")'),
-        "text",
-        {},
-    ),
-    "date-only equality": (
-        _FILLED.format('"none"', 'IF([Due]=DATE(2026,10,4),"same","other")'),
-        "text",
-        {},
-    ),
     "created parts": (_ymd("[Created]"), "number", {}),
     "created plus days": (_ymd("[Created]+30"), "number", {}),
     "created minus days": (_ymd("[Created]-1"), "number", {}),
-    "created compared with a date": (
-        _FILLED.format('"none"', 'IF([Created]+0>[Due],"after","on or before")'),
-        "text",
-        {},
-    ),
-    "created days since a date": (_FILLED.format("0", "([Created]+0)-[Due]"), "number", {}),
     "date-time parts": (_SEEN.format("0", _ymd("[Seen]")), "number", {}),
     "date-time plus days": (_SEEN.format("0", _ymd("[Seen]+1")), "number", {}),
     "date result created plus days": ("[Created]+30", "date", {}),
@@ -188,11 +172,6 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
         {},
     ),
     "date result chained": ("[Created]+[W]", "date", {"W": 'IF([Status]="Open",14,30)'}),
-    "date-time blank text": (
-        _SEEN.format('"blank"', 'IF([Seen]+0=DATE(2026,10,4),"same","other")'),
-        "text",
-        {},
-    ),
 }
 
 
@@ -211,7 +190,7 @@ def test_translation_matches_the_reference(
 def test_a_date_and_time_column_is_read_in_other_site_zones(site: str) -> None:
     for formula, result in (
         (_ymd("[Created]+3"), "number"),
-        ("IF(DATE(YEAR([Created]),MONTH([Created])+1,DAY([Created]))>[Created]+0,1,0)", "number"),
+        ("DAY(DATE(YEAR([Created]),MONTH([Created])+1,DAY([Created]))-1)", "number"),
     ):
         _parity(formula, result, site=site)
 
@@ -364,6 +343,57 @@ def test_a_refusal_names_the_formula_and_what_it_refused(
     assert refusal.code is code
     assert named in refusal.detail
     assert formula in refusal.finding("Task", "Calc", formula).message
+
+
+# A date-only column holding UTC midnight is 11:00 on the Melbourne clock to a calculated column,
+# so every comparison or subtraction of a stored date is by its instant and is refused.
+_INSTANT_SHAPES = [
+    ("IF([Due]>DATE(2026,3,15),1,0)", ">", "Due"),
+    ("IF([Due]=DATE(2026,10,4),1,0)", "=", "Due"),
+    ("IF([Due]<>DATE(2026,10,4),1,0)", "<>", "Due"),
+    ("IF([Due]<=DATE(2026,10,4),1,0)", "<=", "Due"),
+    ("IF([Due]<DATE(2026,10,4),1,0)", "<", "Due"),
+    ("IF([Due]>=DATE(2026,10,4),1,0)", ">=", "Due"),
+    ("[Due]-DATE(2026,1,1)", "-", "Due"),
+    ("DATE(2026,1,1)-[Due]", "-", "Due"),
+    ("IF([Due]+3>DATE(2026,10,4),1,0)", ">", "Due"),
+    ("IF(DATE(2026,10,4)=[Due]-3,1,0)", "=", "Due"),
+    ("IF([Created]+0>DATE(2026,1,1),1,0)", ">", "Created"),
+    # Through a chained column and through an IF that returns the stored date.
+    ("IF(IF([Status]=\"Open\",[Due],[Due]+1)>DATE(2026,1,1),1,0)", ">", "Due"),
+]
+
+
+@pytest.mark.parametrize(("body", "operator", "column"), _INSTANT_SHAPES)
+def test_a_stored_date_is_not_compared_or_subtracted_by_whole_days(
+    body: str, operator: str, column: str
+) -> None:
+    refusal = _refusal(_FILLED.format("0", body))
+    assert refusal.code is _FN
+    assert operator in refusal.detail
+    assert f"[{column}]" in refusal.detail
+
+
+def test_a_date_and_time_column_is_refused_too() -> None:
+    refusal = _refusal(_SEEN.format("0", "IF([Seen]+1<>DATE(2026,1,1),1,0)"))
+    assert refusal.code is _FN
+    assert "[Seen]" in refusal.detail
+
+
+def test_a_chained_stored_date_is_refused_too() -> None:
+    refusal = _refusal("IF(ISBLANK([Due]),0,IF([W]>DATE(2026,1,1),1,0))", W="[Due]+0")
+    assert refusal.code is _FN
+
+
+def test_a_chained_date_built_from_literals_is_still_compared() -> None:
+    _parity('IF([W]>DATE(2026,1,1),"late","early")', "text", W="DATE(2026,3,15)+2")
+
+
+def test_the_grid_holds_a_date_only_value_at_utc_midnight_and_the_measured_fraction() -> None:
+    assert datetime(2026, 3, 1, tzinfo=UTC) in instants(SITE)
+    # 11:00 on a 24-hour clock: the Melbourne offset of that day in hours, over 24.
+    fraction = float(BLANK_COERCION["add"][1]["date"]["left"]) % 1
+    assert fraction == pytest.approx(11 / 24, abs=1e-9)
 
 
 def test_a_date_and_time_column_in_a_zone_without_a_rule_is_refused_by_name() -> None:
