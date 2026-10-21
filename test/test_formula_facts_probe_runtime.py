@@ -58,21 +58,32 @@ _MOCK = textwrap.dedent(r"""
       return { ok: status >= 200 && status < 300, status, headers: { get: () => null },
         text: async () => text, json: async () => JSON.parse(text) };
     };
-    const LIST_ID = '00000000-0000-4000-8000-000000000abc';
+    const GUID = '00000000-0000-4000-8000-0000000000a';
+    const idOf = (title) => GUID + (title.replace('FormulaFacts', '') || '1');
     const OWNER = 'dbml-sharepoint formula-facts probe scratch list. Safe to delete.';
     const OPERANDS = { NumA: 'Number', BlankNum: 'Number', TextA: 'Text', BlankText: 'Text',
       DateA: 'DateTime', DateLeap: 'DateTime', BlankDate: 'DateTime', ChoiceA: 'Choice',
       BlankChoice: 'Choice' };
-    let standing = CONFIG.existing === 'foreign' ? { Description: 'Not made by the probe.' }
-      : CONFIG.existing ? { Description: OWNER } : null;
-    let kinds = {};
-    let hasItem = false;
+    // The mock encodes a leading D or T of a calculated internal name.
+    const encode = (title) => (/^[DT]/.test(title)
+      ? '_x00' + title.charCodeAt(0).toString(16).toUpperCase() + '_' + title.slice(1) : title);
+    const field = (Title, InternalName, TypeAsString) => ({ Title, InternalName, TypeAsString });
+    const standingList = (title, names = []) => ({ title, Description: OWNER,
+      hasItem: !!CONFIG.prior,
+      fields: [...Object.entries(OPERANDS).map(([n, t]) => field(n, n, t)),
+        ...names.map((n) => field(n, encode(n), 'Calculated'))] });
+    const lists = {};
+    if (CONFIG.existing) {
+      lists.FormulaFacts = { title: 'FormulaFacts', fields: [], hasItem: false,
+        Description: CONFIG.existing === 'foreign' ? 'Not made by the probe.' : OWNER };
+    }
     let formatters = {};
     let stored = null;
     if (CONFIG.prior) {
-      standing = { Description: OWNER };
-      kinds = { ...OPERANDS, ...Object.fromEntries(CONFIG.names.map((n) => [n, 'Calculated'])) };
-      hasItem = true;
+      CONFIG.chunks.forEach((names, i) => {
+        const title = 'FormulaFacts' + (i ? i + 1 : '');
+        lists[title] = standingList(title, names);
+      });
       formatters = { Cdr: CONFIG.formatter, CdrTime: CONFIG.formatter };
     }
     const fail = (message) => answer(500, { error: { message: { value: message } } });
@@ -84,22 +95,27 @@ _MOCK = textwrap.dedent(r"""
       if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
         GetContextWebInformation: { FormDigestValue: 'digest' } } });
       if (path.endsWith('/_api/web/lists') && method === 'POST') {
-        standing = { Description: JSON.parse(body).Description };
-        return answer(201, { d: { Id: LIST_ID } });
+        const sent = JSON.parse(body);
+        lists[sent.Title] = { title: sent.Title, Description: sent.Description, fields: [],
+          hasItem: false };
+        return answer(201, { d: { Id: idOf(sent.Title) } });
       }
       if (path.includes('/regionalsettings/timezone')) {
         const zone = { Bias: -600, StandardBias: 0, DaylightBias: -60 };
         return answer(200, { Id: 1, Information: CONFIG.zone || zone });
       }
-      const head = [`getbytitle('FormulaFacts')`, `lists(guid'${LIST_ID}')`]
-        .find((h) => path.includes(h));
-      if (!head) return answer(404, 'mock has no ' + path);
-      const rest = path.slice(path.indexOf(head) + head.length);
+      const found = new RegExp(`getbytitle\\('(FormulaFacts\\d*)'\\)|lists\\(guid'${GUID}(\\d)'\\)`)
+        .exec(path);
+      if (!found) return answer(404, 'mock has no ' + path);
+      const title = found[1] || 'FormulaFacts' + (found[2] === '1' ? '' : found[2]);
+      const rest = path.slice(found.index + found[0].length);
+      const standing = lists[title];
       if (!standing) return answer(404, { error: { message: { value: 'List does not exist.' } } });
-      if (rest.startsWith('/recycle')) { standing = null; return answer(200, { d: {} }); }
+      if (rest.startsWith('/recycle')) { delete lists[title]; return answer(200, { d: {} }); }
       if (rest.startsWith('/fields/createfieldasxml')) {
         const name = /Name='([^']+)'/.exec(JSON.parse(body).parameters.SchemaXml)[1];
-        kinds[name] = /Type='([^']+)'/.exec(JSON.parse(body).parameters.SchemaXml)[1];
+        const kind = /Type='([^']+)'/.exec(JSON.parse(body).parameters.SchemaXml)[1];
+        standing.fields.push({ Title: name, InternalName: name, TypeAsString: kind });
         return answer(201, { d: {} });
       }
       if (rest === '/fields' && method === 'POST') {
@@ -107,12 +123,12 @@ _MOCK = textwrap.dedent(r"""
         if (CONFIG.refuse && sent.Formula.includes(CONFIG.refuse)) {
           return fail('refused: ' + sent.Formula);
         }
-        kinds[sent.Title] = 'Calculated';
+        standing.fields.push({ Title: sent.Title, InternalName: encode(sent.Title),
+          TypeAsString: 'Calculated' });
         return answer(201, { d: {} });
       }
       if (rest.startsWith('/fields?')) {
-        return answer(200, { value: Object.entries(kinds).map(([InternalName, TypeAsString]) => (
-          { InternalName, TypeAsString })) });
+        return answer(200, { value: standing.fields });
       }
       const named = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)/.exec(rest);
       if (named) {
@@ -126,13 +142,19 @@ _MOCK = textwrap.dedent(r"""
         return answer(200, { CustomFormatter: formatters[named[1]] ?? null });
       }
       if (rest.startsWith('/items') && method === 'POST') {
-        hasItem = true;
+        standing.hasItem = true;
         return answer(201, { d: { Id: 1 } });
       }
-      if (rest.startsWith('/items?')) return answer(200, { value: hasItem ? [{ Id: 1 }] : [] });
+      if (rest.startsWith('/items?')) {
+        return answer(200, { value: standing.hasItem ? [{ Id: 1 }] : [] });
+      }
       if (rest.startsWith('/items(1)/FieldValuesAsText')) {
+        // Displayed text escapes an encoded name (OData_, _x005f_); the item never does.
+        const shown = Object.fromEntries([1, 2, 3, 4, 5].map((i) => [
+          'OData__x005f_x0044_ov' + i, '1/0' + i + '/2027']));
         return answer(200, { Created: '21/10/2026 6:00 AM', Cdr: '15/03/2026',
-          CdrTime: '21/10/2026', Ndisp: '1.67', NdispWhole: '10' });
+          CdrTime: '21/10/2026', Ndisp: '1.67', NdispWhole: '10', ...shown,
+          CpdZero: CONFIG.cpdZeroText || '21/10/2026 7:00 AM', CpdOne: '22/10/2026 7:00 AM' });
       }
       if (rest.startsWith('/items(1)')) {
         const wanted = decodeURIComponent(rest.split('$select=')[1]).split(',');
@@ -141,9 +163,17 @@ _MOCK = textwrap.dedent(r"""
           DateA: '2026-03-15T00:00:00Z', ChoiceA: 'Low', DateLeap: '2024-02-29T00:00:00Z',
           BlankNum: null, BlankDate: null, BlankChoice: null,
           BlankText: CONFIG.blankValue === undefined ? null : CONFIG.blankValue,
-          CpdZero: CONFIG.cpdZero || '2026-10-21T00:00:00Z' };
-        return answer(200, Object.fromEntries(
-          wanted.map((n) => [n, n in row ? row[n] : 'v_' + n])));
+          CpdZero: CONFIG.cpdZero || '2026-10-21T00:00:00Z', CpdOne: '2026-10-22T00:00:00Z',
+          Cdr: '2026-03-15T00:00:00Z', CdrTime: '2026-10-21T06:00:00Z' };
+        // An item exposes a column as its internal name, or OData_ plus it when that starts with _.
+        const props = Object.fromEntries(standing.fields.map((f) => [
+          f.InternalName.startsWith('_') ? 'OData_' + f.InternalName : f.InternalName, f.Title]));
+        const bad = wanted.filter((n) => !(n in props) && !(n in row));
+        if (bad.length) return fail('The field or property does not exist: ' + bad.join(','));
+        return answer(200, Object.fromEntries(wanted.map((n) => {
+          const t = props[n] ?? n;
+          return [n, t in row ? row[t] : 'v_' + t];
+        })));
       }
       if (rest.startsWith('/contenttypes?')) {
         return answer(200, { value: [{ Name: 'Folder', StringId: '0x0120' },
@@ -159,14 +189,19 @@ _MOCK = textwrap.dedent(r"""
         }
         return answer(200, { ClientFormCustomFormatter: CONFIG.ctBroken ? 5 : stored });
       }
-      return answer(200, { Id: LIST_ID, Description: standing.Description,
+      return answer(200, { Id: idOf(title), Description: standing.Description,
         RootFolder: { ServerRelativeUrl: '/sites/probe/Lists/FormulaFacts' },
         ListItemEntityTypeFullName: 'SP.Data.FormulaFactsListItem' });
     };
 """)
 
 Run = tuple[dict[str, Json], list[Json], str]
-PRIOR = {"prior": True, "names": CASE_NAMES, "formatter": FORMATTER}
+PER_LIST = 40
+BLANK_CASES = len(OPS) * len(TYPES) * 3
+_ORDER = CASE_NAMES[BLANK_CASES:] + CASE_NAMES[:BLANK_CASES]
+CHUNKS = [_ORDER[i:i + PER_LIST] for i in range(0, len(_ORDER), PER_LIST)]
+PRIOR = {"prior": True, "chunks": CHUNKS, "formatter": FORMATTER}
+SIZE_PRIOR: dict[str, object] = {"prior": True, "chunks": [[]], "formatter": ""}
 
 
 def _run(config: Mapping[str, object] | None = None, swaps: dict[str, str] | None = None,
@@ -208,7 +243,7 @@ def test_blank_is_covered_for_every_operator_operand_type_and_side() -> None:
 
     created = {json.loads(s["body"].text)["Title"] for s in _writes(sent)
                if s["path"].endswith("/fields")}
-    assert len(CASE_NAMES) == 12 * 4 * 3 + 13
+    assert len(CASE_NAMES) == BLANK_CASES + 13
     assert {n for n in CASE_NAMES if n.startswith("B_")} <= created
     twins = {"BlankNum": "Number", "BlankText": "Text", "BlankDate": "DateTime",
              "BlankChoice": "Choice"}
@@ -242,12 +277,32 @@ def test_a_read_run_prints_exactly_the_fact_keys_with_results() -> None:
     assert rows["formula.datetime.calculated-date-form-body-reads"]["outcome"] == "MANUAL"
 
 
+def test_a_read_run_reaches_columns_whose_internal_name_the_server_encoded() -> None:
+    _rows, sent, output = _run(PRIOR, READ)
+
+    selects = " ".join(s["path"].text for s in sent if "$select=" in s["path"].text)
+    assert "OData__x0044_ov1" in selects and "OData__x0054_eq1" in selects
+    facts = _facts(output)
+    assert facts["date_overflow"]["DATE(2026,13,5)"] == {
+        "instant": "v_Dov1", "displayed": "1/01/2027"}
+    assert facts["text_equality_case"]["literal"] == "v_Teq1"
+
+
+def test_a_displayed_overflow_date_is_found_under_its_escaped_key() -> None:
+    # Fails without the escaped-key lookup: the mock offers only the OData_ and _x005f_ spelling.
+    _rows, _sent, output = _run(PRIOR, READ)
+
+    overflow = _facts(output)["date_overflow"]
+    assert [v["displayed"] for k, v in overflow.items()] == [f"1/0{i}/2027" for i in range(1, 6)]
+
+
 def test_the_created_day_is_reported_against_both_candidate_local_days() -> None:
     rows, _sent, output = _run(PRIOR, READ)
 
     created = _facts(output)["created_plus_days_day"]
     assert created["utc_day"] == "2026-10-20" and created["standard_local_day"] == "2026-10-21"
     assert created["verdict"] == "SITE-LOCAL DAY"
+    assert (created["shown_zero"], created["shown_one"]) == ("2026-10-21", "2026-10-22")
     assert rows[CREATED]["state"] == "settled"
 
 
@@ -279,7 +334,7 @@ def test_a_formatter_that_does_not_read_back_voids_the_rows_resting_on_it() -> N
 
 
 def test_a_size_run_finds_the_boundary_by_doubling_then_bisecting() -> None:
-    rows, sent, output = _run({"prior": True, "names": [], "formatter": "", "limit": 5000}, SIZE)
+    rows, sent, output = _run({**SIZE_PRIOR, "limit": 5000}, SIZE)
 
     limit = _facts(output)["header_size_limit"]
     assert limit["largest_saved"] == 5000 and limit["first_refused"] == 5001
@@ -288,7 +343,7 @@ def test_a_size_run_finds_the_boundary_by_doubling_then_bisecting() -> None:
 
 
 def test_a_size_run_with_a_content_type_that_does_not_read_back_prints_void() -> None:
-    rows, sent, output = _run({"prior": True, "names": [], "formatter": "", "ctBroken": True}, SIZE)
+    rows, sent, output = _run({**SIZE_PRIOR, "ctBroken": True}, SIZE)
 
     assert rows[TYPE]["outcome"] == "FAIL"
     assert _facts(output)["header_size_limit"] == "VOID"
@@ -297,7 +352,7 @@ def test_a_size_run_with_a_content_type_that_does_not_read_back_prints_void() ->
 
 def test_a_throttled_size_search_is_left_open_not_recorded_as_a_limit() -> None:
     rows, _sent, output = _run(
-        {"prior": True, "names": [], "formatter": "", "throttle": True}, SIZE)
+        {**SIZE_PRIOR, "throttle": True}, SIZE)
 
     row = rows["formula.calc.fact-header-size-limit"]
     assert row["state"] == "open" and "429" in row["evidence"]

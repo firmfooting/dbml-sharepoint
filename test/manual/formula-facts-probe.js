@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: THE FORMULA FACTS A FORM HEADER DEPENDS ON ----
  *
- * REVISION: 70039572
+ * REVISION: d94a8fd5
  *
  * QUESTION: what does the server do with the corners of a calculated column's
  * formula that a header evaluator written outside the server would have to
@@ -20,8 +20,9 @@
  *       calculated column per case, then a column formatter on the two calculated
  *       date columns. A case the server refuses is recorded with its message.
  *   MODE = 'read'   reads the item's calculated values and prints FACTS. Run it
- *       after build; run build between 00:00 and 11:00 site-local time for the
- *       [Created]+n corner to discriminate (the row says when it did not).
+ *       after build; run build in a window where the site-local day differs
+ *       from the UTC day for the [Created]+n corner to discriminate (the row
+ *       names the window when it did not).
  *   MODE = 'size'   doubles then bisects the size of the content type's
  *       ClientFormCustomFormatter, then leaves the largest saved one in place.
  *
@@ -94,10 +95,10 @@
 
   // `body` is the parsed payload even when the call failed, so only `ok` says a call worked.
 
-  // Non-2xx other than 401/403/408/429/503 is the server rejecting the content: this tenant answers refusals 500, not 400.
+  // Non-2xx other than 401/403/408/429/502/503/504 is the server rejecting the content, which answers 500 rather than 400.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
+    && status !== 408 && status !== 429 && status !== 502 && status !== 503 && status !== 504; // 503: the other documented throttle; 502 and 504 are gateway answers
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -356,7 +357,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 70039572. Quote this when reporting results.');
+  log('INFO', 'probe revision d94a8fd5. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'build'; // 'build', then 'read', then 'size'
@@ -416,6 +417,12 @@
     { elmType: 'div', txtContent: '@currentField.displayValue' }] });
   const DATE_COLUMNS = ['Cdr', 'CdrTime'];
   const CAP = 1048576;
+  // 40 per list keeps each list under the row-size limit.
+  const PER_LIST = 40;
+  // The cases that share the item's date and number reads stay in the first list; the blank cases fill the rest.
+  const ORDER = [...CASES.slice(BLANK_CASES), ...CASES.slice(0, BLANK_CASES)];
+  const LISTS = Array.from({ length: Math.ceil(ORDER.length / PER_LIST) }, (_, n) => ({
+    n, title: n ? `${LIST}${n + 1}` : LIST, cases: ORDER.slice(n * PER_LIST, (n + 1) * PER_LIST) }));
 
   const LIST_F = 'formula.calc.fixture-facts-list';
   const COLS = 'formula.calc.fixture-facts-columns';
@@ -434,6 +441,11 @@
   const M_FORMATTER = 'formula.datetime.calculated-date-formatter-reads';
   const M_BODY = 'formula.datetime.calculated-date-form-body-reads';
   const M_SIZE = 'formula.calc.header-size-renders';
+  for (const L of LISTS) {
+    L.ids = L.n ? { list: `${LIST_F}-${L.n + 1}`, cols: `${COLS}-${L.n + 1}`, item: `${ITEM}-${L.n + 1}` }
+      : { list: LIST_F, cols: COLS, item: ITEM };
+  }
+  const EXTRA = LISTS.slice(1).flatMap((L) => [L.ids.list, L.ids.cols, L.ids.item]);
   // Fact keys are what the maintainer's facts file is keyed by; each fact lives in the MODE shown.
   const FACT_OF = { date_overflow: [F_OVERFLOW, 'read'], blank_coercion: [F_BLANK, 'read'],
     text_equality_case: [F_TEXT, 'read'], created_plus_days_day: [F_CREATED, 'read'],
@@ -448,8 +460,13 @@
     [F_DATE_READ]: [ITEM], [F_NUMBER]: [ITEM], [F_SIZE]: [TYPE],
     [M_FORMATTER]: [ITEM, FMT], [M_BODY]: [ITEM], [M_SIZE]: [TYPE, F_SIZE],
   };
-  const NODES = { build: [LIST_F, COLS, ITEM, CASE_ROW, FMT],
-    read: [LIST_F, COLS, ITEM, ZONE, FMT, F_OVERFLOW, F_BLANK, F_TEXT, F_CREATED, F_DATE_READ, F_NUMBER, M_FORMATTER, M_BODY],
+  for (const L of LISTS.slice(1)) {
+    REST_ON[L.ids.cols] = [L.ids.list];
+    REST_ON[L.ids.item] = [L.ids.cols];
+    REST_ON[F_BLANK].push(L.ids.item);
+  }
+  const NODES = { build: [LIST_F, COLS, ITEM, ...EXTRA, CASE_ROW, FMT],
+    read: [LIST_F, COLS, ITEM, ...EXTRA, ZONE, FMT, F_OVERFLOW, F_BLANK, F_TEXT, F_CREATED, F_DATE_READ, F_NUMBER, M_FORMATTER, M_BODY],
     size: [LIST_F, TYPE, F_SIZE, M_SIZE] }[MODE];
   const rests = (id, on) => (REST_ON[id] || []).some((d) => d === on || rests(d, on));
   const dependents = (on) => NODES.filter((id) => id !== on && rests(id, on));
@@ -459,6 +476,13 @@
     expect('formula.calc.fixture-facts-columns', 'the operand columns read back with their types');
     expect('formula.calc.fixture-facts-item', 'the item reads back with the operands filled and every Blank column empty');
     expect('formula.datetime.fixture-facts-column-formatter', 'both calculated date columns read back the column formatter as written');
+  }
+  if (MODE !== 'size') {
+    for (const L of LISTS.slice(1)) {
+      expect(L.ids.list, `the list ${L.title} reads back with its marker, an item type and its folder URL`);
+      expect(L.ids.cols, `the operand columns of ${L.title} read back with their types`);
+      expect(L.ids.item, `the item of ${L.title} reads back with the operands filled and every Blank column empty`);
+    }
   }
   if (BUILD) {
     expect('formula.calc.case-columns-accepted', 'every case column was created, or the server refused it with a message');
@@ -492,7 +516,7 @@
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', {
-      build: `Would create '${LIST}' with operand columns, one item and ${CASES.length} calculated case columns on ${WEB}.`,
+      build: `Would create ${LISTS.length} lists from '${LIST}', each with operand columns and one item, and ${CASES.length} calculated case columns in all on ${WEB}.`,
       read: `Would read the item's calculated values on '${LIST}' on ${WEB} and print FACTS. Nothing is written.`,
       size: `Would write form formatters of growing size to the default content type of '${LIST}' on ${WEB}.`,
     }[MODE]);
@@ -514,56 +538,63 @@
   };
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
   const said = (what, r) => log(r.ok ? 'INFO' : 'FAIL', `${what}: HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`);
-  const listAt = `web/lists/getbytitle('${enc(LIST)}')`;
+  const CAPACITY = /too many (calculated )?(columns|fields)|row size|8,?000 bytes|\b(columns?|fields?|rows?)\b[^.]*\b(exceed\w*|limit|maximum)\b|\b(exceed\w*|limit|maximum)\b[^.]*\b(columns?|fields?|row)\b/i;
   const MERGE = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
 
-  const refuse = (why) => {
-    record(LIST_F, 'the list reads back with its marker, an item type and its folder URL', 'FAIL', why);
-    voidDependents(dependents(LIST_F), 'the list was not established by this run');
-    return finish(true);
-  };
-  let listId = '';
-  if (BUILD) {
-    // A by-title read answers an absent list 404; a standing one is recycled only if it carries the marker.
-    const before = await spGet(`${listAt}?$select=Id,Description`);
-    if (before.status !== 404) {
-      if (!before.ok) return refuse(`could not tell whether '${LIST}' already stands: the read ${unanswered(before)}`);
-      if (!before.body || before.body.Description !== OWNERSHIP_DESCRIPTION) {
-        return refuse(`a list named '${LIST}' exists without this probe's ownership description; refusing to modify it`);
+  // standList finds or makes one scratch list and reads it back; false once a row says why it could not.
+  const standList = async (L) => {
+    const refuse = (why) => {
+      record(L.ids.list, 'the list reads back with its marker, an item type and its folder URL', 'FAIL', why);
+      voidDependents(dependents(L.ids.list), 'the list was not established by this run');
+      return false;
+    };
+    const listAt = `web/lists/getbytitle('${enc(L.title)}')`;
+    let listId = '';
+    if (BUILD) {
+      // A by-title read answers an absent list 404; a standing one is recycled only if it carries the marker.
+      const before = await spGet(`${listAt}?$select=Id,Description`);
+      if (before.status !== 404) {
+        if (!before.ok) return refuse(`could not tell whether '${L.title}' already stands: the read ${unanswered(before)}`);
+        if (!before.body || before.body.Description !== OWNERSHIP_DESCRIPTION) {
+          return refuse(`a list named '${L.title}' exists without this probe's ownership description; refusing to modify it`);
+        }
+        if (!CLEANUP) return refuse(`'${L.title}' from an earlier run already stands; set CLEANUP to true to recycle it first`);
+        // By the Id read with the marker, so a title rebound since cannot redirect the deletes.
+        let recycled = false;
+        try { recycled = await resetList(L.title, String(before.body.Id).replace(/[{}]/g, '')); } catch { /* named below */ }
+        if (!recycled) return refuse(`'${L.title}' from an earlier run could not be recycled`);
+        const after = await spGet(`${listAt}?$select=Id`);
+        if (after.status !== 404) return refuse(`'${L.title}' still answers HTTP ${after.status} after the recycle`);
       }
-      if (!CLEANUP) return refuse(`'${LIST}' from an earlier run already stands; set CLEANUP to true to recycle it first`);
-      // By the Id read with the marker, so a title rebound since cannot redirect the deletes.
-      let recycled = false;
-      try { recycled = await resetList(LIST, String(before.body.Id).replace(/[{}]/g, '')); } catch { /* named below */ }
-      if (!recycled) return refuse(`'${LIST}' from an earlier run could not be recycled`);
-      const after = await spGet(`${listAt}?$select=Id`);
-      if (after.status !== 404) return refuse(`'${LIST}' still answers HTTP ${after.status} after the recycle`);
+      const created = await post('web/lists', { __metadata: { type: 'SP.List' }, Title: L.title,
+        BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION });
+      said('list create', created);
+      // Only a list this run's create answered for is written to, and only by its Id: the title may be another's now.
+      listId = created.ok && created.body && created.body.d ? String(created.body.d.Id).replace(/[{}]/g, '') : '';
+      if (!GUID.test(listId)) {
+        return refuse(`the list create answered HTTP ${created.status} with no list Id; nothing more was written`);
+      }
+    } else {
+      // Later runs write only to the list the build run made, found by title and proved by its marker.
+      const standing = await spGet(`${listAt}?$select=Id,Description`);
+      if (!standing.ok) return refuse(`the build list was not read: the read ${unanswered(standing)}`);
+      if (!standing.body || standing.body.Description !== OWNERSHIP_DESCRIPTION) {
+        return refuse(`'${L.title}' does not carry this probe's ownership description; run MODE = 'build' first`);
+      }
+      listId = String(standing.body.Id).replace(/[{}]/g, '');
+      if (!GUID.test(listId)) return refuse('the list read answered no list Id');
     }
-    const created = await post('web/lists', { __metadata: { type: 'SP.List' }, Title: LIST,
-      BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION });
-    said('list create', created);
-    // Only a list this run's create answered for is written to, and only by its Id: the title may be another's now.
-    listId = created.ok && created.body && created.body.d ? String(created.body.d.Id).replace(/[{}]/g, '') : '';
-    if (!GUID.test(listId)) {
-      return refuse(`the list create answered HTTP ${created.status} with no list Id; nothing more was written`);
-    }
-  } else {
-    // Later runs write only to the list the build run made, found by title and proved by its marker.
-    const standing = await spGet(`${listAt}?$select=Id,Description`);
-    if (!standing.ok) return refuse(`the build list was not read: the read ${unanswered(standing)}`);
-    if (!standing.body || standing.body.Description !== OWNERSHIP_DESCRIPTION) {
-      return refuse(`'${LIST}' does not carry this probe's ownership description; run MODE = 'build' first`);
-    }
-    listId = String(standing.body.Id).replace(/[{}]/g, '');
-    if (!GUID.test(listId)) return refuse('the list read answered no list Id');
-  }
-  const at = `web/lists(guid'${listId}')`;
-  let list = null;
-  if (!await establishFixture(LIST_F, async () => (list = await spGet(
-    `${at}?$select=Description,ListItemEntityTypeFullName,RootFolder/ServerRelativeUrl&$expand=RootFolder`)),
-  { Description: OWNERSHIP_DESCRIPTION, ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0,
-    RootFolder: (v) => !!v && typeof v.ServerRelativeUrl === 'string' && v.ServerRelativeUrl.startsWith('/') },
-  dependents(LIST_F))) return finish(true);
+    L.at = `web/lists(guid'${listId}')`;
+    return establishFixture(L.ids.list, async () => (L.list = await spGet(
+      `${L.at}?$select=Description,ListItemEntityTypeFullName,RootFolder/ServerRelativeUrl&$expand=RootFolder`)),
+    { Description: OWNERSHIP_DESCRIPTION, ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0,
+      RootFolder: (v) => !!v && typeof v.ServerRelativeUrl === 'string' && v.ServerRelativeUrl.startsWith('/') },
+    dependents(L.ids.list));
+  };
+  const M = LISTS[0];
+  if (!await standList(M)) return finish(true);
+  const at = M.at;
+  const list = M.list;
 
   if (MODE === 'size') {
     // The default item content type, as the deploy finds it: an Item-derived type that is not a folder.
@@ -635,59 +666,74 @@
     return finish(true);
   }
 
-  // Options 9 adds the field to the default content type, without which it reaches no form.
-  const addField = (schemaXml) => post(`${at}/fields/createfieldasxml`, { parameters: {
-    __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: schemaXml, Options: 9 } });
-  if (BUILD) {
-    for (const name of [NUM, BLANKS.number]) {
-      said(`${name} create`, await addField(`<Field Type='Number' Name='${name}' DisplayName='${name}'></Field>`));
-    }
-    for (const name of [TXT, BLANKS.text]) {
-      said(`${name} create`, await addField(`<Field Type='Text' Name='${name}' DisplayName='${name}'></Field>`));
-    }
-    for (const name of [DAT, LEAP, BLANKS.date]) {
-      said(`${name} create`, await addField(`<Field Type='DateTime' Name='${name}' DisplayName='${name}' Format='DateOnly'></Field>`));
-    }
-    for (const name of [CHO, BLANKS.choice]) {
-      said(`${name} create`, await addField(`<Field Type='Choice' Name='${name}' DisplayName='${name}'>`
-        + '<CHOICES><CHOICE>Low</CHOICE><CHOICE>High</CHOICE></CHOICES></Field>'));
-    }
-  }
-  const readFields = () => spGet(`${at}/fields?$select=InternalName,TypeAsString&$top=500`);
-  let fields = null;
-  const kindOf = (name) => {
-    const f = ((fields && fields.body && fields.body.value) || []).find((r) => r && r.InternalName === name);
-    return f && f.TypeAsString;
-  };
-  const OPERAND_KINDS = { [NUM]: 'Number', [TXT]: 'Text', [DAT]: 'DateTime', [LEAP]: 'DateTime', [CHO]: 'Choice',
-    BlankNum: 'Number', BlankText: 'Text', BlankDate: 'DateTime', BlankChoice: 'Choice' };
-  if (!await establishFixture(COLS, async () => (fields = await readFields()),
-    { value: (rows) => Array.isArray(rows) && Object.entries(OPERAND_KINDS).every(([n, k]) => kindOf(n) === k) },
-    dependents(COLS))) return finish(true);
-
-  let itemId = null;
-  if (BUILD) {
-    const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
-      Title: 'facts', ...ITEM_VALUES });
-    said('item create', made);
-    itemId = made.body && made.body.d ? made.body.d.Id : null;
-  } else {
-    // The build run made exactly one item; later runs find it rather than assuming its Id.
-    const items = await spGet(`${at}/items?$select=Id&$top=2`);
-    itemId = !unanswered(items) && Array.isArray(items.body.value) && items.body.value.length === 1
-      ? items.body.value[0].Id : null;
-  }
   const day = (v) => typeof v === 'string' && v.slice(0, 10);
-  const itemRead = () => (Number.isInteger(itemId)
-    ? spGet(`${at}/items(${itemId})?$select=Id,Created,${NUM},${TXT},${DAT},${CHO},${LEAP},${Object.values(BLANKS).join(',')}`)
-    : { ok: false, status: 0, body: null });
-  let item = null;
-  if (!await establishFixture(ITEM, async () => (item = await itemRead()), {
-    Id: itemId, [NUM]: 5, [TXT]: 'abc', [CHO]: 'Low', [DAT]: (v) => day(v) === '2026-03-15',
-    [LEAP]: (v) => day(v) === '2024-02-29',
-    ...Object.fromEntries(Object.values(BLANKS).map((n) => [n, (v) => v === null])),
-    Created: (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) },
-  dependents(ITEM))) return finish(true);
+  // standData makes or finds one list's operand columns and its one item, and reads both back.
+  const standData = async (L) => {
+    const at = L.at;
+    const list = L.list;
+    // Options 9 adds the field to the default content type, without which it reaches no form.
+    const addField = (schemaXml) => post(`${at}/fields/createfieldasxml`, { parameters: {
+      __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: schemaXml, Options: 9 } });
+    if (BUILD) {
+      for (const name of [NUM, BLANKS.number]) {
+        said(`${name} create`, await addField(`<Field Type='Number' Name='${name}' DisplayName='${name}'></Field>`));
+      }
+      for (const name of [TXT, BLANKS.text]) {
+        said(`${name} create`, await addField(`<Field Type='Text' Name='${name}' DisplayName='${name}'></Field>`));
+      }
+      for (const name of [DAT, LEAP, BLANKS.date]) {
+        said(`${name} create`, await addField(`<Field Type='DateTime' Name='${name}' DisplayName='${name}' Format='DateOnly'></Field>`));
+      }
+      for (const name of [CHO, BLANKS.choice]) {
+        said(`${name} create`, await addField(`<Field Type='Choice' Name='${name}' DisplayName='${name}'>`
+          + '<CHOICES><CHOICE>Low</CHOICE><CHOICE>High</CHOICE></CHOICES></Field>'));
+      }
+    }
+    const readFields = () => spGet(`${at}/fields?$select=Title,InternalName,TypeAsString&$top=500`);
+    let fields = null;
+    const kindOf = (name) => {
+      const f = ((fields && fields.body && fields.body.value) || []).find((r) => r && r.InternalName === name);
+      return f && f.TypeAsString;
+    };
+    const OPERAND_KINDS = { [NUM]: 'Number', [TXT]: 'Text', [DAT]: 'DateTime', [LEAP]: 'DateTime', [CHO]: 'Choice',
+      BlankNum: 'Number', BlankText: 'Text', BlankDate: 'DateTime', BlankChoice: 'Choice' };
+    if (!await establishFixture(L.ids.cols, async () => (fields = await readFields()),
+      { value: (rows) => Array.isArray(rows) && Object.entries(OPERAND_KINDS).every(([n, k]) => kindOf(n) === k) },
+      dependents(L.ids.cols))) return false;
+
+    let itemId = null;
+    if (BUILD) {
+      const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
+        Title: 'facts', ...ITEM_VALUES });
+      said('item create', made);
+      itemId = made.body && made.body.d ? made.body.d.Id : null;
+    } else {
+      // The build run made exactly one item; later runs find it rather than assuming its Id.
+      const items = await spGet(`${at}/items?$select=Id&$top=2`);
+      itemId = !unanswered(items) && Array.isArray(items.body.value) && items.body.value.length === 1
+        ? items.body.value[0].Id : null;
+    }
+    const itemRead = () => (Number.isInteger(itemId)
+      ? spGet(`${at}/items(${itemId})?$select=Id,Created,${NUM},${TXT},${DAT},${CHO},${LEAP},${Object.values(BLANKS).join(',')}`)
+      : { ok: false, status: 0, body: null });
+    let item = null;
+    if (!await establishFixture(L.ids.item, async () => (item = await itemRead()), {
+      Id: itemId, [NUM]: 5, [TXT]: 'abc', [CHO]: 'Low', [DAT]: (v) => day(v) === '2026-03-15',
+      [LEAP]: (v) => day(v) === '2024-02-29',
+      ...Object.fromEntries(Object.values(BLANKS).map((n) => [n, (v) => v === null])),
+      Created: (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) },
+    dependents(L.ids.item))) return false;
+
+    L.fields = fields;
+    L.itemId = itemId;
+    L.item = item;
+    return true;
+  };
+  for (const L of LISTS) {
+    if (L !== M && !await standList(L)) return finish(true);
+    if (!await standData(L)) return finish(true);
+  }
+  const { itemId, item } = M;
 
   const fieldAt = (name) => `${at}/fields/getbyinternalnameortitle('${name}')`;
   const readFormatters = async () => {
@@ -702,16 +748,21 @@
 
   if (BUILD) {
     const refused = [];
-    for (const c of CASES) {
+    const silent = [];
+    for (const [L, c] of LISTS.flatMap((x) => x.cases.map((k) => [x, k]))) {
       const body = { __metadata: { type: 'SP.FieldCalculated' }, Title: c.name, FieldTypeKind: 17,
         OutputType: c.outputType, Formula: c.formula };
       if (c.dateFormat !== undefined) body.DateFormat = c.dateFormat;
-      const r = await post(`${at}/fields`, body);
-      if (!r.ok) refused.push(`${c.name} (${c.formula}): HTTP ${r.status} ${reason(r)}`);
+      const r = await post(`${L.at}/fields`, body);
+      // Only a refusal is a finding; a write nobody answered, or one refused for a column or row-size limit, leaves its case unknown.
+      const why = r.ok ? null : silentOf(r) || (CAPACITY.test(reason(r)) ? `named a column or row-size limit: ${reason(r)}` : null);
+      if (!r.ok) (why ? silent : refused).push(`${c.name} (${c.formula}): HTTP ${r.status} ${why || reason(r)}`);
     }
     record(CASE_ROW, 'every case column was created, or the server refused it with a message',
-      refused.length ? 'SOME REFUSED' : 'ALL ACCEPTED',
-      refused.length ? `${refused.length} of ${CASES.length} refused: ${refused.join(' | ')}` : `${CASES.length} created`);
+      silent.length ? 'NOT ESTABLISHED' : refused.length ? 'SOME REFUSED' : 'ALL ACCEPTED',
+      [silent.length && `${silent.length} of ${CASES.length} unanswered: ${silent.join(' | ')}`,
+        refused.length && `${refused.length} of ${CASES.length} refused: ${refused.join(' | ')}`].filter(Boolean).join('; ')
+        || `${CASES.length} created`, silent.length ? 'open' : undefined);
     for (const name of DATE_COLUMNS) {
       said(`${name} formatter write`, await post(fieldAt(name), { __metadata: { type: 'SP.FieldCalculated' },
         CustomFormatter: DATE_FORMATTER }, MERGE));
@@ -726,30 +777,69 @@
     { Information: (v) => !!v && [v.Bias, v.StandardBias, v.DaylightBias].every(Number.isFinite) }, dependents(ZONE));
 
   // Only columns the server created are selected: one absent name fails the whole read.
-  const present = new Set(fields.body.value.filter((f) => f && f.TypeAsString === 'Calculated').map((f) => f.InternalName));
-  const names = CASES.map((c) => c.name).filter((n) => present.has(n));
+  // The server encodes some leading letters in an internal name, and an underscore-led one is read as OData_<name>.
+  const present = new Map(LISTS.flatMap((L) => L.fields.body.value
+    .filter((f) => f && f.TypeAsString === 'Calculated')
+    .map((f) => [f.Title, f.InternalName.startsWith('_') ? `OData_${f.InternalName}` : f.InternalName])));
   const values = {};
   const unread = {};
-  for (let i = 0; i < names.length; i += 20) {
-    const chunk = names.slice(i, i + 20);
-    const r = await spGet(`${at}/items(${itemId})?$select=${chunk.join(',')}`);
-    if (unanswered(r)) { for (const n of chunk) unread[n] = `UNREAD: ${unanswered(r)}`; } else Object.assign(values, r.body);
+  for (const L of LISTS) {
+    const names = L.cases.map((c) => c.name).filter((n) => present.has(n));
+    for (let i = 0; i < names.length; i += 20) {
+      const chunk = names.slice(i, i + 20);
+      const r = await spGet(`${L.at}/items(${L.itemId})?$select=${chunk.map((n) => present.get(n)).join(',')}`);
+      if (unanswered(r)) { for (const n of chunk) unread[n] = `UNREAD: ${unanswered(r)}`; } else for (const n of chunk) if (present.get(n) in r.body) values[n] = r.body[present.get(n)];
+    }
   }
   const cell = (n) => (n in unread ? unread[n] : n in values ? values[n] : present.has(n) ? 'UNREAD' : 'ABSENT');
+  // A fact settles only from a value the server returned: the column present, its property in the payload and, where a kind is named, of that kind.
+  const isDate = (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+  const unreadOf = (ns, kind) => ns.flatMap((n) => {
+    if (!present.has(n)) return [`${n} is absent (not created at build)`];
+    if (n in unread) return [`${n} ${unread[n]}`];
+    if (!(n in values) || values[n] === undefined) return [`${n} was not in the payload`];
+    if (kind === 'date' && !isDate(values[n])) return [`${n} read ${JSON.stringify(values[n])}, not a date`];
+    return [];
+  });
   const asText = await spGet(`${at}/items(${itemId})/FieldValuesAsText`);
   const textOf = (n) => (unanswered(asText) ? `UNREAD: ${unanswered(asText)}` : asText.body[n]);
   const schema = await spGet(`${fieldAt('Ndisp')}?$select=SchemaXml`);
-  const decimals = unanswered(schema) ? `UNREAD: ${unanswered(schema)}`
+  const textFailure = (ns) => (unanswered(asText) ? [`FieldValuesAsText ${unanswered(asText)}`]
+    : ns.filter((n) => typeof asText.body[n] !== 'string').map((n) => `FieldValuesAsText.${n} is absent or not text`));
+  const schemaFailure = unanswered(schema) ? [`SchemaXml ${unanswered(schema)}`]
+    : typeof schema.body.SchemaXml !== 'string' ? ['SchemaXml is absent or not text'] : [];
+  const decimals = schemaFailure.length ? `UNREAD: ${schemaFailure[0]}`
     : ((/\bDecimals="([^"]*)"/.exec(schema.body.SchemaXml) || [])[1] ?? 'absent');
 
   // A fact whose fixture failed was voided already and stays so.
   const live = (id) => (RESULTS.find((r) => r.id === id) || {}).state !== 'void';
-  if (live(F_OVERFLOW)) {
-    FACTS.date_overflow = Object.fromEntries(OVERFLOW_CASES.map(([n, call]) => [call, cell(n)]));
+  // A fact whose value read failed is open with the failure as its reason, never MEASURED.
+  const unresolved = (id, key, question, reasons) => {
+    const why = `a value read failed: ${reasons.join('; ')}`;
+    FACTS[key] = `INCONCLUSIVE: ${why}`;
+    record(id, question, 'NOT ESTABLISHED', why, 'open');
+  };
+  // FieldValuesAsText keys an encoded internal name in a form the item does not use (the OData_ prefix and an escaped underscore, _x005f_), so match each key after undoing both.
+  const textKeyOf = (n) => {
+    const want = (present.get(n) || n).replace(/^OData_/, '');
+    const body = unanswered(asText) ? {} : asText.body;
+    return Object.keys(body).find((k) => k.replace(/^OData_/, '').replace(/_x005f_/gi, '_') === want);
+  };
+  const shownOf = (n) => { const k = textKeyOf(n); return k === undefined ? undefined : asText.body[k]; };
+  const overflowRead = [...unreadOf(OVERFLOW_CASES.map(([n]) => n)),
+    ...(unanswered(asText) ? [`FieldValuesAsText ${unanswered(asText)}`]
+      : OVERFLOW_CASES.filter(([n]) => typeof shownOf(n) !== 'string').map(([n]) => `FieldValuesAsText.${n} is absent or not text (keys like it: ${Object.keys(asText.body).filter((k) => /ov\d|eq\d/i.test(k)).join(', ') || 'none'})`))];
+  if (live(F_OVERFLOW) && overflowRead.length) {
+    unresolved(F_OVERFLOW, 'date_overflow', 'what DATE gives for a month or day out of range, and a leap day plus one year', overflowRead);
+  } else if (live(F_OVERFLOW)) {
+    FACTS.date_overflow = Object.fromEntries(OVERFLOW_CASES.map(([n, call]) => [call, { instant: cell(n), displayed: shownOf(n) }]));
     record(F_OVERFLOW, 'what DATE gives for a month or day out of range, and a leap day plus one year', 'MEASURED',
-      OVERFLOW_CASES.map(([n, call]) => `${call} = ${cell(n)}`).join('; '));
+      OVERFLOW_CASES.map(([n, call]) => `${call} = ${cell(n)}, displayed ${shownOf(n)}`).join('; '));
   }
-  if (live(F_BLANK)) {
+  const blankRead = unreadOf(CASES.slice(0, BLANK_CASES).map((c) => c.name));
+  if (live(F_BLANK) && blankRead.length) {
+    unresolved(F_BLANK, 'blank_coercion', 'what each operator gives for a blank beside each operand type', blankRead);
+  } else if (live(F_BLANK)) {
     const blank = {};
     for (const [code, sign] of OPS) {
       blank[code] = { sign };
@@ -759,37 +849,71 @@
     FACTS.blank_coercion = { operands: { number: ITEM_VALUES[NUM], text: ITEM_VALUES[TXT], date: ITEM_VALUES[DAT], choice: ITEM_VALUES[CHO] }, cases: blank };
     const missing = CASES.slice(0, BLANK_CASES).filter((c) => !present.has(c.name)).length;
     record(F_BLANK, 'what each operator gives for a blank beside each operand type', 'MEASURED',
-      `${BLANK_CASES - missing} of ${BLANK_CASES} cases read; ${missing} absent (refused at build)`);
+      `${BLANK_CASES - missing} of ${BLANK_CASES} cases read; ${missing} absent (not created at build)`);
   }
-  if (live(F_TEXT)) {
+  const textRead = unreadOf(['Teq1', 'Teq2']);
+  if (live(F_TEXT) && textRead.length) {
+    unresolved(F_TEXT, 'text_equality_case', 'whether text equality ignores case', textRead);
+  } else if (live(F_TEXT)) {
     FACTS.text_equality_case = { literal: cell('Teq1'), column: cell('Teq2') };
     record(F_TEXT, 'whether text equality ignores case', 'MEASURED', `"a"="A" gives ${cell('Teq1')}; TextA="ABC" gives ${cell('Teq2')}`);
   }
-  if (zone && live(F_CREATED)) {
+  const createdRead = [...unreadOf(['CpdZero', 'CpdOne'], 'date'), ...textFailure(['CpdZero', 'CpdOne', 'Cdr'])];
+  if (zone && live(F_CREATED) && createdRead.length) {
+    unresolved(F_CREATED, 'created_plus_days_day', 'whether [Created]+n takes its day in site-local time', createdRead);
+  } else if (zone && live(F_CREATED)) {
     const { Bias, StandardBias, DaylightBias } = zoneRead.body.Information;
     const created = Date.parse(item.body.Created);
     const dayAt = (offsetMinutes) => new Date(created + offsetMinutes * 60000).toISOString().slice(0, 10);
     const utc = dayAt(0);
     const standard = dayAt(-(Bias + StandardBias));
     const daylight = dayAt(-(Bias + DaylightBias));
-    const zero = day(cell('CpdZero'));
+    // The displayed date decides: instants cannot, since +0 and +24 h are the same under either reading. The text's field order is learned from Cdr, whose date is known (2026-03-15).
+    const order = [['dmy', /^15\D+0?3\D+2026$/], ['mdy', /^0?3\D+15\D+2026$/], ['ymd', /^2026\D+0?3\D+15$/]].find(([, re]) => re.test(String(textOf('Cdr')).trim()));
+    const shown = (n) => {
+      const p = String(textOf(n)).trim().match(/^(\d{1,4})\D+(\d{1,2})\D+(\d{1,4})(?!\d)/);
+      if (!order || !p) return null;
+      const [y, m, d] = order[0] === 'dmy' ? [p[3], p[2], p[1]] : order[0] === 'mdy' ? [p[3], p[1], p[2]] : [p[1], p[2], p[3]];
+      return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    };
+    const zero = shown('CpdZero');
+    const one = shown('CpdOne');
+    const nextDay = (d) => new Date(Date.parse(d) + 86400000).toISOString().slice(0, 10);
     const discriminates = standard !== utc && daylight !== utc;
-    const verdict = !zero ? 'UNREADABLE'
-      : !discriminates ? 'NOT DISCRIMINATED: the local day equals the UTC day; build again between 00:00 and 11:00 local'
-        : zero === utc ? 'UTC DAY' : [standard, daylight].includes(zero) ? 'SITE-LOCAL DAY' : 'OTHER DAY';
+    // Minutes east of UTC. The local day differs from the UTC day only in the last (east) or first (west) m minutes of the UTC day, m the smaller offset.
+    const east = [-(Bias + StandardBias), -(Bias + DaylightBias)];
+    const clock = (minutes) => {
+      const v = ((minutes % 1440) + 1440) % 1440;
+      return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+    };
+    const m = Math.min(...east.map(Math.abs));
+    const [from, to] = east[0] > 0 ? [1440 - m, 1440] : [0, m];
+    const buildWindow = east.every((o) => o > 0) || east.every((o) => o < 0)
+      ? `${clock(from + east[0])} to ${clock(to + east[0])} local on standard time, ${clock(from + east[1])} to ${clock(to + east[1])} local on daylight time`
+      : null;
+    const verdict = !zero || !one ? 'UNREADABLE'
+      : !discriminates ? `NOT DISCRIMINATED: the local day equals the UTC day; ${buildWindow ? `build again between ${buildWindow}` : 'this zone has no window where the local day differs from the UTC day under both offsets'}`
+        : one !== nextDay(zero) ? 'OTHER DAY'
+          : zero === utc ? 'UTC DAY' : [standard, daylight].includes(zero) ? 'SITE-LOCAL DAY' : 'OTHER DAY';
     FACTS.created_plus_days_day = { created: item.body.Created, utc_day: utc, standard_local_day: standard,
-      daylight_local_day: daylight, plus_zero: cell('CpdZero'), plus_one: cell('CpdOne'), verdict };
-    const settled = discriminates && zero;
+      daylight_local_day: daylight, plus_zero: cell('CpdZero'), plus_one: cell('CpdOne'), shown_zero: zero, shown_one: one, verdict };
+    const settled = discriminates && ['UTC DAY', 'SITE-LOCAL DAY'].includes(verdict);
     record(F_CREATED, 'whether [Created]+n takes its day in site-local time', settled ? verdict : 'NOT ESTABLISHED',
-      `${verdict}; created ${item.body.Created}, +0 reads ${cell('CpdZero')}, +1 reads ${cell('CpdOne')}`, settled ? undefined : 'open');
+      `${verdict}; created ${item.body.Created}, +0 reads ${cell('CpdZero')}, +1 reads ${cell('CpdOne')}; displayed ${zero} and ${one}`, settled ? undefined : 'open');
   }
-  if (live(F_DATE_READ)) {
+  const dateRead = [...unreadOf(['Cdr', 'CdrTime'], 'date'), ...textFailure(['Cdr', 'CdrTime', 'Created'])];
+  if (live(F_DATE_READ) && dateRead.length) {
+    unresolved(F_DATE_READ, 'calculated_date_read', 'how a calculated date reads over REST and as text', dateRead);
+  } else if (live(F_DATE_READ)) {
     FACTS.calculated_date_read = { Cdr: { rest: cell('Cdr'), text: textOf('Cdr') },
       CdrTime: { rest: cell('CdrTime'), text: textOf('CdrTime') }, created_text: textOf('Created') };
     record(F_DATE_READ, 'how a calculated date reads over REST and as text', 'MEASURED',
       `Cdr ${cell('Cdr')} as text ${textOf('Cdr')}; CdrTime ${cell('CdrTime')} as text ${textOf('CdrTime')}`);
   }
-  if (live(F_NUMBER)) {
+  const numberRead = [...unreadOf(['Ndisp', 'NdispWhole']), ...textFailure(['Ndisp', 'NdispWhole']), ...schemaFailure];
+  if (live(F_NUMBER) && numberRead.length) {
+    unresolved(F_NUMBER, 'calculated_number_display', 'how a calculated number with no decimals setting reads and displays', numberRead);
+  } else if (live(F_NUMBER)) {
     FACTS.calculated_number_display = { Ndisp: { rest: cell('Ndisp'), text: textOf('Ndisp') },
       NdispWhole: { rest: cell('NdispWhole'), text: textOf('NdispWhole') }, decimals_attribute: decimals };
     record(F_NUMBER, 'how a calculated number with no decimals setting reads and displays', 'MEASURED',

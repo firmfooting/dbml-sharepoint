@@ -13781,14 +13781,14 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch generic list with operand columns, one item, about 150 calculated case columns and a column formatter on two of them, and on the default content type a form formatter written at growing sizes; recycled by the next build run with CLEANUP on"
+        "four scratch generic lists with operand columns, one item each, about 150 calculated case columns in all (at most 40 per list) and a column formatter on two of them, and on the first list's default content type a form formatter written at growing sizes; recycled by the next build run with CLEANUP on"
       ],
       "cleanup": {
         "policy": "before"
       },
       "prerequisites": [
         "permission to create and recycle lists on the site",
-        "Run MODE = 'build' between 00:00 and 11:00 site-local time, then 'read', then 'size'",
+        "Run MODE = 'build' in a window where the site-local day differs from the UTC day, then 'read', then 'size'",
         "A person opens the list's All items view and Display form after the read run, and the New form after the size run, and records what the page shows"
       ],
       "scenarios": [
