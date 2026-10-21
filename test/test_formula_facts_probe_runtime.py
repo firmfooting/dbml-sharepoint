@@ -181,7 +181,8 @@ _MOCK = textwrap.dedent(r"""
       }
       if (rest.startsWith("/contenttypes('0x01')")) {
         if (method === 'POST') {
-          if (CONFIG.throttle) return answer(429, 'busy');
+          const busy = CONFIG.throttle === true ? 429 : CONFIG.throttle;
+          if (busy) return answer(busy, 'busy');
           const next = JSON.parse(body).ClientFormCustomFormatter;
           if (CONFIG.limit && next.length > CONFIG.limit) return fail('the formatter is too large');
           stored = next;
@@ -356,6 +357,15 @@ def test_a_throttled_size_search_is_left_open_not_recorded_as_a_limit() -> None:
 
     row = rows["formula.calc.fact-header-size-limit"]
     assert row["state"] == "open" and "429" in row["evidence"]
+    assert _facts(output)["header_size_limit"].startswith("INCONCLUSIVE")
+
+
+@pytest.mark.parametrize("status", [502, 504])
+def test_a_gateway_error_on_the_size_search_is_inconclusive_not_a_refusal(status: int) -> None:
+    rows, _sent, output = _run({**SIZE_PRIOR, "throttle": status}, SIZE)
+
+    row = rows["formula.calc.fact-header-size-limit"]
+    assert row["state"] == "open" and str(status) in row["evidence"]
     assert _facts(output)["header_size_limit"].startswith("INCONCLUSIVE")
 
 
