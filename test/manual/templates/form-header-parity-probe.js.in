@@ -313,9 +313,18 @@
   };
 
   // ---- The items -------------------------------------------------------
+  // A stored date is the UTC instant of the site's local midnight, so the site shows the intended day in any zone.
+  const offsetAt = (ms) => DATA.zoneTable.transitions.reduce((o, [at, m]) => (Date.parse(at) <= ms ? m : o), DATA.zoneTable.start);
+  const midnight = (iso) => {
+    const local = Date.parse(`${iso}T00:00:00Z`);
+    const offsets = [DATA.zoneTable.start, ...DATA.zoneTable.transitions.map((t) => t[1])];
+    const at = offsets.map((o) => local - o * 60000).find((ms) => offsetAt(ms) === (local - ms) / 60000);
+    return new Date(at === undefined ? local - offsetAt(local) * 60000 : at).toISOString();
+  };
+  const dayOf = (v) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(Date.parse(v) + offsetAt(Date.parse(v)) * 60000).toISOString().slice(0, 10) : null);
   const body = (it, start) => ({
     __metadata: { type: entityType }, Title: it.title, Status: it.Status, Impact: it.Impact, Risk: it.Risk,
-    Start: start ? `${start}T00:00:00Z` : null,
+    Start: start ? midnight(start) : null,
   });
   const itemUrl = (id) => `${at}/items(${id})`;
   const ids = {};
@@ -354,7 +363,6 @@
     }
   }
   if (BUILD) await findIds();
-  const dayOf = (v) => (typeof v === 'string' ? v.slice(0, 10) : null);
   const none = (v) => v === null || v === undefined || v === '';
 
   // The order check reads the stored month-end date as the site writes it.

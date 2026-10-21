@@ -1,8 +1,9 @@
 """Generate form-header-parity-probe.js: a generated form header against its calculated columns.
 
-Run: uv run python test/manual/generate_form_header_parity_probe.py OUTPUT.js [ZONE]
+Run: uv run python test/manual/generate_form_header_parity_probe.py OUTPUT.js [ZONE [DATE_ORDER]]
 The header is built by the same code a blueprint build runs, for the site zone named (default
-Australia/Melbourne), so the zone in the probe's site-zone fixture row is the one the header was
+Australia/Melbourne) and date order (dmy, mdy or ymd; default dmy), so the zone in the probe's
+site-zone fixture row is the one the header was
 generated for. A test pins the committed probe to this generator's output.
 """
 
@@ -17,12 +18,14 @@ from zoneinfo import ZoneInfo
 from dbml_sharepoint.analysis.form_header import resolve_form_headers
 from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.styles import TOKENS
+from dbml_sharepoint.analysis.timezones import zone_table
 from dbml_sharepoint.bundle import write_artifact
+from dbml_sharepoint.model.form_components import DATE_ORDERS
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 
 DEFAULT_ZONE = "Australia/Melbourne"
-DATE_ORDER = "dmy"
+DEFAULT_DATE_ORDER = "dmy"
 LIST_TITLE = "FormHeaderParity"
 OWNERSHIP = "dbml-sharepoint form-header-parity probe scratch list. Safe to delete."
 APOSTROPHE = "Can't start"
@@ -62,7 +65,8 @@ UNLISTED = "Unlisted value"
 # Month ends, year ends, 28 and 29 February, and the days around 2026 daylight changes.
 START_DATES = [
     "2025-12-31", "2026-01-01", "2026-01-31", "2026-02-28", "2026-03-01", "2024-02-28",
-    "2024-02-29", "2024-03-01", "2026-04-04", "2026-04-05", "2026-10-03", "2026-10-04",
+    "2024-02-29", "2024-03-01", "2026-04-04", "2026-04-05", "2026-04-06", "2026-10-03",
+    "2026-10-04", "2026-10-05", "2026-03-08", "2026-03-09", "2026-11-01", "2026-11-02",
 ]
 MONTH_END = "2026-01-31"
 
@@ -97,7 +101,8 @@ Table Task {
 }
 """
 
-FORM = f"""Task:
+def _form(order: str) -> str:
+    return f"""Task:
   header:
     title: {{ column: Title, blank: "Untitled" }}
     subtitle:
@@ -105,9 +110,9 @@ FORM = f"""Task:
       - {{ text: "Impact {{Impact}}", columns: [Impact] }}
     rows:
       - items:
-          - {{ column: Cutoff, label: "Due by", date_order: {DATE_ORDER}, due: true }}
-          - {{ column: Review, label: "Review on", date_order: {DATE_ORDER} }}
-          - {{ column: Chased, label: "Chased on", date_order: {DATE_ORDER} }}
+          - {{ column: Cutoff, label: "Due by", date_order: {order}, due: true }}
+          - {{ column: Review, label: "Review on", date_order: {order} }}
+          - {{ column: Chased, label: "Chased on", date_order: {order} }}
           - {{ column: Rating, label: "Rating now", tokens: {{ High: severe, Medium: warning, Low: good }} }}
           - badge: {{ text: "{APOSTROPHE_SLOT}", token: warning, when: {{ field: Status, op: eq, value: Open }} }}
 """  # noqa: E501 -- a form.yaml flow line
@@ -144,10 +149,12 @@ def _fill_slot(node: object) -> int:
     return found
 
 
-def _header(zone: str) -> str:
+def _header(zone: str, order: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        sources = (("schema.dbml", SCHEMA), ("mapping.yaml", _mapping()), ("form.yaml", FORM))
+        sources = (
+            ("schema.dbml", SCHEMA), ("mapping.yaml", _mapping()), ("form.yaml", _form(order)),
+        )
         for name, text in sources:
             write_artifact(root / name, text)
         bundle = load_mapping(root / "mapping.yaml")
@@ -170,6 +177,22 @@ def _zone_biases(zone: str) -> dict[str, int]:
         offsets.append(int(offset.total_seconds() // 60))
     standard, daylight = min(offsets), max(offsets)
     return {"Bias": -standard, "StandardBias": 0, "DaylightBias": -(daylight - standard)}
+
+
+_FROM = datetime(2020, 1, 1, tzinfo=UTC)
+_TO = datetime(2036, 1, 1, tzinfo=UTC)
+
+
+def _zone_table(zone: str) -> dict[str, object]:
+    """The zone's offsets (minutes east of UTC) so the probe can find a local midnight's instant."""
+    table = zone_table(zone)
+    return {
+        "start": table.offset_at(_FROM),
+        "transitions": [
+            [at.strftime("%Y-%m-%dT%H:%M:%SZ"), offset]
+            for at, offset in table.transitions if _FROM <= at < _TO
+        ],
+    }
 
 
 def _items() -> list[dict[str, object]]:
@@ -197,7 +220,7 @@ def _items() -> list[dict[str, object]]:
     return items
 
 
-def _data(zone: str) -> dict[str, object]:
+def _data(zone: str, order: str) -> dict[str, object]:
     columns: list[dict[str, object]] = [
         {"name": name, "kind": "choice", "choices": choices} for name, choices in CHOICES.items()
     ]
@@ -207,17 +230,21 @@ def _data(zone: str) -> dict[str, object]:
             {"name": name, "kind": "calc", "result": KINDS[name], "formula": "=" + formula},
         )
     return {
-        "list": LIST_TITLE, "ownership": OWNERSHIP, "dateOrder": DATE_ORDER,
-        "zone": _zone_biases(zone), "formatter": _header(zone), "columns": columns,
+        "list": LIST_TITLE, "ownership": OWNERSHIP, "dateOrder": order,
+        "zone": _zone_biases(zone), "zoneTable": _zone_table(zone),
+        "formatter": _header(zone, order), "columns": columns,
         "items": _items(), "bubbles": BUBBLES, "days": DAYS, "monthEnd": MONTH_END,
         "blockedClass": TOKENS["blocked"].classes, "apostrophe": APOSTROPHE,
         "dueLabel": "Due by", "markerLabel": "Rating now",
     }
 
 
-def render(zone: str = DEFAULT_ZONE) -> str:
-    """The probe text for a site zone, stamped with the digest of its own text."""
-    text = TEMPLATE.replace("__DATA__", json.dumps(_data(zone), indent=2))
+def render(zone: str = DEFAULT_ZONE, order: str = DEFAULT_DATE_ORDER) -> str:
+    """The probe text for a site zone and date order, stamped with the digest of its own text."""
+    if order not in DATE_ORDERS:
+        message = f"date order {order!r} is not one of {', '.join(DATE_ORDERS)}"
+        raise ValueError(message)
+    text = TEMPLATE.replace("__DATA__", json.dumps(_data(zone, order), indent=2))
     stamp = hashlib.sha256(text.encode()).hexdigest()[:8]
     return text.replace("00000000", stamp)
 
@@ -228,4 +255,7 @@ TEMPLATE = (Path(__file__).parent / "templates" / "form-header-parity-probe.js.i
 
 
 if __name__ == "__main__":
-    write_artifact(Path(sys.argv[1]), render(sys.argv[2] if len(sys.argv) > 2 else DEFAULT_ZONE))
+    try:
+        write_artifact(Path(sys.argv[1]), render(*sys.argv[2:4]))
+    except ValueError as refusal:
+        sys.exit(str(refusal))
