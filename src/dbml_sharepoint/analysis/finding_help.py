@@ -1216,7 +1216,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED: (
         "A calculated column's formula uses a function or operator that has "
         "no exact formatting-expression equivalent, so a header could differ "
-        "from the column."
+        "from the column. That includes a text or choice literal with a "
+        "single quote, because no escape for one inside an "
+        "expression is measured, and arithmetic or a comparison whose "
+        "operands are not provably safe (a divisor that may be zero, a number "
+        "not known to be whole, a stored date compared by its instant)."
     ),
     FindingCode.FORM_FORMULA_VOLATILE: (
         "A calculated column's formula calls TODAY or NOW. Its value changes "
@@ -1224,8 +1228,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED: (
         "A calculated column's formula reads a column that is not a text, "
-        "number, date or choice column, whose blank value a header cannot "
-        "tell from zero, or a date column read where it can be blank."
+        "date or choice column: a stored number column is refused because "
+        "its blank value is not documented, as are lookup, person and "
+        "multi-value columns. A date column read where it can be blank is "
+        "refused too."
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "
@@ -1258,9 +1264,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_HEADER_TEXT_UNSUPPORTED: (
         "A header or footer text cannot be written safely: it has a single "
-        "quote where it is placed inside an expression, or `[$` or `@` where "
-        "it is a plain string. The formatting reference documents no escape "
-        "for the first and does not say how the second is read."
+        "quote where it is placed inside an expression (a text, a token key or a "
+        "condition value), or `[$` or `@` where it is a plain string. No "
+        "escape for a single quote inside an expression is measured, and the "
+        "formatting reference does not say how the second is read."
     ),
     FindingCode.FORM_HEADER_ICON_UNKNOWN: (
         "A header or footer chip or banner names an icon outside the fleet "

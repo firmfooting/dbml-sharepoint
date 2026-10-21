@@ -1,6 +1,6 @@
 """The measured formula facts the reference evaluator is pinned to.
 
-Printed by test/manual/formula-facts-probe.js from a live run on a test tenant. Dates in
+Printed by test/manual/formula-facts-probe.js. Dates in
 `instant` form are UTC instants of site-local midnight; `displayed` is the site-local date as
 the item text shows it (day/month/year).
 """

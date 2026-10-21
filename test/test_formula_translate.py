@@ -50,9 +50,8 @@ PARITY: dict[str, tuple[str, str]] = {
     "MIN": ("MIN([Qty]+0,[Price]+0,5)", "number"),
     "MAX": ("MAX([Qty]+0,[Price]+0,5)", "number"),
     "ABS": ("ABS([Qty]-5)", "number"),
-    "INT": ("INT([Qty]/4)", "number"),
-    "ROUND": ("ROUND(([Qty]+1)/2,0)", "number"),
-    "ROUND quarters": ("ROUND([Qty]/4,0)", "number"),
+    "INT": ("INT([Qty]-5)", "number"),
+    "ROUND": ("ROUND([Qty]*2,0)", "number"),
     "ampersand": ('[Name]&"-"&[Status]&5', "text"),
     "CONCATENATE": ('CONCATENATE([Name],"x",[Status])', "text"),
     "LEFT": ("LEFT([Name],2)", "text"),
@@ -63,8 +62,10 @@ PARITY: dict[str, tuple[str, str]] = {
     "plus": ("[Qty]+[Price]", "number"),
     "minus": ("[Qty]-[Price]", "number"),
     "times": ("[Qty]*[Price]", "number"),
-    "divide": ("[Qty]/[Price]", "number"),
+    "divide": ("[Qty]/([Price]+1)", "number"),
+    "divide by a literal": ("[Qty]/4", "number"),
     "power": ("[Qty]^[Price]", "number"),
+    "power negative exponent": ("[Qty]^(0-1)", "number"),
     "percent": ("[Qty]%*2", "number"),
     "negation": ("-[Qty]+1", "number"),
     "equal": ('IF([Qty]=[Price],"t","f")', "text"),
@@ -166,6 +167,18 @@ REFUSED = [
     ("[Qty]>1", "text", FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, "yes/no"),
     ("YEAR([Due])", "number", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Due"),
     ("[Due]", "date", FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, "Due"),
+    # A zero divisor, a zero or negative-power zero base and a negative base to a fraction are
+    # column errors; the header would give Infinity or NaN instead.
+    ("[Qty]/[Price]", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
+    ("[Qty]/0", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
+    ("1/(2-2)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
+    ("[Qty]/([Price]-1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
+    ("[Price]^(0-1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
+    ("([Price]-1)^[Price]", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
+    ("[Price]^([Price]-1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
+    ("[Qty]^0.5", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
+    ("INT([Qty]/4)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "INT"),
+    ("ROUND([Qty]/4,0)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ROUND"),
     ("ROUND([Qty]+0,2)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ROUND"),
     ("LEFT([Name],[Qty])", "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "LEFT"),
     ("ISBLANK([Qty])", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "ISBLANK"),
@@ -193,3 +206,54 @@ def test_a_refusal_names_the_formula_and_what_it_refused(
     assert refusal.code is code
     assert named in refusal.detail
     assert formula in message
+
+
+# A quote has no documented escape inside an expression literal, in a plain or a table formula.
+@pytest.mark.parametrize(
+    "formula",
+    ['"It\'s"', 'IF([Status]="O\'pen","a","b")', 'IF([Status]="Open","It\'s","b")', '[Name]&"\'"'],
+)
+def test_a_single_quote_in_a_text_is_refused(formula: str) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(formula, "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "single quote" in found.value.detail
+
+
+@pytest.mark.parametrize("literal", ["1000000000000000000", "0.00001", "123456789012345678"])
+@pytest.mark.parametrize("join", ['"a"&{}', 'CONCATENATE("a",{})'])
+def test_a_number_literal_that_prints_in_scientific_form_is_not_joined_as_text(
+    literal: str, join: str
+) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(join.format(literal), "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+
+
+@pytest.mark.parametrize("literal", ["0.0001", "999999999999999", "5"])
+def test_a_plain_decimal_literal_is_joined_as_text(literal: str) -> None:
+    expression = translate_column("Calc", _ctx(f'"a"&{literal}', "text")).expression
+    assert f"'{literal}'" in expression
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        'IF(0.1+0.2=0.3,"y","n")',
+        'IF([Qty]/4>0.5,"y","n")',
+        'IF([Qty]%=0.03,"y","n")',
+        'IF(1.5<>1.5,"y","n")',
+    ],
+)
+def test_a_comparison_of_numbers_not_known_to_be_whole_is_refused_not_folded(formula: str) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(formula, "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "not known to be whole" in found.value.detail
+
+
+@pytest.mark.parametrize("name", ["MIN", "MAX"])
+def test_a_many_argument_extreme_is_refused_as_too_large_before_it_grows(name: str) -> None:
+    # Each step repeats the running code twice, so the size is checked inside the loop.
+    refusal, _ = _refusal(f"{name}({','.join(['[Qty]'] * 60)})")
+    assert refusal.code is FindingCode.FORM_HEADER_TOO_LARGE

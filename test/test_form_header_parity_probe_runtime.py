@@ -15,7 +15,10 @@ import re
 import sys
 import textwrap
 from collections.abc import Mapping
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from types import ModuleType
+from zoneinfo import ZoneInfo
 
 import pytest
 from _json_view import Json
@@ -98,11 +101,30 @@ _MOCK = textwrap.dedent(r"""
     const calc = (it) => (it.Start ? { Cutoff: addDays(it.Start, days(it)), Review: monthsLater(it),
       Chased: addDays(it.Start, wait(it)) } : { Cutoff: null, Review: null, Chased: null });
     const rating = (it) => it.Risk || 'High';
-    const padded = (iso) => iso.split('-').reverse().join('/');
-    const plain = (iso) => iso.split('-').reverse().map(Number).join('/');
+    const ORDER = CONFIG.order || 'dmy';
+    const inOrder = (iso, fix) => {
+      const [y, m, d] = iso.split('-').map(fix);
+      return (ORDER === 'mdy' ? [m, d, y] : ORDER === 'ymd' ? [y, m, d] : [d, m, y]).join('/');
+    };
+    const padded = (iso) => inOrder(iso, String);
+    const plain = (iso) => inOrder(iso, Number);
+    // The site's own zone: a stored instant is read back as the site's local day, as a site does.
+    const SITE = CONFIG.tz || 'Australia/Melbourne';
+    const eastOf = (ms) => {
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: SITE, hourCycle: 'h23',
+        year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+        .formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
+      return (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(ms / 1000) * 1000) / 60000;
+    };
+    const dayOfInstant = (text) => new Date(Date.parse(text) + eastOf(Date.parse(text)) * 60000).toISOString().slice(0, 10);
+    const instantOfDay = (iso) => {
+      const local = Date.parse(iso + 'T00:00:00Z');
+      const guess = local - eastOf(local) * 60000;
+      return new Date(local - eastOf(guess) * 60000).toISOString();
+    };
     const textRow = (it) => {
       const c = calc(it);
-      const row = { Title: it.Title, Modified: '21/10/2026 6:00 AM', Rating: rating(it) };
+      const row = { Title: it.Title, Modified: padded(TODAY) + ' 6:00 AM', Rating: rating(it) };
       if (it.Start) row.Start = padded(it.Start);
       for (const k of Object.keys(c)) row[k] = c[k] ? padded(c[k]) : '';
       return row;
@@ -113,11 +135,12 @@ _MOCK = textwrap.dedent(r"""
       if (CONFIG.wrong === it.Title && review) review = addDays(review, 1);
       let reviewText = review ? plain(review) : '';
       if (CONFIG.badDate === it.Title && review) reviewText = '29.5/3/2026';
+      const sep = CONFIG.colon ? ': ' : ' '; // the built header prints "Label: value"
       const lines = [it.Title, it.Status, it.Impact ? 'Impact ' + it.Impact : ''];
       if (c.Cutoff) {
-        lines.push('Due by ' + plain(c.Cutoff), 'Review on ' + reviewText, 'Chased on ' + plain(c.Chased));
+        lines.push('Due by' + sep + plain(c.Cutoff), 'Review on' + sep + reviewText, 'Chased on' + sep + plain(c.Chased));
       }
-      lines.push('Rating now ' + (CONFIG.wrongRating === it.Title ? 'Low' : rating(it)));
+      lines.push('Rating now' + sep + (CONFIG.wrongRating === it.Title ? 'Low' : rating(it)));
       if (it.Status === 'Open') lines.push(CONFIG.apostrophe);
       return lines.filter(Boolean).join('\n');
     };
@@ -184,7 +207,7 @@ _MOCK = textwrap.dedent(r"""
         if (rest === '/items' && method === 'POST') {
           const sent = JSON.parse(body);
           const it = { Id: items.length + 1, Title: sent.Title, Impact: sent.Impact, Risk: sent.Risk,
-            Status: sent.Status, Start: sent.Start ? sent.Start.slice(0, 10) : null };
+            Status: sent.Status, Start: sent.Start ? dayOfInstant(sent.Start) : null };
           items.push(it);
           return answer(201, { d: { Id: it.Id } });
         }
@@ -195,12 +218,12 @@ _MOCK = textwrap.dedent(r"""
           if (one[2].startsWith('/FieldValuesAsText')) return answer(200, textRow(it));
           if (method === 'POST') {
             const sent = JSON.parse(body);
-            if ('Start' in sent) it.Start = sent.Start ? sent.Start.slice(0, 10) : null;
+            if ('Start' in sent) it.Start = sent.Start ? dayOfInstant(sent.Start) : null;
             return answer(204, '');
           }
           const c = calc(it);
           return answer(200, { Id: it.Id, Title: it.Title, Status: it.Status, Impact: it.Impact, Risk: it.Risk,
-            Start: it.Start ? it.Start + 'T00:00:00Z' : null, Cutoff: c.Cutoff, Review: c.Review,
+            Start: it.Start ? instantOfDay(it.Start) : null, Cutoff: c.Cutoff, Review: c.Review,
             Chased: c.Chased, Rating: rating(it), Wait: wait(it) });
         }
         return answer(200, { Id: LIST_ID, Description: list.Description,
@@ -271,6 +294,14 @@ def test_every_item_agrees_when_the_header_shows_what_the_columns_hold() -> None
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     assert rows[PARITY]["outcome"] == "AGREE" and rows[PARITY]["state"] == "settled"
     assert ended_with_report(output)
+
+
+@pytest.mark.parametrize("colon", [True, False])
+def test_the_label_reader_takes_the_value_with_or_without_a_colon(colon: bool) -> None:
+    _rows, _sent, output = _run({"colon": colon})
+
+    assert _lines(output, "DISAGREE") == []
+    assert [ln.removeprefix("AGREE ") for ln in _lines(output, "AGREE")] == TITLES
 
 
 def test_a_header_differing_from_its_column_prints_disagree_for_that_row_only() -> None:
@@ -406,3 +437,70 @@ def test_the_revision_is_derived_from_the_probe_text() -> None:
     neutral = js.replace(stamped.group(1), "00000000")
     assert stamped.group(1) == hashlib.sha256(neutral.encode()).hexdigest()[:8]
     assert f"probe revision {stamped.group(1)}." in js
+
+
+def _generated_run(
+    tmp_path: Path, zone: str, order: str,
+) -> tuple[dict[str, Json], list[Json], str]:
+    probe = tmp_path / "probe.js"
+    text = GEN.render(zone, order)
+    probe.write_text(text, encoding="utf-8", newline="\n")
+    match = re.search(r'^  "formatter": (".*"),?$', text, re.MULTILINE)
+    assert match is not None
+    config = {
+        **CONFIG, "tz": zone, "order": order, "zone": GEN._zone_biases(zone),
+        "formatter": json.loads(match.group(1)),
+    }
+    quick = {
+        "  const POLL_MS = 500;": "  const POLL_MS = 0;",
+        "  const WAIT_MS = 30000;": "  const WAIT_MS = 50;",
+    }
+    return run_probe(_MOCK, probe, GATES, config, swaps=quick, pin=False)
+
+
+# A daylight change day and the day after, per zone, among the dates the probe writes.
+@pytest.mark.parametrize(("zone", "edge"), [
+    ("America/Los_Angeles", ("2026-03-08", "2026-03-09")),
+    ("Australia/Melbourne", ("2026-04-05", "2026-04-06")),
+])
+def test_every_written_date_is_the_site_local_midnight_of_the_intended_day(
+    tmp_path: Path, zone: str, edge: tuple[str, str],
+) -> None:
+    _rows, sent, output = _generated_run(tmp_path, zone, "dmy")
+
+    written: dict[str, str] = {}
+    for request in _writes(sent):
+        text = request["body"].text
+        body = Json.loads(text) if text else Json({})
+        if body.get("Start").value:
+            written[body["Title"].text] = body["Start"].text
+    items = {str(i["title"]): i for i in GEN._items()}
+    assert set(written) == {t for t, i in items.items() if i["Start"] or "dueOffset" in i}
+    for title, instant in written.items():
+        item = items[title]
+        # The mock's own day is 2026-10-21; a relative item starts its lead time before the due day.
+        days = GEN.DAYS.get(str(item["Impact"]), 0)
+        lead = timedelta(days=int(str(item.get("dueOffset", 0))) - days)
+        want =str(item["Start"]) if item["Start"] else (date(2026, 10, 21) + lead).isoformat()
+        local = datetime.fromisoformat(instant).astimezone(ZoneInfo(zone))
+        assert (local.date().isoformat(), local.time()) == (want, time(0)), (title, instant)
+    assert set(edge) <= {str(i["Start"]) for i in items.values()}
+    assert _lines(output, "DISAGREE") == []
+
+
+@pytest.mark.parametrize("order", ["dmy", "mdy", "ymd"])
+def test_the_date_order_argument_sets_the_probe_and_the_site_text_it_reads(
+    tmp_path: Path, order: str,
+) -> None:
+    assert GEN.render("America/Los_Angeles", order).count(f'"dateOrder": "{order}"') == 1
+
+    rows, _sent, output = _generated_run(tmp_path, "America/Los_Angeles", order)
+
+    assert rows[ID + "fixture-parity-date-order"]["outcome"] == "PASS"
+    assert rows[PARITY]["outcome"] == "AGREE"
+    assert _lines(output, "DISAGREE") == []
+
+
+def test_a_date_order_the_form_does_not_know_is_refused_by_name() -> None:
+    with pytest.raises(ValueError, match="'dmy ' is not one of dmy, mdy, ymd"):
+        GEN.render("Australia/Melbourne", "dmy ")

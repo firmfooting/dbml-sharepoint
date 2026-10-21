@@ -1,7 +1,10 @@
 """Render a form.yaml header or footer component tree as formatter JSON.
 
-Core adds no words of its own: every visible word is a literal from the tree. A calculated
-column a header reads is replaced by its translated formula, because a header reads one as blank.
+The build adds no words: every visible word is a literal from the tree. It adds only structural
+punctuation: a middle dot between subtitle parts, a colon after a bubble label and a slash in a
+computed date.
+A calculated column a header reads is replaced by its translated formula, because a header
+reads one as blank.
 Shapes follow the formatting syntax reference (Microsoft Learn,
 https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference):
 elmType div, span and a; the style properties display, flex, padding, margin, border-radius and
@@ -26,7 +29,12 @@ from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.civil import parts_of
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
-from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
+from dbml_sharepoint.analysis.formula.translate import (
+    ALWAYS,
+    NEVER,
+    TranslationContext,
+    translate_column,
+)
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
@@ -52,8 +60,6 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
 }
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
 _SECONDARY = "ms-fontColor-neutralSecondary"
-_NEVER = "0 == 1"
-_ALWAYS = "0 == 0"
 Json = dict[str, object]
 
 
@@ -201,8 +207,8 @@ class _Render:
         self.calc(column)
         day, blank = self.days[column]
         # A blank row is hidden by the bubble, so the text is not guarded again.
-        filled = f"if({blank}, {_NEVER}, {_ALWAYS})" if blank else _ALWAYS
-        return _Value(_date_text(day, order), blank or _NEVER, filled)
+        filled = f"if({blank}, {NEVER}, {ALWAYS})" if blank else ALWAYS
+        return _Value(_date_text(day, order), blank or NEVER, filled)
 
     def value(self, column: str, order: str | None = None) -> _Value:
         declared = self.ctx.types[column]
@@ -242,6 +248,13 @@ class _Render:
         except ConditionRefusal as error:
             code = REFUSAL_FINDING_CODES[error.kind]
             raise self.refusal(code, error.field, str(error)) from error
+        for literal in _LITERAL.findall(raw):
+            if "''" in literal[1:-1]:  # the doubled quote the renderer writes for a single quote
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, None,
+                    f"a condition value contains a single quote ({literal}), and no escape "
+                    "for one inside an expression is measured.",
+                )
         # A blank date field is not '' (measured), so its blank test is on its text.
         raw = _DATE_BLANK.sub(self.date_blank, raw)
         for part in _LITERAL.split(raw)[::2]:
@@ -261,8 +274,8 @@ class _Render:
         if "'" in text:
             raise self.refusal(
                 FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
-                f"the {where} text {text!r} contains a single quote, and the formatting "
-                "reference gives no escape for one inside an expression.",
+                f"the {where} text {text!r} contains a single quote, and no escape "
+                "for one inside an expression is measured.",
             )
         return quoted(text)
 

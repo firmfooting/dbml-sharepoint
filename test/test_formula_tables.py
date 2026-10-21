@@ -119,6 +119,25 @@ def test_unlisted_value_takes_the_formulas_own_result(formula: str, unlisted: st
     assert _run(expression, {"Status": ""}) == unlisted
 
 
+@pytest.mark.parametrize(
+    "formula",
+    [
+        'IF([Status]="O\'x",1,2)',
+        _matrix("{}{}").replace('"W"', '"W\'"'),
+        'CHOOSE(IF([Status]="A",1,IF([Status]="B\'",2,3)),4,5,6)',
+    ],
+)
+def test_a_quoted_choice_literal_is_no_table_and_the_plain_path_refuses_it_by_name(
+    formula: str,
+) -> None:
+    assert _tabulated(formula) is None
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(formula, "number"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "single quote" in found.value.detail
+    assert repr(formula) in found.value.finding("Task", "Calc", formula).message
+
+
 def test_a_mixed_result_is_still_refused() -> None:
     with pytest.raises(FormulaRefusal) as found:
         translate_column("Calc", _ctx('IF([Status]="A",1,"x")', "text"))

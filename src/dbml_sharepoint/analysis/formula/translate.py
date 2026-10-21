@@ -22,6 +22,7 @@ from typing import Literal, NoReturn
 
 from dbml_sharepoint.analysis.column_refs import calculated_cycle, formula_column_refs
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.civil import (
     END_DAY,
     FIRST_DAY,
@@ -45,15 +46,14 @@ from dbml_sharepoint.analysis.formula.syntax import (
     Ref,
     Text,
 )
-from dbml_sharepoint.analysis.formula.tables import quoted
 from dbml_sharepoint.analysis.formula.tables import tabulate as build_table
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 
 # These two never hold a blank, so a formula may read them without testing for one.
 _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
-_NEVER = "0 == 1"
-_ALWAYS = "0 == 0"
+NEVER = "0 == 1"
+ALWAYS = "0 == 0"
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
 _MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
@@ -63,6 +63,7 @@ _NO_EQUIVALENT = {
     "LEN": "and the formatting reference documents no text-length operator",
     "RIGHT": "and the formatting reference documents no text-length operator to count from the end",
 }
+_NO_QUOTE = "and no escape for one inside an expression is measured"
 # A choice column reads as text; its listed values do not matter to a formula.
 _CHOICE_KINDS = frozenset({"choice"})
 _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}
@@ -95,13 +96,16 @@ class _Tr:
     """A translated value. A "date" is a day number on a fixed calendar. `values` is every value a
     number or date can take (None when unknown), which is how a date's range is proven; a value
     of unknown range is checked when the formula runs instead. `moment` marks a date that came
-    from a date-and-time column, whose time of day the day number drops."""
+    from a date-and-time column, whose time of day the day number drops. `instant` names the stored
+    date column a value was read from: a calculated column sees such a column as a fractional
+    serial of its instant, so comparing or subtracting it is not whole days."""
 
     code: str
     kind: Literal["text", "number", "bool", "date"]
     values: frozenset[float] | None = None
     integral: bool = False  # a whole number by construction, when `values` is unknown
     moment: bool = False
+    instant: str = ""
     truth: bool | None = None  # the value of a condition built from constants alone
 
     @property
@@ -133,11 +137,18 @@ def _unsupported(name: str, why: str) -> NoReturn:
     _refuse(FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, f"uses {name}, {why}")
 
 
-_q = quoted
-
-
 def _lit(value: float) -> str:
     return str(int(value)) if value == int(value) else f"{Decimal(repr(value)):f}"
+
+
+def _power_is_safe(base: _Tr, exponent: _Tr) -> bool:
+    """Every base and exponent pair is known and none is zero to a non-positive power or a
+    negative base to a fractional one, which are column errors (zero to zero is measured)."""
+    if base.values is None or exponent.values is None:
+        return False
+    return not any(
+        (x == 0 and y <= 0) or (x < 0 and y != int(y)) for x in base.values for y in exponent.values
+    )
 
 
 def _num(tr: _Tr, what: str) -> str:
@@ -159,7 +170,10 @@ def _text_of(node: Expr, tr: _Tr, name: str) -> str:
         return tr.code
     # A computed number prints with SharePoint's 15 significant digits, which toString does not.
     if isinstance(node, Num):
-        return _q(f"{node.value:.15g}")
+        text = f"{node.value:.15g}"
+        # Scientific forms (1e+18, 1e-05) are not known to match how the column prints them.
+        if abs(node.value) < 1e15 and "e" not in text:
+            return quoted(text)
     return _unsupported(
         name, "which joins a number as text and a header cannot print it the same way"
     )
@@ -239,7 +253,7 @@ class _Translator:
             expr = parse_formula(self.ctx.formulas[name])
         except FormulaSyntaxError as error:
             return _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"does not parse: {error}")
-        if not stack and (guarded := self.blank_guarded(expr, stack)) is not None:
+        if not stack and (guarded := self.blank_guarded(expr, (name,))) is not None:
             return guarded
         return self.go(expr, (*stack, name))
 
@@ -261,8 +275,8 @@ class _Translator:
         found, fail = self.scoped(kept, stack, self.filled | filled)
         if found.kind != "date":
             return None
-        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {_NEVER}, {_ALWAYS})"
-        self.fails.append(f"if({blank}, {_ALWAYS}, {fail or _NEVER})")
+        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {NEVER}, {ALWAYS})"
+        self.fails.append(f"if({blank}, {ALWAYS}, {fail or NEVER})")
         return found
 
     def go(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
@@ -276,7 +290,9 @@ class _Translator:
             case Num(value=value):
                 return _Tr(_lit(value), "number", frozenset({value}))
             case Text(value=value):
-                return _Tr(_q(value), "text")
+                if "'" in value:
+                    _unsupported("a text with a single quote", _NO_QUOTE)
+                return _Tr(quoted(value), "text")
             case Ref(name=name):
                 return self.ref(name, stack)
             case Neg(operand=operand):
@@ -334,7 +350,9 @@ class _Translator:
         rule = zone_rule(self.ctx.zone)
         if rule.daylight is not None:  # a fixed offset is exact for any instant
             self.fails.append(out_of_span_instant(ms, rule))
-        return _Tr(site_day(ms, rule), "date", moment=system or name in self.ctx.moments)
+        return _Tr(
+            site_day(ms, rule), "date", moment=system or name in self.ctx.moments, instant=name
+        )
 
     def binary(self, op: str, left: Expr, right: Expr, stack: tuple[str, ...]) -> _Tr:
         a, b = self.go(left, stack), self.go(right, stack)
@@ -345,6 +363,10 @@ class _Translator:
         if op in ("=", "<>", "<", ">", "<=", ">="):
             return self.compare(op, a, b)
         x, y = _num(a, op), _num(b, op)
+        if op == "/" and (b.values is None or 0 in b.values):
+            _unsupported(op, "with a divisor not provably nonzero, where the column is an error")
+        if op == "^" and not _power_is_safe(a, b):
+            _unsupported(op, "with a base and exponent not provably free of a column error")
         # pow and the arithmetic signs are on the Learn page (Binary operators).
         ops: dict[str, Callable[[float, float], float]] = {
             "+": lambda p, q: p + q,
@@ -368,13 +390,17 @@ class _Translator:
         if count.kind != "number" or not count.whole or (moment is b and op == "-"):
             _unsupported(op, "which a header reproduces only for a date and a whole number of days")
         values = _combine(moment, count, lambda p, q: p + sign * q)
-        # Whole days on the site calendar, so the time of day is dropped.
-        return _Tr(f"({moment.code} {op} {count.code})", "date", values)
+        # The day number drops the time of day, so a display is exact; a comparison is not.
+        return _Tr(f"({moment.code} {op} {count.code})", "date", values, instant=moment.instant)
 
     @staticmethod
     def no_time_of_day(op: str, *dates: _Tr) -> None:
-        if any(d.moment for d in dates):
-            _unsupported(op, "which compares a date and time column's time of day, not measured")
+        if named := next((d.instant for d in dates if d.instant), ""):
+            _unsupported(
+                op,
+                f"which compares or subtracts the date column [{named}] by its instant, and a "
+                "calculated column sees that as a fraction of a day, not a whole one",
+            )
 
     def compare(self, op: str, a: _Tr, b: _Tr) -> _Tr:
         js = {"=": "==", "<>": "!="}.get(op, op)
@@ -386,6 +412,10 @@ class _Translator:
                 _unsupported(op, "which orders text and a header cannot match the column's order")
             # Text equality ignores case (measured); toLowerCase is on the Learn page.
             return _Tr(f"(toLowerCase({a.code}) {js} toLowerCase({b.code}))", "bool")
+        _num(a, op), _num(b, op)
+        if not (a.whole and b.whole):
+            # Python or JavaScript floats can disagree with the column's arithmetic (0.1+0.2=0.3).
+            _unsupported(op, "which compares numbers not known to be whole")
         truth = None
         if a.values is not None and b.values is not None and len(a.values) == len(b.values) == 1:
             (x,), (y,) = a.values, b.values
@@ -466,6 +496,8 @@ class _Translator:
             case "ABS" | "INT":
                 fn = "abs" if name == "ABS" else "floor"  # Learn: abs, floor
                 shape = abs if name == "ABS" else math.floor
+                if name == "INT" and not vals[0].whole:
+                    _unsupported(name, "of a number not known to be whole, which is not measured")
                 whole = name == "INT" or vals[0].whole
                 code = f"{fn}({_num(vals[0], name)})"
                 return _Tr(code, "number", _mapped(vals[0], shape), whole)
@@ -555,7 +587,7 @@ class _Translator:
                 self.fails.append(fail)
             return taken
         if yes_fail or no_fail:
-            self.fails.append(f"if({cond}, {yes_fail or _NEVER}, {no_fail or _NEVER})")
+            self.fails.append(f"if({cond}, {yes_fail or NEVER}, {no_fail or NEVER})")
         return self.joined(f"if({cond}, {self.value(yes)}, {self.value(no)})", [yes, no])
 
     def choose_branch(self, args: tuple[Expr, ...], first: _Tr, stack: tuple[str, ...]) -> _Tr:
@@ -579,7 +611,7 @@ class _Translator:
         for i in range(len(options) - 1, 0, -1):
             code = f"if({index} == {i}, {self.value(options[i - 1])}, {code})"
             if fail or scoped[i - 1][1]:
-                fail = f"if({index} == {i}, {scoped[i - 1][1] or _NEVER}, {fail or _NEVER})"
+                fail = f"if({index} == {i}, {scoped[i - 1][1] or NEVER}, {fail or NEVER})"
         if fail:
             self.fails.append(fail)
         return self.joined(code, options)
@@ -592,6 +624,7 @@ class _Translator:
             _union(*options),
             integral=all(o.whole for o in options),
             moment=any(o.moment for o in options),
+            instant=next((o.instant for o in options if o.instant), ""),
         )
 
     @staticmethod
@@ -619,6 +652,8 @@ class _Translator:
         code = parts[0]
         for part in parts[1:]:
             code = f"if({code} {sign} {part}, {code}, {part})"
+            if len(code) > FORM_HEADER_MAX_CHARS:  # each step doubles the code, so stop early
+                raise too_large(len(code))
         return code
 
     @staticmethod
@@ -629,6 +664,8 @@ class _Translator:
                 "ROUND", "with places other than 0, which a header cannot round the same way"
             )
         x = _num(vals[0], "ROUND")
+        if not vals[0].whole:
+            _unsupported("ROUND", "of a number not known to be whole, which is not measured")
         # Half away from zero, built from floor (Learn: floor) because the page lists no round.
         values = _mapped(vals[0], lambda v: -math.floor(0.5 - v) if v < 0 else math.floor(v + 0.5))
         code = f"if({x} < 0, 0 - floor(0 - {x} + 0.5), floor({x} + 0.5))"
