@@ -39,13 +39,14 @@ from dbml_sharepoint.analysis.formula.translate import (
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
+from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
 from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
 from dbml_sharepoint.model.help_guides import HelpGuides
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
@@ -76,7 +77,7 @@ class RenderContext:
     formulas: Mapping[str, str]  # calculated column -> formula
     choices: Mapping[str, tuple[str, ...]]  # choice column -> its values
     zone: str
-    list_path: str | None = None  # the list's declared web-relative URL, for a {list} token
+    list_path: str | None = None  # the list's web-relative folder; None when a retitle may move it
     # stored number columns that are required and have a default, so are never blank
     filled_numbers: frozenset[str] = frozenset()
     # guide key -> URL; None means help links are off, empty means on with nothing mapped
@@ -332,10 +333,11 @@ class _Render:
             if self.ctx.list_path is None:
                 raise self.refusal(
                     FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, chip.url_column,
-                    "the chip url uses {list}, and the entity declares no internal_name "
-                    "to give the list's address.",
+                    "the chip url uses {list}, and the list keeps the root folder of an earlier "
+                    "title (renamed_from, previous_prefixes or an added title), which its "
+                    "current title does not give. Set internal_name to the retained root.",
                 )
-            # Per-segment encoding as reporting/plan.py::_item_url_path does, so # and % survive.
+            # Per-segment encoding as every item link does, so # and % survive.
             encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
             text = text.replace("{list}", encoded)
         return lead + self.template(text, value, "chip url", chip.url_column)
@@ -737,6 +739,15 @@ def render_header(tree: HeaderTree, ctx: RenderContext) -> Json:
     return _Render(ctx).tree(tree)
 
 
+def _retitled(bundle: MappingBundle, name: str, entry: EntityMapping) -> bool:
+    """A title-derived path is unsafe when a rename keeps the old root folder."""
+    return not entry.internal_name and bool(
+        entry.renamed_from
+        or bundle.mapping.previous_prefixes
+        or bundle.mapping.implicit_previous_title(name),
+    )
+
+
 def _context(
     schema: Schema, bundle: MappingBundle, entity: str, zone: str,
     help_guides: Mapping[str, str] | None = None,
@@ -757,7 +768,9 @@ def _context(
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},
         zone=zone,
-        list_path=entry.internal_name,
+        list_path=None if _retitled(bundle, entity, entry) else list_folder(
+            entry, bundle.mapping.list_title(entity),
+        ),
         help_guides=help_guides,
         filled_numbers=frozenset(
             c.name for c in table.columns
