@@ -63,7 +63,7 @@ _NO_EQUIVALENT = {
     "LEN": "and the formatting reference documents no text-length operator",
     "RIGHT": "and the formatting reference documents no text-length operator to count from the end",
 }
-_NO_QUOTE = "and the formatting reference gives no escape for one inside an expression"
+_NO_QUOTE = "and no escape for one inside an expression is measured"
 # A choice column reads as text; its listed values do not matter to a formula.
 _CHOICE_KINDS = frozenset({"choice"})
 _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}

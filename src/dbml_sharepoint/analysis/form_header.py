@@ -248,6 +248,13 @@ class _Render:
         except ConditionRefusal as error:
             code = REFUSAL_FINDING_CODES[error.kind]
             raise self.refusal(code, error.field, str(error)) from error
+        for literal in _LITERAL.findall(raw):
+            if "''" in literal[1:-1]:  # the doubled quote the renderer writes for a single quote
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, None,
+                    f"a condition value contains a single quote ({literal}), and no escape "
+                    "for one inside an expression is measured.",
+                )
         # A blank date field is not '' (measured), so its blank test is on its text.
         raw = _DATE_BLANK.sub(self.date_blank, raw)
         for part in _LITERAL.split(raw)[::2]:
@@ -267,8 +274,8 @@ class _Render:
         if "'" in text:
             raise self.refusal(
                 FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
-                f"the {where} text {text!r} contains a single quote, and the formatting "
-                "reference gives no escape for one inside an expression.",
+                f"the {where} text {text!r} contains a single quote, and no escape "
+                "for one inside an expression is measured.",
             )
         return quoted(text)
 

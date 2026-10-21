@@ -474,6 +474,33 @@ def test_a_single_quote_inside_an_expression_is_refused(site: str) -> None:
     assert "It's" in found.value.finding.message
 
 
+QUOTED = Leaf("Risk", "eq", "O'x")
+WHEN_SITES: dict[str, HeaderTree] = {
+    "title when": HeaderTree(title=Title("Title", "b", when=QUOTED)),
+    "subtitle when": HeaderTree(
+        subtitle=(SubtitlePart(text="{Case}", columns=("Case",), when=QUOTED),)
+    ),
+    "chip when": HeaderTree(chips=(LinkChip("a", "Feedback", url="u", when=QUOTED),)),
+    "row when": HeaderTree(rows=(Row((Bubble("Risk"),), QUOTED),)),
+    "badge when": HeaderTree(rows=(Row((Badge("a", "muted", when=QUOTED),)),)),
+    "bubble when": HeaderTree(rows=(Row((Bubble("Risk", when=QUOTED),)),)),
+    "banner when": HeaderTree(
+        banner=Banner("L", "Lightbulb", (BannerRule(OPEN, "t"),), when=QUOTED)
+    ),
+    "banner rule when": HeaderTree(banner=Banner("L", "Lightbulb", (BannerRule(QUOTED, "t"),))),
+}
+
+
+@pytest.mark.parametrize("site", [*QUOTE_SITES, *WHEN_SITES])
+def test_a_single_quote_in_any_header_expression_is_refused_through_resolve(site: str) -> None:
+    tree = WHEN_SITES[site] if site in WHEN_SITES else QUOTE_SITES[site]("It's")
+    schema_, base = _bundle(tree)
+    resolved, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HEADER_TEXT_UNSUPPORTED]
+    assert "no escape" in findings[0].message
+    assert resolved.mapping.form_formatting["Task"].header is None
+
+
 def test_a_single_quote_in_plain_static_text_is_kept() -> None:
     chip = _kids(_kids(_render(HeaderTree(chips=(LinkChip("It's", "Feedback", url="u"),))))[0])[0]
     assert _kids(chip)[1]["txtContent"] == "It's"
