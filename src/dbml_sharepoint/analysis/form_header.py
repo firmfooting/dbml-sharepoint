@@ -43,7 +43,9 @@ from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition
+from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
 from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
+from dbml_sharepoint.model.help_guides import HelpGuides
 from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 
@@ -64,6 +66,7 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
 _ALIGN = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}
 _SECONDARY = "ms-fontColor-neutralSecondary"
+_HELP_LINK_NAME = "Help for this step, opens in a new tab"
 Json = dict[str, object]
 
 
@@ -77,6 +80,8 @@ class RenderContext:
     list_path: str | None = None  # the list's web-relative folder; None when a retitle may move it
     # stored number columns that are required and have a default, so are never blank
     filled_numbers: frozenset[str] = frozenset()
+    # guide key -> URL; None means help links are off, empty means on with nothing mapped
+    help_guides: Mapping[str, str] | None = None
 
 
 class HeaderRefusal(Exception):  # noqa: N818 -- named for the finding it becomes
@@ -648,11 +653,45 @@ class _Render:
         ]
         return overdue, guard
 
+    def help_urls(self, banner: Banner) -> list[str]:
+        """One URL per rule, '' for a rule with no link, so the first matching rule decides."""
+        urls = []
+        for number, rule in enumerate(banner.rules, start=1):
+            if rule.help is None or self.ctx.help_guides is None:
+                urls.append("")
+            elif rule.help not in self.ctx.help_guides:
+                raise self.refusal(
+                    FindingCode.FORM_HELP_KEY_UNMAPPED, None,
+                    f"banner rule {number} help key '{rule.help}' is not in DBMLSP_HELP_GUIDES.",
+                )
+            else:
+                urls.append(self.lit(self.ctx.help_guides[rule.help], "help url")[1:-1])
+        return urls
+
     def banner(self, banner: Banner) -> Json:
         rules = [
             (self.condition(r.when), self.lit(r.text, "banner rule")[1:-1])
             for r in banner.rules
         ]
+        links = [(c, url) for (c, _), url in zip(rules, self.help_urls(banner), strict=True)]
+        linked = any(url for _, url in links)
+        help_link: list[Json] = [{
+            "elmType": "a",
+            "style": {
+                "display": "=" + _chain([(c, "inline" if u else "none") for c, u in links], "none"),
+                "padding": "0 0 0 12px",
+                "white-space": "nowrap",
+                "flex": "none",
+            },
+            "attributes": {
+                "href": "=" + _chain(links, ""),
+                "target": "_blank",
+                "rel": "noopener noreferrer",
+                "title": _HELP_LINK_NAME,
+                "aria-label": _HELP_LINK_NAME,
+            },
+            "txtContent": "Help for this step",
+        }] if linked else []
         return {
             "elmType": "div",
             "style": {
@@ -662,6 +701,7 @@ class _Render:
                 "align-items": "center",
                 "padding": "6px 8px",
                 "margin": "8px 0 0 0",
+                **({"flex-wrap": "nowrap"} if linked else {}),
             },
             "attributes": {"class": "ms-bgColor-themeLighter ms-fontColor-themePrimary"},
             "children": [
@@ -676,7 +716,12 @@ class _Render:
                     "style": {"padding": "0 8px 0 0"},
                     "txtContent": self.plain(banner.label, "banner label"),
                 },
-                {"elmType": "span", "txtContent": "=" + _chain(rules, "")},
+                {
+                    "elmType": "span",
+                    **({"style": {"min-width": "0"}} if linked else {}),
+                    "txtContent": "=" + _chain(rules, ""),
+                },
+                *help_link,
             ],
         }
 
@@ -703,7 +748,10 @@ def _retitled(bundle: MappingBundle, name: str, entry: EntityMapping) -> bool:
     )
 
 
-def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> RenderContext | None:
+def _context(
+    schema: Schema, bundle: MappingBundle, entity: str, zone: str,
+    help_guides: Mapping[str, str] | None = None,
+) -> RenderContext | None:
     table = next((t for t in schema.tables if t.name == entity), None)
     entry = bundle.mapping.entities.get(entity)
     if table is None or entry is None:
@@ -723,6 +771,7 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
         list_path=None if _retitled(bundle, entity, entry) else list_folder(
             entry, bundle.mapping.list_title(entity),
         ),
+        help_guides=help_guides,
         filled_numbers=frozenset(
             c.name for c in table.columns
             if c.type in NUMBER_TYPES and c.required and c.default is not None
@@ -731,16 +780,36 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
 
 
 def resolve_form_headers(
-    schema: Schema, bundle: MappingBundle, time_zone: str
+    schema: Schema, bundle: MappingBundle, time_zone: str,
+    help: HelpGuides | None = None,  # noqa: A002 -- the documented name
+    help_off_warning: bool = True,
 ) -> tuple[MappingBundle, list[Finding]]:
     """The bundle with each component tree rendered into its entity's header and footer JSON.
 
     An entity whose part is refused keeps `None` for that part, and the finding says why.
+    `help` is None when help links are off: banner `help` keys then render nothing, and one
+    warning says so, unless `help_off_warning` is False (the caller cannot see the env settings
+    or has already reported why they are unusable).
     """
     findings: list[Finding] = []
+    if help is None and help_off_warning and any(
+        rule.help is not None
+        for trees in bundle.form_trees.values()
+        for tree in trees.values()
+        if tree.banner is not None
+        for rule in tree.banner.rules
+    ):
+        findings.append(Finding(
+            FindingCode.FORM_HELP_OFF,
+            f"banner rules carry help keys, but help links are off: set {HELP_BASE_URL_KEY} "
+            f"and {HELP_GUIDES_KEY} in the env file to render them.",
+            location=Location(Section.FORM_FORMATTING),
+        ))
     formatting = dict(bundle.mapping.form_formatting)
     for entity, trees in bundle.form_trees.items():
-        ctx = _context(schema, bundle, entity, time_zone)
+        ctx = _context(
+            schema, bundle, entity, time_zone, None if help is None else help.urls,
+        )
         if ctx is None:
             continue
         parts: dict[str, Json | None] = {}

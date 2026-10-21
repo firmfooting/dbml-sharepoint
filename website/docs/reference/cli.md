@@ -94,7 +94,7 @@ same precedence as every other key there: the flag wins, then the file.
 `build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
 defaults for flags an operator would otherwise retype on every
 invocation. `report` reads the same file for `DBMLSP_TIME_ZONE`, the one
-key it has an input for. There are six fixed keys today, plus one key per identity:
+key it has an input for. There are eight fixed keys today, plus one key per identity:
 
 | Key | Flag it supplies | Meaning |
 | --- | --- | --- |
@@ -105,6 +105,8 @@ key it has an input for. There are six fixed keys today, plus one key per identi
 | `DBMLSP_DEPLOY_LOG_SITE` | `--deployment-log-site` | Title of the central logging site the deployment log list lives on |
 | `DBMLSP_CHANGE_LOG_LIST` | `--change-log-list` | Title of the hidden per-site change log the deploy writes type-2 rows into |
 | `DBMLSP_TIME_ZONE` | `--time-zone` | The site's time zone as an IANA name; a build and a report each need one from the flag or from here |
+| `DBMLSP_HELP_BASE_URL` | none (file only) | The https folder URL the help guide pages live in. Set with `DBMLSP_HELP_GUIDES`, or neither |
+| `DBMLSP_HELP_GUIDES` | none (file only) | Path to a YAML file mapping each banner rule `help` key to a page name in that folder; a relative path is read from the env file's folder. Set with `DBMLSP_HELP_BASE_URL`, or neither |
 
 Every key carries the `DBMLSP_` prefix; a key without it, or one this
 table does not list, is refused rather than silently skipped.

@@ -202,12 +202,13 @@ def _banner(raw: object, context: str) -> Banner:
         _list(block.get("rules"), f"{context}.rules", empty="a banner needs at least one rule"),
     ):
         where = f"{context}.rules[{index}]"
-        entry = _known_keys(rule, {"when", "text"}, where)
+        entry = _known_keys(rule, {"when", "text", "help"}, where)
         if entry.get("when") is None:
             raise MappingShapeError(f"{where}: 'when' is required on a rule")
         rules.append(BannerRule(
             parse_condition(entry["when"], f"{where}.when"),
             _nonblank(entry.get("text"), f"{where}.text"),
+            None if "help" not in entry else _nonblank(entry["help"], f"{where}.help"),
         ))
     return Banner(
         _nonblank(block.get("label"), f"{context}.label"),

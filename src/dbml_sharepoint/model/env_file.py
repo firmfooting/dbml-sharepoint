@@ -64,6 +64,12 @@ CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
 TIME_ZONE_KEY: Final = "DBMLSP_TIME_ZONE"
 TIME_ZONE_PARAMETER: Final = "time_zone"
 
+# Help links on form-header banner rules: both keys together or neither.
+HELP_BASE_URL_KEY: Final = "DBMLSP_HELP_BASE_URL"
+HELP_BASE_URL_PARAMETER: Final = "help_base_url"
+HELP_GUIDES_KEY: Final = "DBMLSP_HELP_GUIDES"
+HELP_GUIDES_PARAMETER: Final = "help_guides"
+
 # One key per identity the mapping enrols, so the name set is open and checked by pattern.
 IDENTITY_KEY_PREFIX: Final = "DBMLSP_IDENTITY_"
 
@@ -133,6 +139,23 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
             "The site's time zone as an IANA name, such as Australia/Melbourne "
             "or Europe/London. What --time-zone would pass; a build needs one "
             "from either."
+        ),
+    ),
+    EnvSetting(
+        key=HELP_BASE_URL_KEY,
+        parameter=HELP_BASE_URL_PARAMETER,
+        help=(
+            "The https folder URL the help guide pages live in. Set with "
+            "DBMLSP_HELP_GUIDES, or neither."
+        ),
+    ),
+    EnvSetting(
+        key=HELP_GUIDES_KEY,
+        parameter=HELP_GUIDES_PARAMETER,
+        help=(
+            "Path to a YAML file mapping each banner rule help key to a page "
+            "name in the help folder; relative to this file. Set with "
+            "DBMLSP_HELP_BASE_URL, or neither."
         ),
     ),
 )

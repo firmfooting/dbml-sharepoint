@@ -309,7 +309,7 @@ documented disable, checked by the caller before this runs.
 ### `resolve_env_settings`
 
 ```python
-def resolve_env_settings(env_file: Path | None, enterprise_reader: str | EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None, *, identity_flags: Sequence[str] = ()) -> tuple[str | EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dict[str, str], EnvProvenance]
+def resolve_env_settings(env_file: Path | None, enterprise_reader: str | EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None, *, identity_flags: Sequence[str] = ()) -> tuple[str | EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dict[str, str], EnvProvenance, HelpSettings]
 ```
 
 Apply a resolved dbml-sharepoint.env file, honouring anything already

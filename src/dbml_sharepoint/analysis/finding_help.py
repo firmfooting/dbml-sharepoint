@@ -1288,6 +1288,33 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A stored date is shown in the site's own format and a calculated "
         "text is shown as it is, so the key would do nothing."
     ),
+    FindingCode.FORM_HELP_SETTING_INCOMPLETE: (
+        "Only one of `DBMLSP_HELP_BASE_URL` and `DBMLSP_HELP_GUIDES` is set in "
+        "the env file. Help links need both, so a half-set pair is refused "
+        "rather than building headers with no link. Set the missing key, or "
+        "remove the other."
+    ),
+    FindingCode.FORM_HELP_BASE_URL_INVALID: (
+        "`DBMLSP_HELP_BASE_URL` is not a usable folder address. It must be an "
+        "https URL with a host and no query or fragment, and not a "
+        "placeholder such as `<host>`, `REPLACE` or an `example.` or "
+        "`.invalid` host. A placeholder would deploy a link that goes nowhere."
+    ),
+    FindingCode.FORM_HELP_PAGE_INVALID: (
+        "The file named by `DBMLSP_HELP_GUIDES` cannot be used. It is missing, "
+        "unreadable, not a non-empty mapping, or has a repeated key, or one of "
+        "its pages is not a plain page name (text with no slash and no scheme)."
+    ),
+    FindingCode.FORM_HELP_KEY_UNMAPPED: (
+        "A banner rule's `help` key is not in the file named by "
+        "`DBMLSP_HELP_GUIDES`, so its link would have no address. Add the key "
+        "to that file, or correct the key in the mapping."
+    ),
+    FindingCode.FORM_HELP_OFF: (
+        "A banner rule has a `help` key but neither `DBMLSP_HELP_BASE_URL` nor "
+        "`DBMLSP_HELP_GUIDES` is set, so no help link is rendered. This is "
+        "expected for a build that does not use help links."
+    ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "
         "Calculated columns resolve to an empty string there, so the "

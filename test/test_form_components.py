@@ -232,3 +232,20 @@ def test_chip_title_and_bubble_blank_parse() -> None:
     )
     with pytest.raises(MappingShapeError, match="blank"):
         _parse(_row({"column": "Risk", "blank": ""}))
+
+
+def test_a_banner_rule_help_key_is_parsed_and_defaults_to_none() -> None:
+    tree = _parse({"banner": {"label": "L", "icon": "Info", "rules": [
+        {"when": _IS_OPEN, "text": "a", "help": "g-a"},
+        {"when": _IS_OPEN, "text": "b"},
+    ]}})
+    assert tree.banner is not None
+    assert [rule.help for rule in tree.banner.rules] == ["g-a", None]
+
+
+@pytest.mark.parametrize("blank", ["", None])
+def test_a_blank_banner_rule_help_key_is_refused_naming_it(blank: object) -> None:
+    with pytest.raises(MappingShapeError, match=r"rules\[0\]\.help"):
+        _parse({"banner": {"label": "L", "icon": "Info", "rules": [
+            {"when": _IS_OPEN, "text": "a", "help": blank},
+        ]}})

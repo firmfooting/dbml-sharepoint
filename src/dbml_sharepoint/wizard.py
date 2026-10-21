@@ -1413,7 +1413,7 @@ def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
     if solution.distribution == CORE_DISTRIBUTION:
         # Core's own are built end to end by its CI, so their findings are already known.
         return
-    resolved, header_findings = resolve_form_headers(schema, bundle, "UTC")
+    resolved, header_findings = resolve_form_headers(schema, bundle, "UTC", help_off_warning=False)
     findings = validate_all(schema, resolved, extension) + header_findings
     errors = [f for f in findings if f.severity == "error"]
     if errors:
