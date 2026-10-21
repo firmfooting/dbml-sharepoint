@@ -150,6 +150,7 @@ class _LibrarySetting(TypedDict):
     require_checkout: NotRequired[bool]
     enable_folder_creation: NotRequired[bool]
     draft_version_visibility: NotRequired[int]
+    content_approval: NotRequired[bool]
     folder_defaults: NotRequired[list[FolderDefaults]]
 
 
@@ -414,6 +415,8 @@ def _library_settings(
             entry["draft_version_visibility"] = DRAFT_VISIBILITY_VALUES[
                 settings.draft_version_visibility
             ]
+        if settings.content_approval is not None:
+            entry["content_approval"] = settings.content_approval
         if len(entry) > 1:
             declared.append(entry)
     return declared

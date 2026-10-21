@@ -161,7 +161,7 @@ def _declared_folder_defaults(
 def _declared_switches(
     title: str, settings: LibrarySettings | None,
 ) -> list[tuple[str, str, str, bool | int]]:
-    """The declared `enable_folder_creation` and `draft_version_visibility`, as stored."""
+    """The declared folder creation, draft visibility and content approval, as stored."""
     if settings is None:
         return []
     visibility = settings.draft_version_visibility
@@ -169,6 +169,7 @@ def _declared_switches(
         ("enable_folder_creation", "EnableFolderCreation", settings.enable_folder_creation),
         ("draft_version_visibility", "DraftVersionVisibility",
          None if visibility is None else DRAFT_VISIBILITY_VALUES[visibility]),
+        ("content_approval", "EnableModeration", settings.content_approval),
     )
     return [(title, key, prop, value) for key, prop, value in declared if value is not None]
 

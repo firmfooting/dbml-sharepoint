@@ -139,6 +139,7 @@ class ListRow(TypedDict):
     require_checkout: bool | None
     enable_folder_creation: bool | None
     draft_version_visibility: int | None
+    content_approval: bool | None
     item_security: ItemSecurity | None
 
 

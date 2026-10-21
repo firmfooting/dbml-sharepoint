@@ -136,6 +136,7 @@
   "lists": [
     {
       "base_template": 100,
+      "content_approval": null,
       "content_types_enabled": false,
       "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test for list Project.",
       "disable_attachments": false,
@@ -213,6 +214,7 @@
     },
     {
       "base_template": 100,
+      "content_approval": null,
       "content_types_enabled": false,
       "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test for list Task.",
       "disable_attachments": false,
@@ -294,6 +296,7 @@
     },
     {
       "base_template": 100,
+      "content_approval": null,
       "content_types_enabled": false,
       "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "disable_attachments": false,

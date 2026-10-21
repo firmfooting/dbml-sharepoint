@@ -17,6 +17,9 @@
   // Set to true and paste again to deploy onto a site the assessment called
   // DEGRADED. Defaults to refusing, like every probe's CONFIRMED flag.
   const ACKNOWLEDGE_DEGRADED = false;
+  // Set to true and paste again to turn content approval OFF on a library that
+  // still holds items pending approval. Defaults to refusing.
+  const ACKNOWLEDGE_PENDING_APPROVALS = false;
   const RELEASE_TAG = "0.1.0-test";
   const SCHEMA_VERSION = "0.8";
   const ASSESS_REQUIREMENTS = [

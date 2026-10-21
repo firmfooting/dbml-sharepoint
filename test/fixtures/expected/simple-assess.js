@@ -1579,11 +1579,14 @@
     }
 
     // EnableFolderCreation and DraftVersionVisibility, read only and INFO for the same reason.
+    const SWITCH_NOTES = {
+      EnableModeration: ' While it is on, readers see only approved items, and a new or changed item waits for an approver.',
+    };
     for (const [title, setting, prop, declared] of TARGETS.library_switches) {
       const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=${prop}`);
       const key = `library_setting:${title}:${prop}`;
       if (r.ok && typeof r.d[prop] === typeof declared) {
-        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; the site holds ${prop} ${r.d[prop]}${r.d[prop] === declared ? '' : ', which the deploy will change'}.`);
+        finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; the site holds ${prop} ${r.d[prop]}${r.d[prop] === declared ? '' : ', which the deploy will change'}.${declared === true && SWITCH_NOTES[prop] ? SWITCH_NOTES[prop] : ''}${prop === 'EnableModeration' && declared === false && r.d[prop] === true ? ' The deploy refuses to turn it off while items are pending approval unless ACKNOWLEDGE_PENDING_APPROVALS is true.' : ''}`);
       } else {
         finding(2, key, 'INFO', `Library '${title}' declares ${setting} ${declared}; its ${prop} could not be read (${r.ok ? 'no value of the declared type reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }

@@ -141,12 +141,14 @@ def _library_settings(spec: Mapping[str, object], context: str) -> LibrarySettin
     where = f"{context}.settings"
     block = _known_keys(
         spec["settings"],
-        {"require_checkout", "enable_folder_creation", "draft_version_visibility"}, where,
+        {"require_checkout", "enable_folder_creation", "draft_version_visibility",
+         "content_approval"}, where,
     )
     return LibrarySettings(
         require_checkout=_setting_bool(block, "require_checkout", where),
         enable_folder_creation=_setting_bool(block, "enable_folder_creation", where),
         draft_version_visibility=_draft_visibility(block, where),
+        content_approval=_setting_bool(block, "content_approval", where),
     )
 
 

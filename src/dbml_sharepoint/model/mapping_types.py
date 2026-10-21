@@ -153,6 +153,8 @@ class LibrarySettings:
     require_checkout: bool | None = None
     enable_folder_creation: bool | None = None
     draft_version_visibility: DraftVisibility | None = None
+    # The library's content approval (`EnableModeration`).
+    content_approval: bool | None = None
 
 
 @dataclass(frozen=True)

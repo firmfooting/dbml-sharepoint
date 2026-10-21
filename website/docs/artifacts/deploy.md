@@ -32,6 +32,13 @@ it again. `assess.js.txt` still ships unchanged alongside `deploy.js.txt`,
 so it can still be handed to somebody whose tenant you do not own, to
 check compatibility without provisioning anything.
 
+A library that declares `settings.content_approval: false` while it still
+holds items pending approval is not changed: the deploy reports the library in
+`summary.errors` and leaves approval on. Approve or reject the pending items,
+or set `const ACKNOWLEDGE_PENDING_APPROVALS = true;` near the top of the script
+and paste it again. The deploy also refuses when it cannot count the pending
+items. Turning approval on needs no acknowledgement.
+
 After the paste, `verify.js.txt` exercises every clock cell the pack
 relies on (date rules, view windows, `[today]` defaults) on one hidden
 scratch list and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict; see

@@ -793,6 +793,54 @@
       oldValue: String(live), newValue: String(wanted) });
   }
 
+  // Declared content approval (EnableModeration). Turning it ON is a plain MERGE
+  // that reads back. Turning it OFF changes what readers
+  // see of items still waiting for an approver, so it is refused while any item is pending (_ModerationStatus
+  // 2) unless ACKNOWLEDGE_PENDING_APPROVALS is true. A pending query that fails
+  // also refuses: an unanswered question is not an empty library. Runs before the
+  // other switches because DraftVersionVisibility needs approval or minor versions.
+  async function reconcileListContentApproval(list, digest) {
+    const wanted = list.content_approval;
+    if (wanted === null || wanted === undefined) return;
+    const url = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=EnableModeration`);
+    const read = async (what) => {
+      const resp = await fetchWithRetry(url, { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Library '${list.title}' EnableModeration ${what} failed: HTTP ${resp.status} ${text}`);
+      }
+      const value = (((await resp.json()) || {}).d || {}).EnableModeration;
+      if (typeof value !== 'boolean') {
+        throw new Error(`Library '${list.title}' ${what} returned no boolean EnableModeration; this tenant does not expose the property content_approval needs.`);
+      }
+      return value;
+    };
+    const live = await read('probe');
+    if (live === wanted) return;
+    if (!wanted && !ACKNOWLEDGE_PENDING_APPROVALS) {
+      const resp = await fetchWithRetry(
+        apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/items?$select=Id&$filter=OData__ModerationStatus eq 2&$top=1`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Library '${list.title}' content approval was not turned off: the pending items could not be counted (HTTP ${resp.status} ${text}). Set ACKNOWLEDGE_PENDING_APPROVALS = true at the top of this script to turn it off without the check.`);
+      }
+      const pending = ((((await resp.json()) || {}).d || {}).results || []).length;
+      if (pending > 0) {
+        throw new Error(`Library '${list.title}' still has items pending approval, so content approval was not turned off. Approve or reject them, or set ACKNOWLEDGE_PENDING_APPROVALS = true at the top of this script and paste again.`);
+      }
+    }
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, EnableModeration: wanted }, digest);
+    const back = await read('read-back');
+    if (back !== wanted) {
+      throw new Error(`Library '${list.title}' did not retain EnableModeration = ${wanted} (read back ${back})`);
+    }
+    log('INFO', `Library '${list.title}' EnableModeration set to ${wanted}.`);
+    logChange({ key: `list-setting:${list.title}:EnableModeration`, kind: 'list-setting', target: list.title,
+      oldValue: String(live), newValue: String(wanted) });
+  }
+
   // Declared EnableFolderCreation and DraftVersionVisibility (library settings,
   // each a plain MERGE that reads back). Only declared properties are read; one
   // MERGE carries just the ones that differ, and the read-back is the control
@@ -996,6 +1044,7 @@
     await reconcileListItemSecurity(list, digest);
     await reconcileListAttachments(list, digest);
     await reconcileListForceCheckout(list, digest);
+    await reconcileListContentApproval(list, digest);
     await reconcileListLibrarySwitches(list, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
