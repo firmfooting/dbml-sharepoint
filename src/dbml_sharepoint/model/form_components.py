@@ -1,0 +1,208 @@
+"""Parse the header component tree of a form.yaml into the nodes of `form_tree`.
+
+Every visible word comes from the file; nothing here adds one. Text is kept
+byte for byte, so quotes, braces and percent signs are the author's.
+"""
+
+from collections.abc import Callable
+
+from dbml_sharepoint.analysis.styles import TOKENS
+from dbml_sharepoint.model._keys import _known_keys
+from dbml_sharepoint.model.conditions import Condition, parse_condition
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.form_tree import (
+    Badge,
+    Banner,
+    BannerRule,
+    Bubble,
+    HeaderTree,
+    LinkChip,
+    Row,
+    SubtitlePart,
+    Title,
+)
+
+_VALUE = "{value}"
+
+
+def _text(raw: object, context: str) -> str:
+    if not isinstance(raw, str):
+        raise MappingShapeError(f"{context}: expected text, got {raw!r}; quote it")
+    return raw
+
+
+def _nonblank(raw: object, context: str) -> str:
+    value = _text(raw, context)
+    if not value:
+        raise MappingShapeError(f"{context}: must not be empty")
+    return value
+
+
+def _when(block: dict[str, object], context: str) -> Condition | None:
+    raw = block.get("when")
+    return None if raw is None else parse_condition(raw, f"{context}.when")
+
+
+def _list(raw: object, context: str, *, empty: str) -> list[object]:
+    if not isinstance(raw, list):
+        raise MappingShapeError(f"{context}: expected a list, got {type(raw).__name__}")
+    if not raw:
+        raise MappingShapeError(f"{context}: {empty}")
+    return raw
+
+
+def _token(raw: object, context: str) -> str:
+    name = _text(raw, context)
+    if name not in TOKENS:
+        raise MappingValueError(f"{context}: unknown token {name!r} (known: {sorted(TOKENS)})")
+    return name
+
+
+def _template(raw: object, context: str) -> str:
+    value = _nonblank(raw, context)
+    if _VALUE not in value:
+        raise MappingValueError(f"{context}: must contain {_VALUE}, where the column's value goes")
+    return value
+
+
+def _title(raw: object, context: str) -> Title:
+    block = _known_keys(raw, {"column", "blank", "when"}, context)
+    return Title(
+        _nonblank(block.get("column"), f"{context}.column"),
+        _text(block.get("blank"), f"{context}.blank"),
+        _when(block, context),
+    )
+
+
+def _subtitle_part(raw: object, context: str) -> SubtitlePart:
+    if isinstance(raw, str):
+        return SubtitlePart(column=_nonblank(raw, context))
+    block = _known_keys(raw, {"text", "columns", "when"}, context)
+    columns = tuple(
+        _nonblank(c, f"{context}.columns")
+        for c in _list(block.get("columns"), f"{context}.columns", empty="name a column")
+    )
+    return SubtitlePart(
+        text=_nonblank(block.get("text"), f"{context}.text"),
+        columns=columns,
+        when=_when(block, context),
+    )
+
+
+def _chip(raw: object, context: str) -> LinkChip:
+    block = _known_keys(
+        raw, {"text", "icon", "url", "url_column", "url_template", "when"}, context,
+    )
+    url, column, template = (block.get(k) for k in ("url", "url_column", "url_template"))
+    if url is not None and (column is not None or template is not None):
+        raise MappingShapeError(f"{context}: give either url or url_column with url_template")
+    if url is None and (column is None or template is None):
+        raise MappingShapeError(f"{context}: give url, or both url_column and url_template")
+    return LinkChip(
+        _nonblank(block.get("text"), f"{context}.text"),
+        _nonblank(block.get("icon"), f"{context}.icon"),
+        None if url is None else _nonblank(url, f"{context}.url"),
+        None if column is None else _nonblank(column, f"{context}.url_column"),
+        None if template is None else _template(template, f"{context}.url_template"),
+        _when(block, context),
+    )
+
+
+def _badge(raw: object, context: str) -> Badge:
+    block = _known_keys(raw, {"text", "token", "when"}, context)
+    return Badge(
+        _nonblank(block.get("text"), f"{context}.text"),
+        _token(block.get("token"), f"{context}.token"),
+        _when(block, context),
+    )
+
+
+def _bubble(raw: object, context: str) -> Bubble:
+    block = _known_keys(
+        raw, {"column", "label", "text", "hide_values", "tokens", "due", "when"}, context,
+    )
+    due = block.get("due", False)
+    if not isinstance(due, bool):
+        raise MappingShapeError(f"{context}.due: expected true or false, got {due!r}")
+    raw_tokens = block.get("tokens")
+    if raw_tokens is not None and not isinstance(raw_tokens, dict):
+        raise MappingShapeError(f"{context}.tokens: expected a mapping of value to token")
+    tokens: dict[object, object] = {} if raw_tokens is None else raw_tokens
+    hide = block.get("hide_values")
+    hidden: list[object] = (
+        [] if hide is None else _list(hide, f"{context}.hide_values", empty="list a value")
+    )
+    label = block.get("label")
+    text = block.get("text")
+    return Bubble(
+        column=_nonblank(block.get("column"), f"{context}.column"),
+        label=None if label is None else _text(label, f"{context}.label"),
+        text=None if text is None else _template(text, f"{context}.text"),
+        hide_values=tuple(_text(v, f"{context}.hide_values") for v in hidden),
+        tokens={
+            _text(k, f"{context}.tokens"): _token(v, f"{context}.tokens.{k}")
+            for k, v in tokens.items()
+        },
+        due=due,
+        when=_when(block, context),
+    )
+
+
+def _row(raw: object, context: str) -> Row:
+    block = _known_keys(raw, {"when", "items"}, context)
+    items: list[Bubble | Badge] = []
+    for index, item in enumerate(
+        _list(block.get("items"), f"{context}.items", empty="a row needs at least one item"),
+    ):
+        where = f"{context}.items[{index}]"
+        if isinstance(item, dict) and "badge" in item:
+            items.append(_badge(_known_keys(item, {"badge"}, where)["badge"], f"{where}.badge"))
+        else:
+            items.append(_bubble(item, where))
+    return Row(tuple(items), _when(block, context))
+
+
+def _banner(raw: object, context: str) -> Banner:
+    block = _known_keys(raw, {"label", "icon", "when", "rules"}, context)
+    rules: list[BannerRule] = []
+    for index, rule in enumerate(
+        _list(block.get("rules"), f"{context}.rules", empty="a banner needs at least one rule"),
+    ):
+        where = f"{context}.rules[{index}]"
+        entry = _known_keys(rule, {"when", "text"}, where)
+        if entry.get("when") is None:
+            raise MappingShapeError(f"{where}: 'when' is required on a rule")
+        rules.append(BannerRule(
+            parse_condition(entry["when"], f"{where}.when"),
+            _nonblank(entry.get("text"), f"{where}.text"),
+        ))
+    return Banner(
+        _nonblank(block.get("label"), f"{context}.label"),
+        _nonblank(block.get("icon"), f"{context}.icon"),
+        tuple(rules),
+        _when(block, context),
+    )
+
+
+def _many[T](
+    block: dict[str, object], key: str, context: str, parse: Callable[[object, str], T],
+) -> tuple[T, ...]:
+    if block.get(key) is None:
+        return ()
+    items = _list(block[key], f"{context}.{key}", empty="drop it or add an entry")
+    return tuple(parse(item, f"{context}.{key}[{i}]") for i, item in enumerate(items))
+
+
+def parse_header(raw: object, context: str) -> HeaderTree:
+    """A header or footer component tree; an unknown key is refused by name."""
+    block = _known_keys(raw, {"title", "subtitle", "chips", "rows", "banner"}, context)
+    return HeaderTree(
+        title=None if block.get("title") is None else _title(block["title"], f"{context}.title"),
+        subtitle=_many(block, "subtitle", context, _subtitle_part),
+        chips=_many(block, "chips", context, _chip),
+        rows=_many(block, "rows", context, _row),
+        banner=(
+            None if block.get("banner") is None
+            else _banner(block["banner"], f"{context}.banner")
+        ),
+    )

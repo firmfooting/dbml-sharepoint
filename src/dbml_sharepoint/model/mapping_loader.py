@@ -26,6 +26,7 @@ from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
 from dbml_sharepoint.model.reading import load_yaml, recording_blank_defaults
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
+from dbml_sharepoint.model.sections._form_file import read_form_file
 from dbml_sharepoint.model.sections.context import LoadedFields
 
 
@@ -50,10 +51,16 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         if removed in raw:
             raise UnknownMappingKeyError(f"{removed!r} has been replaced by {replacement}")
 
+    # Before the families, so they read the form as if the mapping declared it.
+    form = read_form_file(base_dir, raw)
+    raw.update(form.sections())
+
     loaded = LoadedFields()
     with recording_blank_defaults() as blank_defaults:
         for family in SECTION_FAMILIES:
             loaded.update(family.read(section_context(family, raw, base_dir, loaded)))
+
+    form.add_tree_only_entities(loaded["form_formatting"])
 
     # Every family fills its keys on every load, so each is present here.
     mapping = Mapping(
@@ -115,4 +122,5 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         retention_list_defaults=loaded["retention_list_defaults"],
         extension_configs=loaded["extension_configs"],
         governance=loaded["governance"],
+        form_trees=form.trees,
     )

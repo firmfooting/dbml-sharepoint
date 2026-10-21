@@ -13774,6 +13774,210 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "formula-facts-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with operand columns, one item, about 150 calculated case columns and a column formatter on two of them, and on the default content type a form formatter written at growing sizes; recycled by the next build run with CLEANUP on"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "Run MODE = 'build' between 00:00 and 11:00 site-local time, then 'read', then 'size'",
+        "A person opens the list's All items view and Display form after the read run, and the New form after the size run, and records what the page shows"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "formula",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.calc.fixture-facts-list",
+              "depends_on": []
+            },
+            {
+              "id": "formula.calc.fixture-facts-columns",
+              "depends_on": [
+                "formula.calc.fixture-facts-list"
+              ]
+            },
+            {
+              "id": "formula.calc.fixture-facts-item",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns"
+              ]
+            },
+            {
+              "id": "formula.datetime.fixture-facts-column-formatter",
+              "depends_on": [
+                "formula.calc.fixture-facts-list"
+              ]
+            },
+            {
+              "id": "formula.calc.case-columns-accepted",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.datetime.fixture-facts-site-zone",
+              "depends_on": [
+                "formula.calc.fixture-facts-list"
+              ]
+            },
+            {
+              "id": "formula.calc.fact-date-overflow",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.calc.fact-blank-coercion",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.calc.fact-text-equality-case",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.datetime.fact-created-plus-days-day",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item",
+                "formula.datetime.fixture-facts-site-zone"
+              ]
+            },
+            {
+              "id": "formula.datetime.fact-calculated-date-read",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.calc.fact-calculated-number-display",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            },
+            {
+              "id": "formula.calc.fixture-facts-content-type",
+              "depends_on": [
+                "formula.calc.fixture-facts-list"
+              ]
+            },
+            {
+              "id": "formula.calc.fact-header-size-limit",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-content-type"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "formula.calc.fixture-facts-list",
+            "formula.calc.fixture-facts-columns",
+            "formula.calc.fixture-facts-item",
+            "formula.datetime.fixture-facts-column-formatter"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "date-reading",
+          "surface": "formula",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "formula.datetime.calculated-date-formatter-reads",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item",
+                "formula.datetime.fixture-facts-column-formatter"
+              ]
+            },
+            {
+              "id": "formula.datetime.calculated-date-form-body-reads",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-columns",
+                "formula.calc.fixture-facts-item"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "display",
+              "page": "All items view and Display form",
+              "assertions": [
+                "Cdr and CdrTime shown through the column formatter",
+                "Cdr and CdrTime shown in the form body"
+              ]
+            }
+          ],
+          "controls": [
+            "formula.calc.fixture-facts-item",
+            "formula.datetime.fixture-facts-column-formatter"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        },
+        {
+          "id": "size-reading",
+          "surface": "formula",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "formula.calc.header-size-renders",
+              "depends_on": [
+                "formula.calc.fixture-facts-list",
+                "formula.calc.fixture-facts-content-type",
+                "formula.calc.fact-header-size-limit"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "new",
+              "page": "New form",
+              "assertions": [
+                "header line shows with the largest saved formatter"
+              ]
+            }
+          ],
+          "controls": [
+            "formula.calc.fixture-facts-content-type"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
     }
   ]
 }
