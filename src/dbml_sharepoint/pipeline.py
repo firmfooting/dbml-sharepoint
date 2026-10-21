@@ -24,6 +24,7 @@ from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
+from dbml_sharepoint.analysis.form_header import resolve_form_headers
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.resolve import resolve
@@ -269,6 +270,9 @@ def execute_build(
     if resolved_zone is None:
         raise missing_time_zone()
     time_zone = validate_time_zone(resolved_zone)
+    # Rendered headers change the mapping, so the resolution is rebuilt from it.
+    bundle, header_findings = resolve_form_headers(parsed_schema, bundle, time_zone)
+    resolved = resolve(parsed_schema, bundle.mapping)
     # Post-resolution defaults, and the three states the external log name
     # carries. Nothing said anywhere -- no flag, no file -- means the
     # built-in sidecar names, applied AFTER precedence so a file naming
@@ -419,7 +423,9 @@ def execute_build(
     # could paste.
     clear_generated(out, reporting=True)
 
-    findings = validate_all(parsed_schema, bundle, ext) + validate_release(release_obj)
+    findings = (
+        validate_all(parsed_schema, bundle, ext) + validate_release(release_obj) + header_findings
+    )
     errors = [f for f in findings if f.severity == "error"]
 
     site_context = SiteContext(
@@ -555,7 +561,9 @@ def execute_validation(
     parsed_schema, bundle, _ = load_config(schema, mapping, None)
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
     require_known_site_role(bundle, site_role)
-    return validate_all(parsed_schema, bundle, ext)
+    # No site zone here, so UTC stands in; a zone-specific refusal is reported at build.
+    bundle, header_findings = resolve_form_headers(parsed_schema, bundle, "UTC")
+    return validate_all(parsed_schema, bundle, ext) + header_findings
 
 
 class UnknownFindingCodeError(LookupError):

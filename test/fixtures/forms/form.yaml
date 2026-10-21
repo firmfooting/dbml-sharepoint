@@ -1,0 +1,23 @@
+Task:
+  header:
+    title: { column: Title, blank: "Untitled task" }
+    subtitle:
+      - Status
+      - { text: "Impact {Impact}", columns: [Impact] }
+    chips:
+      - text: "Open reference"
+        icon: ContactLink
+        url_column: Ref
+        url_template: "https://example.com/items/{value}"
+    rows:
+      - items:
+          - { column: Due, label: "Due", date_order: dmy, due: true }
+          - { column: Chased, label: "Chased", date_order: dmy }
+          - { column: Rating, label: "Rating", tokens: { High: severe, Medium: warning, Low: good } }
+          - badge: { text: "Done", token: good, when: { field: Status, op: eq, value: Done } }
+  footer:
+    banner:
+      label: "Notice"
+      icon: Warning
+      rules:
+        - { when: { field: Impact, op: eq, value: Critical }, text: "Critical impact" }

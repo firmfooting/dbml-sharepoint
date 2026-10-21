@@ -53,6 +53,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
+from dbml_sharepoint.analysis.form_header import resolve_form_headers
 from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.timezones import local_zone_name
 from dbml_sharepoint.analysis.validator import validate_all
@@ -1412,7 +1413,9 @@ def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
     if solution.distribution == CORE_DISTRIBUTION:
         # Core's own are built end to end by its CI, so their findings are already known.
         return
-    errors = [f for f in validate_all(schema, bundle, extension) if f.severity == "error"]
+    resolved, header_findings = resolve_form_headers(schema, bundle, "UTC")
+    findings = validate_all(schema, resolved, extension) + header_findings
+    errors = [f for f in findings if f.severity == "error"]
     if errors:
         shown = "; ".join(f"{f.code}: {f.message}" for f in errors[:3])
         more = f" (and {len(errors) - 3} more)" if len(errors) > 3 else ""
