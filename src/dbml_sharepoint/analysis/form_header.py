@@ -20,6 +20,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from dbml_sharepoint.analysis.column_projection import system_column_types_for
 from dbml_sharepoint.analysis.condition_rendering import ConditionRefusal, to_expression
@@ -329,7 +330,9 @@ class _Render:
                     "the chip url uses {list}, and the entity declares no internal_name "
                     "to give the list's address.",
                 )
-            text = text.replace("{list}", self.ctx.list_path)
+            # Per-segment encoding as reporting/plan.py::_item_url_path does, so # and % survive.
+            encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
+            text = text.replace("{list}", encoded)
         return lead + self.template(text, value, "chip url", chip.url_column)
 
     # --- components -----------------------------------------------------------------------

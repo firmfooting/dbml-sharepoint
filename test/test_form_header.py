@@ -866,3 +866,9 @@ def test_a_blank_text_keeps_hide_values_and_a_blank_due_date_is_not_overdue() ->
     assert shown[0] == "inline-flex"
     assert shown[1] == f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary"
     assert shown[2] == "No date"
+
+
+def test_a_list_token_percent_encodes_each_segment_and_keeps_the_slashes() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
+    ctx = dataclasses.replace(_ctx(), list_path="Lists/Cost #Centre 50%")
+    assert _chip_href(chip, ctx) == "=@currentWeb + '/Lists/Cost%20%23Centre%2050%25/x?' + [$Case]"
