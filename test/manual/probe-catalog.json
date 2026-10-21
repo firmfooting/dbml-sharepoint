@@ -2793,6 +2793,149 @@
       ]
     },
     {
+      "file": "form-header-parity-probe.js",
+      "surface": "form",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list with stored columns, calculated columns and about thirty-five items, a form formatter written to its default content type, and a touch of one item to read the site's day; the due-day items are rewritten on a read run; recycled by the next build run with CLEANUP on"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "the site's time zone and date order are those the probe was generated for (see the generator)",
+        "Run MODE = 'build', then MODE = 'read' with the browser set to a time zone whose offset differs from the site's"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "form",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "form.display-form.fixture-parity-list",
+              "depends_on": []
+            },
+            {
+              "id": "form.display-form.fixture-parity-columns",
+              "depends_on": [
+                "form.display-form.fixture-parity-list"
+              ]
+            },
+            {
+              "id": "form.display-form.fixture-parity-formatter",
+              "depends_on": [
+                "form.display-form.fixture-parity-list"
+              ]
+            },
+            {
+              "id": "form.display-form.fixture-parity-site-zone",
+              "depends_on": []
+            },
+            {
+              "id": "form.display-form.fixture-parity-date-order",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns"
+              ]
+            },
+            {
+              "id": "form.display-form.fixture-parity-items",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-date-order"
+              ]
+            },
+            {
+              "id": "form.display-form.fixture-parity-header-rendered",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items"
+              ]
+            },
+            {
+              "id": "form.display-form.header-agrees-with-columns",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-site-zone",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items",
+                "form.display-form.fixture-parity-header-rendered"
+              ]
+            },
+            {
+              "id": "form.display-form.browser-zone-differs",
+              "depends_on": []
+            },
+            {
+              "id": "form.display-form.observed-apostrophe-literal",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items",
+                "form.display-form.fixture-parity-header-rendered"
+              ]
+            },
+            {
+              "id": "form.display-form.observed-blank-calculated-date",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items",
+                "form.display-form.fixture-parity-header-rendered"
+              ]
+            },
+            {
+              "id": "form.display-form.observed-tostring-of-integer",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items",
+                "form.display-form.fixture-parity-header-rendered"
+              ]
+            },
+            {
+              "id": "form.display-form.observed-number-of-now",
+              "depends_on": [
+                "form.display-form.fixture-parity-list",
+                "form.display-form.fixture-parity-columns",
+                "form.display-form.fixture-parity-formatter",
+                "form.display-form.fixture-parity-site-zone",
+                "form.display-form.fixture-parity-date-order",
+                "form.display-form.fixture-parity-items",
+                "form.display-form.fixture-parity-header-rendered"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "form.display-form.fixture-parity-list",
+            "form.display-form.fixture-parity-columns",
+            "form.display-form.fixture-parity-formatter",
+            "form.display-form.fixture-parity-site-zone",
+            "form.display-form.fixture-parity-date-order",
+            "form.display-form.fixture-parity-items",
+            "form.display-form.fixture-parity-header-rendered"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "formatter-xml-probe.js",
       "surface": "text",
       "harness": "shared-v1",

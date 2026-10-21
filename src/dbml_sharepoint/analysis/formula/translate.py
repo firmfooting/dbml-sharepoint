@@ -32,7 +32,7 @@ from dbml_sharepoint.analysis.formula.civil import (
 )
 from dbml_sharepoint.analysis.formula.functions import SUPPORTED, VOLATILE
 from dbml_sharepoint.analysis.formula.parse import parse_formula
-from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
+from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
 from dbml_sharepoint.analysis.formula.syntax import (
     Binary,
     Call,
@@ -45,12 +45,15 @@ from dbml_sharepoint.analysis.formula.syntax import (
     Ref,
     Text,
 )
+from dbml_sharepoint.analysis.formula.tables import quoted
+from dbml_sharepoint.analysis.formula.tables import tabulate as build_table
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
-from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
+from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 
 # These two never hold a blank, so a formula may read them without testing for one.
 _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
 _NEVER = "0 == 1"
+_ALWAYS = "0 == 0"
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
 _MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
@@ -61,13 +64,19 @@ _NO_EQUIVALENT = {
     "RIGHT": "and the formatting reference documents no text-length operator to count from the end",
 }
 # A choice column reads as text; its listed values do not matter to a formula.
+_CHOICE_KINDS = frozenset({"choice"})
 _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}
 
 
 @dataclass(frozen=True, slots=True)
 class Translation:
+    """`expression` is the whole value. A date's value is its day number, `day`, or '' while `blank`
+    holds (empty when it never does); the two parts are kept so a header can show the day."""
+
     expression: str
     result: Literal["text", "number", "date"]
+    day: str = ""
+    blank: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +102,7 @@ class _Tr:
     values: frozenset[float] | None = None
     integral: bool = False  # a whole number by construction, when `values` is unknown
     moment: bool = False
+    truth: bool | None = None  # the value of a condition built from constants alone
 
     @property
     def whole(self) -> bool:
@@ -123,8 +133,7 @@ def _unsupported(name: str, why: str) -> NoReturn:
     _refuse(FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, f"uses {name}, {why}")
 
 
-def _q(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
+_q = quoted
 
 
 def _lit(value: float) -> str:
@@ -230,12 +239,36 @@ class _Translator:
             expr = parse_formula(self.ctx.formulas[name])
         except FormulaSyntaxError as error:
             return _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"does not parse: {error}")
+        if not stack and (guarded := self.blank_guarded(expr, stack)) is not None:
+            return guarded
         return self.go(expr, (*stack, name))
+
+    def blank_guarded(self, expr: Expr, stack: tuple[str, ...]) -> _Tr | None:
+        """IF(test, "", date) or IF(test, date, ""): the date, blank where the formula gives ''.
+
+        Only as the whole formula, so a blank never feeds further arithmetic.
+        Assumes (unmeasured) that a computed date returning "" displays blank.
+        """
+        if not (isinstance(expr, Call) and expr.name == "IF" and len(expr.args) == 3):
+            return None
+        test, yes, no = expr.args
+        empty_yes, empty_no = (isinstance(a, Text) and a.value == "" for a in (yes, no))
+        if empty_yes == empty_no:
+            return None
+        if_true, if_false = _filled(test)
+        kept, filled = (no, if_false) if empty_yes else (yes, if_true)
+        condition = self.go(test, stack)
+        found, fail = self.scoped(kept, stack, self.filled | filled)
+        if found.kind != "date":
+            return None
+        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {_NEVER}, {_ALWAYS})"
+        self.fails.append(f"if({blank}, {_ALWAYS}, {fail or _NEVER})")
+        return found
 
     def go(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
         tr = self.node(node, stack)
-        if len(tr.code) > FORMATTER_SAVED_SIZE_FLOOR:  # nested dates repeat their operands
-            _unsupported("date arithmetic", "nested so deeply that its expression is too large")
+        if len(tr.code) > FORM_HEADER_MAX_CHARS:  # nested dates repeat their operands
+            raise too_large(len(tr.code))
         return tr
 
     def node(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
@@ -353,7 +386,12 @@ class _Translator:
                 _unsupported(op, "which orders text and a header cannot match the column's order")
             # Text equality ignores case (measured); toLowerCase is on the Learn page.
             return _Tr(f"(toLowerCase({a.code}) {js} toLowerCase({b.code}))", "bool")
-        return _Tr(f"({_num(a, op)} {js} {_num(b, op)})", "bool")
+        truth = None
+        if a.values is not None and b.values is not None and len(a.values) == len(b.values) == 1:
+            (x,), (y,) = a.values, b.values
+            order = {"=": x == y, "<>": x != y, "<": x < y, ">": x > y, "<=": x <= y, ">=": x >= y}
+            truth = order[op]
+        return _Tr(f"({_num(a, op)} {js} {_num(b, op)})", "bool", truth=truth)
 
     def call(self, name: str, args: tuple[Expr, ...], stack: tuple[str, ...]) -> _Tr:
         if name in VOLATILE:
@@ -371,9 +409,26 @@ class _Translator:
         if name == "ISBLANK":
             return self.isblank(args[0])
         if name in ("IF", "CHOOSE"):
-            return self.branch(name, args, stack)
+            return self.table(Call(name, args)) or self.branch(name, args, stack)
         vals = [self.go(arg, stack) for arg in args]
         return self.apply(name, args, vals)
+
+    def table(self, node: Expr) -> _Tr | None:
+        choices = frozenset(n for n, k in self.ctx.kinds.items() if k in _CHOICE_KINDS)
+        found = build_table(node, self.ctx.formulas, choices, self.leaf)
+        if found is None:
+            return None
+        code, leaves = found
+        return self.joined(code, leaves)
+
+    def leaf(self, expr: Expr) -> _Tr | None:
+        """A table entry: the formula translated with no column left to read, or None."""
+        sub = _Translator(self.ctx)
+        try:
+            tr = sub.go(expr, ())
+        except FormulaRefusal:
+            return None  # the plain translation refuses it, with the reason
+        return tr if tr.kind in ("text", "number") and not sub.fails else None
 
     def isblank(self, arg: Expr) -> _Tr:
         if (
@@ -395,10 +450,15 @@ class _Translator:
                 return self.date_call(name, vals)
             case "AND" | "OR":
                 joiner = " && " if name == "AND" else " || "
-                return _Tr("(" + joiner.join(_cond(v) for v in vals) + ")", "bool")
+                code = "(" + joiner.join(_cond(v) for v in vals) + ")"
+                known = [v.truth for v in vals]
+                if None in known:
+                    return _Tr(code, "bool")
+                return _Tr(code, "bool", truth=all(known) if name == "AND" else any(known))
             case "NOT":
                 # The Learn page lists no unary not, so negate with a conditional on constants.
-                return _Tr(f"if({_cond(vals[0])}, 0 == 1, 0 == 0)", "bool")
+                code = f"if({_cond(vals[0])}, 0 == 1, 0 == 0)"
+                return _Tr(code, "bool", truth=None if vals[0].truth is None else not vals[0].truth)
             case "MIN" | "MAX":
                 parts = [_num(v, name) for v in vals]
                 values = self.extremes(name, vals)
@@ -475,18 +535,31 @@ class _Translator:
     def branch(self, name: str, args: tuple[Expr, ...], stack: tuple[str, ...]) -> _Tr:
         first = self.go(args[0], stack)
         if name == "IF":
-            if len(args) < 3:
-                _unsupported("IF", "without an else value, which is not measured")
-            if_true, if_false = _filled(args[0])
-            (yes, yes_fail), (no, no_fail) = (
-                self.scoped(args[1], stack, self.filled | if_true),
-                self.scoped(args[2], stack, self.filled | if_false),
-            )
-            self.same_kind(name, [yes, no])
-            cond = _cond(first)
-            if yes_fail or no_fail:
-                self.fails.append(f"if({cond}, {yes_fail or _NEVER}, {no_fail or _NEVER})")
-            return self.joined(f"if({cond}, {self.value(yes)}, {self.value(no)})", [yes, no])
+            return self.if_branch(args, first, stack)
+        return self.choose_branch(args, first, stack)
+
+    def if_branch(self, args: tuple[Expr, ...], first: _Tr, stack: tuple[str, ...]) -> _Tr:
+        if len(args) < 3:
+            _unsupported("IF", "without an else value, which is not measured")
+        if_true, if_false = _filled(args[0])
+        (yes, yes_fail), (no, no_fail) = (
+            self.scoped(args[1], stack, self.filled | if_true),
+            self.scoped(args[2], stack, self.filled | if_false),
+        )
+        self.same_kind("IF", [yes, no])
+        cond = _cond(first)
+        if first.truth is not None:  # both branches were still checked above
+            self.value(yes), self.value(no)
+            taken, fail = (yes, yes_fail) if first.truth else (no, no_fail)
+            if fail:
+                self.fails.append(fail)
+            return taken
+        if yes_fail or no_fail:
+            self.fails.append(f"if({cond}, {yes_fail or _NEVER}, {no_fail or _NEVER})")
+        return self.joined(f"if({cond}, {self.value(yes)}, {self.value(no)})", [yes, no])
+
+    def choose_branch(self, args: tuple[Expr, ...], first: _Tr, stack: tuple[str, ...]) -> _Tr:
+        name = "CHOOSE"
         index = _num(first, name)
         scoped = [self.scoped(arg, stack, self.filled) for arg in args[1:]]
         options = [tr for tr, _ in scoped]
@@ -494,6 +567,13 @@ class _Translator:
         reach = _whole_values(args[0])
         if reach is None or not reach <= set(range(1, len(options) + 1)):
             _unsupported(name, "with an index not provably a whole number in range")
+        if first.values is not None and len(first.values) == 1:  # a constant index
+            for option in options:
+                self.value(option)
+            (chosen,) = first.values
+            if scoped[int(chosen) - 1][1]:
+                self.fails.append(scoped[int(chosen) - 1][1])
+            return options[int(chosen) - 1]
         # The index is proven in range, so the last value is simply the else.
         code, fail = self.value(options[-1]), scoped[-1][1]
         for i in range(len(options) - 1, 0, -1):
@@ -572,6 +652,12 @@ class _Translator:
         return _Tr(f"substring({s.code}, {start - 1}, {start - 1 + length})", "text")
 
 
+def tabulate(expr: Expr, ctx: TranslationContext) -> str | None:
+    """The nested table for a sub-formula that reads only choice columns, or None."""
+    table = _Translator(ctx).table(expr)
+    return None if table is None else table.code
+
+
 def translate_column(column: str, ctx: TranslationContext) -> Translation:
     """The formatting expression a header evaluates for calculated column `column`."""
     declared = ctx.result_types.get(column)
@@ -593,21 +679,32 @@ def translate_column(column: str, ctx: TranslationContext) -> Translation:
         )
     translator = _Translator(ctx)
     tr = translator.column(column, ())
-    if tr.kind == "date":
-        _refuse(
-            FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
-            "returns a date, whose display a header cannot match: how a formatter shows a date "
-            "in the site's regional format is not measured",
-        )
     code = _Translator.value(tr)
     if tr.kind != declared:
         _refuse(
             FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
             f"returns a {tr.kind} but the column is {declared}",
         )
+    if tr.kind == "date":
+        return _date_result(translator, tr)
     if translator.fails:
         # A value outside what the arithmetic proves is left blank rather than shown wrong.
         code = f"if({_any(translator.fails)}, '', {code})"
-    if len(code) > FORMATTER_SAVED_SIZE_FLOOR:
-        _unsupported("date arithmetic", "nested so deeply that its expression is too large")
+    if len(code) > FORM_HEADER_MAX_CHARS:
+        raise too_large(len(code))
     return Translation("=" + code, declared)
+
+
+def _date_result(translator: _Translator, tr: _Tr) -> Translation:
+    if tr.moment:
+        _refuse(
+            FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
+            "returns a date and time value, whose display is not measured",
+        )
+    # The day is shown through the calendar parts, so it must be where they are exact.
+    translator.civil("the result", tr)
+    blank = _any(translator.fails)
+    code = f"if({blank}, '', {tr.code})" if blank else tr.code
+    if len(code) > FORM_HEADER_MAX_CHARS:
+        raise too_large(len(code))
+    return Translation("=" + code, "date", tr.code, blank)

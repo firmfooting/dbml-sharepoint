@@ -1,0 +1,25 @@
+prefix: "APP_"
+prefix_owner: "Test"
+
+entities:
+  Task: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 500
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+
+watched_lists: []
+
+calculated_formulas:
+  Task:
+    Due: '=IF(ISBLANK([Start]),"",[Start]+CHOOSE(IF([Impact]="Low",1,IF([Impact]="Medium",2,IF([Impact]="High",3,4))),14,21,30,28))'
+    Rating: '=CHOOSE(IF([Impact]="Low",1,IF([Impact]="Medium",2,IF([Impact]="High",3,4))),CHOOSE(IF([Risk]="Low",1,IF([Risk]="Medium",2,3)),"Low","Low","Medium"),CHOOSE(IF([Risk]="Low",1,IF([Risk]="Medium",2,3)),"Low","Medium","High"),CHOOSE(IF([Risk]="Low",1,IF([Risk]="Medium",2,3)),"Medium","High","High"),"High")'
+    Wait: '=IF([Impact]="Critical",28,IF([Impact]="High",30,14))'
+    Chased: '=IF(ISBLANK([Start]),"",[Start]+[Wait])'

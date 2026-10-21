@@ -174,6 +174,20 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
     "created days since a date": (_FILLED.format("0", "([Created]+0)-[Due]"), "number", {}),
     "date-time parts": (_SEEN.format("0", _ymd("[Seen]")), "number", {}),
     "date-time plus days": (_SEEN.format("0", _ymd("[Seen]+1")), "number", {}),
+    "date result created plus days": ("[Created]+30", "date", {}),
+    "date result by a choice": ('[Created]+IF([Status]="Open",14,30)', "date", {}),
+    "date result built from literals": ('DATE(2026,1,IF([Status]="Open",31,28))+1', "date", {}),
+    "date result month arithmetic": (
+        _FILLED.format('""', 'DATE(YEAR([Due]),MONTH([Due])+IF([Status]="Open",3,12),DAY([Due]))'),
+        "date",
+        {},
+    ),
+    "date result guarded the other way": (
+        'IF(NOT(ISBLANK([Due])),[Due]+IF([Status]="Open",14,21),"")',
+        "date",
+        {},
+    ),
+    "date result chained": ("[Created]+[W]", "date", {"W": 'IF([Status]="Open",14,30)'}),
     "date-time blank text": (
         _SEEN.format('"blank"', 'IF([Seen]+0=DATE(2026,10,4),"same","other")'),
         "text",
@@ -282,7 +296,7 @@ def test_a_date_with_too_many_possible_arguments_is_refused_quickly() -> None:
     def many(base: int, bits: int) -> str:
         text = str(base)
         for n in range(bits):
-            text = f'IF([Status]="s{n}",{text},{base + n + 1})'
+            text = f'IF([Status]="s{n}",{base + n + 1},{text})'
         return text
 
     refusal = _refusal(f"DAY(DATE({many(2000, 17)},{many(1, 17)},{many(1, 17)}))")
@@ -295,8 +309,8 @@ def test_a_nested_date_that_outgrows_a_saved_formatter_is_refused() -> None:
     for n in range(1, 8):
         chain[f"D{n}"] = f"DATE(YEAR([D{n - 1}]),MONTH([D{n - 1}])+1,DAY([D{n - 1}]))"
     refusal = _refusal("DAY([D7])", **chain)
-    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
-    assert "too large" in refusal.detail
+    assert refusal.code is FindingCode.FORM_HEADER_TOO_LARGE
+    assert "characters" in refusal.detail
     small = _translate("DAY([D2])", **{k: v for k, v in chain.items() if k in ("D0", "D1", "D2")})
     assert len(small) < FORMATTER_SAVED_SIZE_FLOOR
 
@@ -327,8 +341,6 @@ REFUSED = [
     ('IF([Created]>DATE(2026,1,1),"a","b")', "text", _FN, ">"),
     ('IF([Created]=[Created],"a","b")', "text", _FN, "="),
     ("[Created]", "date", _RESULT, "display"),
-    ("DATE(2026,1,1)", "date", _RESULT, "display"),
-    ("[Created]+1", "date", _RESULT, "display"),
     ("ISBLANK([Created])", "number", _FN, "ISBLANK"),
     ("MIN(DATE(2026,1,1),DATE(2026,2,1))", "number", _FN, "MIN"),
     ("MAX([Created]+0,DATE(2026,2,1))", "number", _FN, "MAX"),

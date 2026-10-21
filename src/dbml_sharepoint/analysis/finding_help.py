@@ -1229,7 +1229,12 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "
-        "formula's result does not match the column's declared type."
+        "formula's result does not match the column's declared type. A header "
+        "also refuses a calculated number shown as text (its display is not "
+        "measured), a date and time result (its time of day is not measured), "
+        "and a calculated date compared with anything but blank. A computed "
+        "date whose blank case returns an empty string is assumed to display "
+        "blank; that has not been measured."
     ),
     FindingCode.FORM_FORMULA_ZONE_UNSUPPORTED: (
         "A calculated column's date formula needs the site's time zone, and "
@@ -1238,6 +1243,40 @@ FINDING_HELP: dict[FindingCode, str] = {
         "could not cross the day at the site's local midnight. In a "
         "formula that is translated, a stored date outside the verified "
         "years or the calendar range shows a blank header."
+    ),
+    FindingCode.FORM_HEADER_TOO_LARGE: (
+        "A calculated column's header expression is longer than the largest "
+        "formatter known to save. The size is a floor, not a SharePoint "
+        "limit: no larger save was refused, and none was tried."
+    ),
+    FindingCode.FORM_HEADER_DUE_NEEDS_DATE: (
+        "A header bubble is marked `due: true` on a column that is not a date "
+        "or calculated date column, so there is no day to compare with today."
+    ),
+    FindingCode.FORM_HEADER_COLUMN_UNKNOWN: (
+        "A header or footer component names a column the entity does not have."
+    ),
+    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED: (
+        "A header or footer text cannot be written safely: it has a single "
+        "quote where it is placed inside an expression, or `[$` or `@` where "
+        "it is a plain string. The formatting reference documents no escape "
+        "for the first and does not say how the second is read."
+    ),
+    FindingCode.FORM_HEADER_ICON_UNKNOWN: (
+        "A header or footer chip or banner names an icon outside the fleet "
+        "icon vocabulary. SharePoint shows an unknown icon as nothing, with "
+        "no error anywhere."
+    ),
+    FindingCode.FORM_HEADER_DATE_ORDER_NEEDED: (
+        "A header shows a calculated date column as text without a `date_order` "
+        "(`dmy`, `mdy` or `ymd`). The header writes the date itself, and core "
+        "cannot know the site's regional order, so it chooses none. Only a "
+        "bubble can show a calculated date."
+    ),
+    FindingCode.FORM_HEADER_DATE_ORDER_UNUSED: (
+        "A bubble sets `date_order` on a column that is not a calculated date. "
+        "A stored date is shown in the site's own format and a calculated "
+        "text is shown as it is, so the key would do nothing."
     ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "

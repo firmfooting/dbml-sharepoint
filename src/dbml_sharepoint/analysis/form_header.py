@@ -1,0 +1,624 @@
+"""Render a form.yaml header or footer component tree as formatter JSON.
+
+Core adds no words of its own: every visible word is a literal from the tree. A calculated
+column a header reads is replaced by its translated formula, because a header reads one as blank.
+Shapes follow the formatting syntax reference (Microsoft Learn,
+https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference):
+elmType div, span and a; the style properties display, flex, padding, margin, border-radius and
+the like; the attributes class, href, target, rel and iconName; `if`, `+`, `==`, `!=`, `&&`,
+`||`, `toString()` and `[$Field.displayValue]`. Learn gives no escape for a quote inside an
+expression's literal, so a literal containing one is refused. Learn also does not say how a plain
+string with an embedded `[$` or `@` marker is read, so static text containing one is refused.
+`Number(@now)` as epoch milliseconds is inferred from Learn's `@now + 86400000` sample.
+"""
+
+import dataclasses
+import json
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+from dbml_sharepoint.analysis.column_projection import system_column_types_for
+from dbml_sharepoint.analysis.condition_rendering import ConditionRefusal, to_expression
+from dbml_sharepoint.analysis.conditions import REFUSAL_FINDING_CODES
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.formatter_values import quoted
+from dbml_sharepoint.analysis.formula.civil import parts_of
+from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
+from dbml_sharepoint.analysis.formula.syntax import ColumnKind
+from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
+from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
+from dbml_sharepoint.analysis.icons import FLEET_ICONS
+from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
+from dbml_sharepoint.analysis.styles import TOKENS
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES
+from dbml_sharepoint.model.conditions import Condition
+from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Schema
+
+_SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
+_VALUE = "{value}"
+_SEPARATOR = chr(0xB7)  # middle dot; formatter text, so not a console message
+_LITERAL = re.compile(r"('(?:[^']|'')*')")
+_REF = re.compile(r"\[\$([A-Za-z0-9_]+)\]")
+# A quoted literal is matched first so text inside one is left alone.
+_DATE_BLANK = re.compile(r"'(?:[^']|'')*'|\[\$([A-Za-z0-9_]+)\] (==|!=) ''")
+_TEXT_TYPES = frozenset({"nvarchar", "longtext"})
+# A calculated type is "calculated_" plus the kind of its result; the vocabulary stays in typemap.
+_CALCULATED_KIND: dict[str, ColumnKind] = {
+    t: "number" if t.endswith("number") else "date" if t.endswith("date") else "text"
+    for t in CALCULATED_TYPES
+}
+_CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
+_SECONDARY = "ms-fontColor-neutralSecondary"
+_NEVER = "0 == 1"
+_ALWAYS = "0 == 0"
+Json = dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class RenderContext:
+    entity: str
+    types: Mapping[str, str]  # column -> DBML type, system columns included
+    formulas: Mapping[str, str]  # calculated column -> formula
+    choices: Mapping[str, tuple[str, ...]]  # choice column -> its values
+    zone: str
+
+
+class HeaderRefusal(Exception):  # noqa: N818 -- named for the finding it becomes
+    def __init__(self, finding: Finding) -> None:
+        super().__init__(finding.message)
+        self.finding = finding
+
+
+@dataclass(frozen=True, slots=True)
+class _Value:
+    code: str  # the text to show
+    blank: str  # true while there is nothing to show
+    filled: str  # true while there is something to show
+
+
+def inline_calculated(expression: str, translations: Mapping[str, str]) -> str:
+    """`expression` with each `[$Calc]` outside a quoted literal replaced by its translation."""
+    parts = _LITERAL.split(expression)
+    for i in range(0, len(parts), 2):
+        parts[i] = _REF.sub(lambda m: translations.get(m[1], m[0]), parts[i])
+    return "".join(parts)
+
+
+def _date_text(day: str, order: str) -> str:
+    """A day number written as `order` joined by '/', unpadded: toString(45) gives "45" (Learn)."""
+    year, month, date = parts_of(day)
+    parts = {"d": date, "m": month, "y": year}
+    # Parenthesised so no comparison built around the text depends on + against == precedence.
+    return "(" + " + '/' + ".join(f"toString({parts[letter]})" for letter in order) + ")"
+
+
+def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
+    code = quoted(fallback)
+    for condition, value in reversed(pairs):
+        code = f"if({condition}, {quoted(value)}, {code})"
+    return code
+
+
+def _any(conditions: Sequence[str]) -> str:
+    return "(" + " || ".join(conditions) + ")"
+
+
+def _display(
+    word: str, *, when: str | None = None, shown: str | None = None, hidden: str | None = None
+) -> str:
+    """The display value `word`, or none unless `when` and `shown` hold and `hidden` does not."""
+    code = quoted(word)
+    if hidden is not None:
+        code = f"if({hidden}, 'none', {code})"
+    if shown is not None:
+        code = f"if({shown}, {code}, 'none')"
+    if when is not None:
+        code = f"if({when}, {code}, 'none')"
+    return word if code == quoted(word) else "=" + code
+
+
+class _Render:
+    def __init__(self, ctx: RenderContext) -> None:
+        self.ctx = ctx
+        kinds: dict[str, ColumnKind] = {}
+        for name, declared in ctx.types.items():
+            if name in ctx.formulas:
+                continue
+            if name in ctx.choices:
+                kinds[name] = "choice"
+            elif declared in _TEXT_TYPES:
+                kinds[name] = "text"
+            elif declared in ("int", "number"):
+                kinds[name] = "number"
+            elif declared in ("date", "datetime"):
+                kinds[name] = "date"
+        results = {
+            n: _CALCULATED_KIND[ctx.types[n]]
+            for n in ctx.formulas
+            if ctx.types.get(n) in _CALCULATED_KIND
+        }
+        self.translation = TranslationContext(
+            formulas=ctx.formulas,
+            kinds=kinds,
+            result_types=results,
+            choices=ctx.choices,
+            zone=ctx.zone,
+            moments=frozenset(n for n, t in ctx.types.items() if t == "datetime"),
+        )
+        self.translated: dict[str, str] = {}
+        self.days: dict[str, tuple[str, str]] = {}  # calculated date -> (day number, blank test)
+        self.units: dict[str, str] = {}  # calculated column -> the text it adds, for sizing
+        # The renderer refuses a calculated column; it is typed as its result and inlined after.
+        self.condition_types = {
+            n: _CALCULATED_AS.get(t, t) for n, t in ctx.types.items()
+        }
+
+    # --- refusals -------------------------------------------------------------------------
+    def refusal(self, code: FindingCode, column: str | None, detail: str) -> HeaderRefusal:
+        where = self.ctx.entity if column is None else f"{self.ctx.entity}.{column}"
+        return HeaderRefusal(Finding(
+            code, f"{where}: {detail}",
+            location=Location(Section.FORM_FORMATTING, entity=self.ctx.entity, column=column),
+        ))
+
+    def from_formula(self, error: FormulaRefusal, column: str, what: str) -> HeaderRefusal:
+        return self.refusal(error.code, column, f"{what} {error.detail}.")
+
+    # --- columns --------------------------------------------------------------------------
+    def calc(self, column: str) -> str:
+        if column not in self.translated:
+            try:
+                found = translate_column(column, self.translation)
+            except FormulaRefusal as error:
+                formula = self.ctx.formulas[column]
+                raise self.from_formula(error, column, f"the header formula {formula!r}") from error
+            self.translated[column] = "(" + found.expression[1:] + ")"
+            self.units[column] = found.day or self.translated[column]
+            if found.result == "date":
+                self.days[column] = (found.day, found.blank)
+        return self.translated[column]
+
+    def inline(self, expression: str) -> str:
+        names = {m[1] for part in _LITERAL.split(expression)[::2] for m in _REF.finditer(part)}
+        return inline_calculated(
+            expression, {n: self.calc(n) for n in sorted(names) if n in self.ctx.formulas}
+        )
+
+    def is_calculated_date(self, column: str) -> bool:
+        kind = _CALCULATED_KIND.get(self.ctx.types[column])
+        return column in self.ctx.formulas and kind == "date"
+
+    def date_value(self, column: str, order: str | None) -> _Value:
+        if order is None:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_DATE_ORDER_NEEDED, column,
+                "the header shows a calculated date as text, and core cannot know the site's "
+                "regional date order: set date_order (dmy, mdy or ymd) on a bubble for it.",
+            )
+        self.calc(column)
+        day, blank = self.days[column]
+        # A blank row is hidden by the bubble, so the text is not guarded again.
+        filled = f"if({blank}, {_NEVER}, {_ALWAYS})" if blank else _ALWAYS
+        return _Value(_date_text(day, order), blank or _NEVER, filled)
+
+    def value(self, column: str, order: str | None = None) -> _Value:
+        declared = self.ctx.types[column]
+        if self.is_calculated_date(column):
+            return self.date_value(column, order)
+        if column in self.ctx.formulas:
+            code = self.calc(column)
+            if _CALCULATED_KIND[declared] != "text":
+                raise self.refusal(
+                    FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, column,
+                    "a number is shown in a header, and its display is not measured.",
+                )
+            return _Value(code, f"{code} == ''", f"{code} != ''")
+        stored = f"toString([${column}])"
+        if column in self.ctx.choices or declared in _TEXT_TYPES:
+            return _Value(f"[${column}]", f"{stored} == ''", f"{stored} != ''")
+        if declared in ("date", "datetime"):
+            # The documented displayValue is the site's regional format; a blank date is ''.
+            return _Value(f"[${column}.displayValue]", f"{stored} == ''", f"{stored} != ''")
+        raise self.refusal(
+            FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
+            f"the header shows a {declared} column, which it can show only for text, choice "
+            "and date columns.",
+        )
+
+    def date_blank(self, found: re.Match[str]) -> str:
+        if found[1] is None or not (
+            self.ctx.types.get(found[1]) in ("date", "datetime")
+            or self.is_calculated_date(found[1])
+        ):
+            return found[0]
+        return f"toString([${found[1]}]) {found[2]} ''"
+
+    def condition(self, when: Condition) -> str:
+        try:
+            raw = to_expression(when, self.condition_types)
+        except ConditionRefusal as error:
+            code = REFUSAL_FINDING_CODES[error.kind]
+            raise self.refusal(code, error.field, str(error)) from error
+        # A blank date field is not '' (measured), so its blank test is on its text.
+        raw = _DATE_BLANK.sub(self.date_blank, raw)
+        for part in _LITERAL.split(raw)[::2]:
+            for ref in _REF.finditer(part):
+                before = part[: ref.start()]
+                if self.is_calculated_date(ref[1]) and not before.endswith("toString("):
+                    raise self.refusal(
+                        FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, ref[1],
+                        "a condition compares a calculated date, and only blank or not blank "
+                        "is supported.",
+                    )
+        return "(" + self.inline(raw) + ")"
+
+    # --- text -----------------------------------------------------------------------------
+    def lit(self, text: str, where: str, column: str | None = None) -> str:
+        """`text` as a quoted literal inside an expression; a single quote is refused."""
+        if "'" in text:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
+                f"the {where} text {text!r} contains a single quote, and the formatting "
+                "reference gives no escape for one inside an expression.",
+            )
+        return quoted(text)
+
+    def plain(self, text: str, where: str, column: str | None = None) -> str:
+        """`text` as a plain txtContent or href, or as a literal when it starts like a formula."""
+        if "[$" in text or "@" in text:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
+                f"the {where} text {text!r} contains [$ or @, which the formatting reference "
+                "does not say a plain string leaves alone.",
+            )
+        return "=" + self.lit(text, where, column) if text.startswith(("=", "[")) else text
+
+    def template(
+        self, text: str, value: str, where: str, column: str | None = None
+    ) -> list[str]:
+        """The pieces of `text` with `{value}` replaced by `value`, quoted where literal."""
+        pieces: list[str] = []
+        chunks = text.split(_VALUE)
+        for i, chunk in enumerate(chunks):
+            if chunk:
+                pieces.append(self.lit(chunk, where, column))
+            if i < len(chunks) - 1:
+                pieces.append(value)
+        return pieces or ["''"]
+
+    # --- components -----------------------------------------------------------------------
+    def tree(self, tree: HeaderTree) -> Json:
+        self.known_columns(tree)
+        children: list[Json] = []
+        block = self.title_block(tree)
+        if block is not None:
+            children.append(block)
+        if tree.chips:
+            children.append({
+                "elmType": "div",
+                "style": {"display": "flex", "flex-wrap": "wrap", "margin": "4px 0"},
+                "children": [self.chip(c) for c in tree.chips],
+            })
+        children += [self.row(r) for r in tree.rows]
+        if tree.banner is not None:
+            children.append(self.banner(tree.banner))
+        header: Json = {
+            "$schema": _SCHEMA,
+            "elmType": "div",
+            "attributes": {"class": "ms-borderColor-neutralTertiary"},
+            "style": {
+                "width": "99%",
+                "border-top-width": "0px",
+                "border-bottom-width": "1px",
+                "border-left-width": "0px",
+                "border-right-width": "0px",
+                "border-style": "solid",
+                "margin-bottom": "16px",
+            },
+            "children": children,
+        }
+        self.size(header)
+        return header
+
+    def known_columns(self, tree: HeaderTree) -> None:
+        named: list[str] = []
+        if tree.title is not None:
+            named.append(tree.title.column)
+        for part in tree.subtitle:
+            named += [part.column] if part.column else list(part.columns)
+        named += [c.url_column for c in tree.chips if c.url_column]
+        named += [i.column for r in tree.rows for i in r.items if isinstance(i, Bubble)]
+        icons = [("banner", tree.banner.icon)] if tree.banner else []
+        icons += [("chip", c.icon) for c in tree.chips]
+        for where, icon in icons:
+            if icon not in FLEET_ICONS:
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_ICON_UNKNOWN, None,
+                    f"the {where} icon {icon!r} is not in the fleet icon vocabulary, and "
+                    "SharePoint shows an unknown icon as nothing.",
+                )
+        for name in named:
+            if name not in self.ctx.types:
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_COLUMN_UNKNOWN, name,
+                    f"a header component names {name}, which the entity does not have.",
+                )
+
+    def size(self, header: Json) -> None:
+        text = json.dumps(header, separators=(",", ":"))
+        if len(text) <= FORM_HEADER_MAX_CHARS:
+            return
+        # Name the calculated column that adds the most characters.
+        spent = {c: text.count(json.dumps(t)[1:-1]) * len(t) for c, t in self.units.items()}
+        column = max(spent, key=lambda c: spent[c], default=None)
+        raise self.refusal(
+            FindingCode.FORM_HEADER_TOO_LARGE, column, f"the header {too_large(len(text)).detail}."
+        )
+
+    def title_block(self, tree: HeaderTree) -> Json | None:
+        kids: list[Json] = []
+        title = tree.title
+        if title is not None:
+            v = self.value(title.column)
+            blank = self.lit(title.blank, "title blank", title.column)
+            shown = f"=if({v.blank}, {blank}, {v.code})"
+            kids.append({
+                "elmType": "div",
+                "style": {"display": _display("block", when=self.when(title.when))},
+                "attributes": {"class": f"{_SECONDARY} ms-fontWeight-bold ms-fontSize-16"},
+                "txtContent": shown,
+            })
+        if tree.subtitle:
+            kids.append(self.subtitle(tree))
+        if not kids:
+            return None
+        return {
+            "elmType": "div",
+            "style": {"box-sizing": "border-box", "width": "100%", "padding": "4px 8px"},
+            "children": kids,
+        }
+
+    def when(self, when: Condition | None) -> str | None:
+        return None if when is None else self.condition(when)
+
+    def subtitle(self, tree: HeaderTree) -> Json:
+        shown: list[str] = []  # whether each part shows
+        terms: list[str] = []
+        for part in tree.subtitle:
+            if part.column is not None:
+                v = self.value(part.column)
+                visible, text = v.filled, v.code
+            else:
+                values = {c: self.value(c) for c in part.columns}
+                visible = " && ".join(v.filled for v in values.values())
+                wanted = self.when(part.when)
+                if wanted is not None:
+                    visible = f"{wanted} && {visible}"
+                names = "|".join(map(re.escape, values))
+                chunks = re.split(r"\{(" + names + r")\}", part.text or "")
+                text = " + ".join(
+                    self.lit(c, 'subtitle', part.columns[0]) if i % 2 == 0 else values[c].code
+                    for i, c in enumerate(chunks)
+                    if i % 2 or c
+                ) or "''"
+            visible = f"({visible})"
+            lead = f"if({_any(shown)}, {quoted(f' {_SEPARATOR} ')}, '') + " if shown else ""
+            terms.append(f"if({visible}, {lead}{text}, '')")
+            shown.append(visible)
+        return {
+            "elmType": "div",
+            "style": {"display": f"=if({_any(shown)}, 'block', 'none')"},
+            "attributes": {"class": f"{_SECONDARY} ms-fontSize-12"},
+            "txtContent": "=" + " + ".join(terms),
+        }
+
+    def chip(self, chip: LinkChip) -> Json:
+        hidden = None
+        if chip.url_column is not None:
+            v = self.value(chip.url_column)
+            hidden = v.blank
+            pieces = self.template(chip.url_template or "", v.code, "chip url", chip.url_column)
+            href = "=" + " + ".join(pieces)
+        else:
+            href = self.plain(chip.url or "", "chip url")
+        return {
+            "elmType": "a",
+            "style": {
+                "display": _display("inline-flex", when=self.when(chip.when), hidden=hidden),
+                "align-items": "center",
+                "padding": "2px 10px 2px 0",
+            },
+            "attributes": {"href": href, "target": "_blank", "rel": "noopener noreferrer"},
+            "children": [
+                {
+                    "elmType": "span",
+                    "style": {"padding": "0 4px"},
+                    "attributes": {"iconName": chip.icon},
+                },
+                {"elmType": "span", "txtContent": self.plain(chip.text, "chip")},
+            ],
+        }
+
+    def row(self, row: Row) -> Json:
+        return {
+            "elmType": "div",
+            "style": {
+                "display": _display("flex", when=self.when(row.when)),
+                "flex-wrap": "wrap",
+                "align-items": "center",
+                "margin": "4px 0",
+            },
+            "children": [
+                self.badge(i) if isinstance(i, Badge) else self.bubble(i) for i in row.items
+            ],
+        }
+
+    def badge(self, badge: Badge) -> Json:
+        return {
+            "elmType": "div",
+            "style": {
+                "display": _display("inline-flex", when=self.when(badge.when)),
+                **_PILL,
+            },
+            "attributes": {"class": f"{TOKENS[badge.token].classes} {_SECONDARY}"},
+            "children": [{"elmType": "span", "txtContent": self.plain(badge.text, "badge")}],
+        }
+
+    def bubble(self, bubble: Bubble) -> Json:
+        column = bubble.column
+        if bubble.due and self.ctx.types[column] not in DATE_TYPES:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_DUE_NEEDS_DATE, column,
+                f"{column} is marked due but is a {self.ctx.types[column]} column, not a date.",
+            )
+        if bubble.date_order is not None and not self.is_calculated_date(column):
+            raise self.refusal(
+                FindingCode.FORM_HEADER_DATE_ORDER_UNUSED, column,
+                f"{column} sets date_order but is not a calculated date column.",
+            )
+        v = self.value(column, bubble.date_order)
+        hidden = [
+            v.blank,
+            *(f"{v.code} == {self.lit(h, 'hide_values', column)}" for h in bubble.hide_values),
+        ]
+        pairs = [
+            (f"{v.code} == {self.lit(k, 'tokens', column)}", TOKENS[t].classes)
+            for k, t in bubble.tokens.items()
+            if k != "default"
+        ]
+        fallback = TOKENS[bubble.tokens.get("default", "neutral")].classes
+        if bubble.due:
+            overdue, guard = self.overdue(column)
+            hidden += guard
+            pairs.insert(0, (overdue, TOKENS["blocked"].classes))
+        pieces = self.template(bubble.text, v.code, "text", column) if bubble.text else [v.code]
+        if bubble.label is not None:
+            pieces.insert(0, self.lit(f"{bubble.label}: ", "label", column))
+        css = (
+            f"={_chain(pairs, fallback)} + {quoted(' ' + _SECONDARY)}"
+            if pairs
+            else f"{fallback} {_SECONDARY}"
+        )
+        return {
+            "elmType": "div",
+            "style": {
+                "display": _display(
+                    "inline-flex", when=self.when(bubble.when), hidden=_any(hidden)
+                ),
+                **_PILL,
+            },
+            "attributes": {"class": css},
+            "children": [{"elmType": "span", "txtContent": "=" + " + ".join(pieces)}],
+        }
+
+    def overdue(self, column: str) -> tuple[str, list[str]]:
+        """True from the day after the due date, at the site's local midnight, and when to hide."""
+        try:
+            rule = zone_rule(self.ctx.zone)
+        except FormulaRefusal as error:
+            raise self.from_formula(error, column, "the due test") from error
+        # Number(@now) as epoch milliseconds is inferred (Learn shows @now + 86400000).
+        due, now = f"Number([${column}])", "Number(@now)"
+        if self.is_calculated_date(column):  # its day number is already the site's day
+            day = self.days[column][0]
+            guard = [] if rule.daylight is None else [out_of_span_instant(now, rule)]
+            return f"({site_day(now, rule)} > {day})", guard
+        # Both days are whole-day arithmetic on the instant, so the browser's zone is never read.
+        overdue = f"({site_day(now, rule)} > {site_day(due, rule)})"
+        guard = [] if rule.daylight is None else [
+            out_of_span_instant(due, rule), out_of_span_instant(now, rule),
+        ]
+        return overdue, guard
+
+    def banner(self, banner: Banner) -> Json:
+        rules = [
+            (self.condition(r.when), self.lit(r.text, "banner rule")[1:-1])
+            for r in banner.rules
+        ]
+        return {
+            "elmType": "div",
+            "style": {
+                "display": _display(
+                    "flex", when=self.when(banner.when), shown=_any([c for c, _ in rules])
+                ),
+                "align-items": "center",
+                "padding": "6px 8px",
+                "margin": "8px 0 0 0",
+            },
+            "attributes": {"class": "ms-bgColor-themeLighter ms-fontColor-themePrimary"},
+            "children": [
+                {
+                    "elmType": "span",
+                    "style": {"padding": "0 8px 0 0"},
+                    "attributes": {"iconName": banner.icon},
+                },
+                {
+                    "elmType": "span",
+                    "attributes": {"class": "ms-fontWeight-bold"},
+                    "style": {"padding": "0 8px 0 0"},
+                    "txtContent": self.plain(banner.label, "banner label"),
+                },
+                {"elmType": "span", "txtContent": "=" + _chain(rules, "")},
+            ],
+        }
+
+
+_PILL = {
+    "padding": "2px 10px",
+    "border-radius": "12px",
+    "margin": "1px 4px 1px 0",
+    "font-weight": "600",
+}
+
+
+def render_header(tree: HeaderTree, ctx: RenderContext) -> Json:
+    """The formatter JSON of one header or footer; raises HeaderRefusal naming what it refuses."""
+    return _Render(ctx).tree(tree)
+
+
+def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> RenderContext | None:
+    table = next((t for t in schema.tables if t.name == entity), None)
+    entry = bundle.mapping.entities.get(entity)
+    if table is None or entry is None:
+        return None  # an unknown entity is reported where the formatting is checked
+    members = {e.name: tuple(e.members) for e in schema.enums}
+    types = {
+        "Title": "nvarchar",
+        **system_column_types_for(entry.kind),
+        **{c.name: c.type for c in table.columns},
+    }
+    return RenderContext(
+        entity=entity,
+        types=types,
+        formulas=bundle.mapping.calculated_formulas.get(entity, {}),
+        choices={c.name: members[c.type] for c in table.columns if c.type in members},
+        zone=zone,
+    )
+
+
+def resolve_form_headers(
+    schema: Schema, bundle: MappingBundle, time_zone: str
+) -> tuple[MappingBundle, list[Finding]]:
+    """The bundle with each component tree rendered into its entity's header and footer JSON.
+
+    An entity whose part is refused keeps `None` for that part, and the finding says why.
+    """
+    findings: list[Finding] = []
+    formatting = dict(bundle.mapping.form_formatting)
+    for entity, trees in bundle.form_trees.items():
+        ctx = _context(schema, bundle, entity, time_zone)
+        if ctx is None:
+            continue
+        parts: dict[str, Json | None] = {}
+        for part, tree in trees.items():
+            try:
+                parts[part] = render_header(tree, ctx)
+            except HeaderRefusal as refusal:
+                findings.append(refusal.finding)
+                parts[part] = None
+        formatting[entity] = dataclasses.replace(formatting[entity], **parts)
+    mapping = dataclasses.replace(bundle.mapping, form_formatting=formatting)
+    return dataclasses.replace(bundle, mapping=mapping), findings

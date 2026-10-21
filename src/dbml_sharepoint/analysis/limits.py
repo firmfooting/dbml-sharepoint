@@ -452,6 +452,10 @@ INDEX_CHANGE_CEILING = 20_000
 #: is a floor and not a SharePoint limit: a translation that reaches it is refused as unproven.
 FORMATTER_SAVED_SIZE_FLOOR = 1_048_576
 
+#: The largest header expression built: the largest size known to save, not a proven limit, with
+#: zero margin because no refusal was observed.
+FORM_HEADER_MAX_CHARS = FORMATTER_SAVED_SIZE_FLOOR
+
 # ------------------------------------------------- lookup target scope
 
 # No constant: `analysis/checks/_naming.py` enforces a Lookup's target list being in

@@ -1,0 +1,36 @@
+// Synthetic blueprint for the form.yaml header build tests.
+Project forms_test { database_type: 'SharePoint Online' }
+
+Enum task_status {
+  "Open"
+  "Done"
+}
+
+Enum impact {
+  "Low"
+  "Medium"
+  "High"
+  "Critical"
+}
+
+Enum risk {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Table Task {
+  Id      int       [pk, increment]
+  Title   nvarchar  [not null]
+  Status  task_status
+  Impact  impact
+  Risk    risk
+  Ref     nvarchar
+  Start   date
+  Due     calculated_date   [note: 'Start plus a number of days set by Impact.']
+  Rating  calculated_text   [note: 'A matrix of Impact and Risk.']
+  Wait    calculated_number [note: 'Days by Impact.']
+  Chased  calculated_date   [note: 'Start plus Wait.']
+
+  Note: 'Tasks with a status, an impact, a risk and derived dates.'
+}

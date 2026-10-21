@@ -191,7 +191,8 @@ Not about validating what is typed in; that is `expression`.
 Scopes: `new-form`, `edit-form`, `display-form`, `field-links`, `panel`
 
 Probes: `form-visibility-probe.js`, `form-visibility-storage-probe.js`,
-`form-visibility-interactive.js`, `form-header-hidden-column-probe.js`
+`form-visibility-interactive.js`, `form-header-hidden-column-probe.js`,
+`form-header-parity-probe.js`
 
 ### 6. `field`: column provisioning, typing and item round-trip
 

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from _format_eval import date_field, evaluate_rows
 from _formula_reference import DEFAULT_ZONE, ColumnError, evaluate
 
+from dbml_sharepoint.analysis.formula.civil import to_day_number
 from dbml_sharepoint.analysis.formula.functions import refs
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
@@ -207,7 +208,11 @@ def check_parity(
     Rows on which the formula is a column error are skipped (see `error_rows`).
     """
     rows = list(grid(_stored(formula, formulas, kinds), choices, moments, zone))
-    expected = [_reference(formula, r, formulas, kinds, zone, moments) for r in rows]
+    # A date result is shown as its day number.
+    expected = [
+        to_day_number(e) if isinstance(e, date) else e
+        for e in (_reference(formula, r, formulas, kinds, zone, moments) for r in rows)
+    ]
     kept = [(r, e) for r, e in zip(rows, expected, strict=True) if not isinstance(e, ColumnError)]
     assert kept, "every grid row is a column error, so nothing was compared"
     stored = _stored(formula, formulas, kinds)

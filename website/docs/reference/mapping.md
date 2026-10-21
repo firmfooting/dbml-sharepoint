@@ -1302,6 +1302,138 @@ field by name rather than patching a field object:
 
 To change Title's label, use `display_names`.
 
+## `form.yaml`
+
+`form.yaml` sits beside `mapping.yaml` and holds the whole form of each
+entity in one file. When it exists, it replaces the `form_formatting` and
+`form_visibility` sections: a mapping that still declares either one is
+refused, with the section named and the instruction to move it into
+`form.yaml`. Without the file nothing changes.
+
+```yaml
+Task:
+  header:
+    title: { column: Title, blank: "Untitled task" }
+    subtitle:
+      - Status
+      - { text: "Impact {Impact}", columns: [Impact] }
+    chips:
+      - text: "Open reference"
+        icon: ContactLink
+        url_column: Ref
+        url_template: "https://example.com/items/{value}"
+    rows:
+      - items:
+          - { column: Due, label: "Due", date_order: dmy, due: true }
+          - { column: Rating, label: "Rating", tokens: { High: severe, Low: good } }
+          - badge: { text: "Done", token: good, when: { field: Status, op: eq, value: Done } }
+  footer:
+    banner:
+      label: "Notice"
+      icon: Warning
+      rules:
+        - { when: { field: Impact, op: eq, value: Critical }, text: "Critical impact" }
+  body: { sections: [ { displayname: Core, fields: [Title, Status] } ] }
+  visibility: { reconcile: declared, columns: { Wait: hidden } }
+```
+
+The file is keyed by entity, and each entity declares at least one of four
+keys: `header`, `body`, `footer` and `visibility`.
+
+- `body` and `visibility` take the same content as `form_formatting.body`
+  and `form_visibility` in the mapping.
+- `header` and `footer` take a component tree, described below, or
+  `{ file: <path> }` naming a JSON file. The file form is the escape hatch:
+  it builds the same script as declaring that file under `form_formatting`
+  in the mapping.
+- `visibility` has no `file:` form; only `header`, `footer` and `body` do.
+
+Every visible word in a header comes from this file. The build adds no text
+of its own: a title with no value shows its `blank` text, and nothing else is
+defaulted.
+
+### Components
+
+A header or footer tree takes `title`, `subtitle`, `chips`, `rows` and
+`banner`. An unknown key is refused by name.
+
+| Component | Keys |
+| --- | --- |
+| `title` | `column`, `blank` (shown when the column is empty), `when` |
+| `subtitle` | a list of parts. A part is a column name, or `{ text, columns, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value |
+| `chips` | a list of `{ text, icon, url \| (url_column + url_template), when }`. `url_template` must contain `{value}` |
+| `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
+| `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text }` and the banner shows when a rule matches |
+
+A bubble takes `column`, `label`, `text` (a template containing `{value}`),
+`hide_values` (values for which the bubble is hidden), `tokens` (a map from a
+value to a style token), `due`, `date_order` and `when`. A bubble is hidden
+when its column is blank. A `due: true` bubble turns the `blocked` style from
+the day after the date, counted in the site's time zone, and needs a date or
+calculated date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It
+states how a calculated date is written, because core cannot read the site's
+regional order. It is required to show a calculated date and refused on any
+other column. A stored date is shown in the site's own format. The tokens are
+`good`, `low`, `warning`, `severe`, `blocked`, `neutral` and `muted`. A token
+map may name `default` to set the fallback style. A chip or banner icon must be
+in the fleet icon vocabulary described in
+[the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
+`when` takes the condition grammar of `views[].where`.
+
+### Calculated columns
+
+A header cannot read a calculated column, because one resolves to an empty
+string in a form header. The build therefore re-derives each calculated
+column a component names, from its `calculated_formulas` entry, as a
+formatting expression over the stored columns. It also re-derives a
+calculated column used in a `when` or a banner rule. A formula whose header
+value cannot be reproduced exactly fails the build rather than being noted.
+Dates are counted at the site's local midnight in the zone given to `build`.
+`validate` takes no zone, so it checks with UTC
+and reports only what is refused whatever the zone; a refusal that depends on
+the zone is reported by `build`.
+
+A header can use these functions in a formula, taken from the code:
+
+`IF`, `AND`, `OR`, `NOT`, `ISBLANK`, `CHOOSE`, `MIN`, `MAX`, `ABS`, `INT`,
+`ROUND`, `CONCATENATE`, `LEFT`, `MID`, `LOWER`, `UPPER`, `DATE`, `YEAR`,
+`MONTH`, `DAY`.
+
+### What is refused
+
+The build fails, naming the formula and the function or column, for each of
+these:
+
+- A function outside the list above. `TODAY` and `NOW` are refused because
+  their value changes with no column changing. `LEN` and `RIGHT` have no
+  documented formatting equivalent, and `TRIM` also collapses inner runs of
+  spaces.
+- A stored number column used as an operand: the blank value of a number
+  column is not documented. Lookup, person, multi-value and other column
+  kinds are refused too.
+- A stored date column used where it can be blank, unless the formula is
+  guarded by an `ISBLANK` test that excludes the blank.
+- A result other than text, number or date. A Yes/No result is refused, and
+  so is a calculated number shown as text.
+- A date result other than a calculated date shown through a bubble with
+  `date_order`. A date and time result is refused, and a calculated date can
+  be compared only with blank.
+- A site zone whose daylight rule is not one offset, or two offsets switched
+  on a weekday of a month, over the verified years. A stored date outside
+  those years, or outside the supported calendar range, shows a blank header
+  for that row.
+- A header larger than the 1,048,576 characters known to save. The limit is
+  a floor, not a SharePoint limit: a larger header was not tried. The
+  finding names the calculated column adding the most characters.
+- A single quote in text that is placed inside an expression (a title blank,
+  a subtitle text, a bubble label or text, a URL template, `hide_values`, a
+  token key or a banner rule text), and `[$` or `@` in static text (a chip
+  text, a badge text, a banner label or a static chip URL). The formatting
+  reference documents no escape for the first and does not say how the second
+  is read.
+- A column the entity does not have, and `due` on a column that is not a date.
+- An icon outside the fleet vocabulary.
+
 ## `column_validation`
 
 Per-column save-time validation, with the message that column's author

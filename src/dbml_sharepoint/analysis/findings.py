@@ -536,6 +536,13 @@ class FindingCode(StrEnum):
     FORM_FORMULA_COLUMN_UNSUPPORTED = "form_formula_column_unsupported", "error"
     FORM_FORMULA_RESULT_UNSUPPORTED = "form_formula_result_unsupported", "error"
     FORM_FORMULA_ZONE_UNSUPPORTED = "form_formula_zone_unsupported", "error"
+    FORM_HEADER_TOO_LARGE = "form_header_too_large", "error"
+    FORM_HEADER_DUE_NEEDS_DATE = "form_header_due_needs_date", "error"
+    FORM_HEADER_COLUMN_UNKNOWN = "form_header_column_unknown", "error"
+    FORM_HEADER_TEXT_UNSUPPORTED = "form_header_text_unsupported", "error"
+    FORM_HEADER_ICON_UNKNOWN = "form_header_icon_unknown", "error"
+    FORM_HEADER_DATE_ORDER_NEEDED = "form_header_date_order_needed", "error"
+    FORM_HEADER_DATE_ORDER_UNUSED = "form_header_date_order_unused", "error"
 
     REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form", "error"
     REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = (
