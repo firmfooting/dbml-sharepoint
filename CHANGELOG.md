@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.27.0...v0.28.0) (2026-10-21)
+
+
+### Features
+
+* **permissions:** Managed Owner tool-owned level ([#909](https://github.com/firmfooting/dbml-sharepoint/issues/909)) ([871d667](https://github.com/firmfooting/dbml-sharepoint/commit/871d667fcbbf03edd34e25e73cc71cca466faabf))
+
 ## [0.27.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.3...v0.27.0) (2026-10-21)
 
 
