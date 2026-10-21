@@ -1229,7 +1229,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "
-        "formula's result does not match the column's declared type."
+        "formula's result does not match the column's declared type. A header "
+        "also refuses a calculated number shown as text (its display is not "
+        "measured), a date and time result (its time of day is not measured), "
+        "and a calculated date compared with anything but blank."
     ),
     FindingCode.FORM_FORMULA_ZONE_UNSUPPORTED: (
         "A calculated column's date formula needs the site's time zone, and "
@@ -1261,6 +1264,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A header or footer chip or banner names an icon outside the fleet "
         "icon vocabulary. SharePoint shows an unknown icon as nothing, with "
         "no error anywhere."
+    ),
+    FindingCode.FORM_HEADER_DATE_ORDER_NEEDED: (
+        "A header shows a calculated date column as text without a `date_order` "
+        "(`dmy`, `mdy` or `ymd`). The header writes the date itself, and core "
+        "cannot know the site's regional order, so it chooses none. Only a "
+        "bubble can show a calculated date."
+    ),
+    FindingCode.FORM_HEADER_DATE_ORDER_UNUSED: (
+        "A bubble sets `date_order` on a column that is not a calculated date. "
+        "A stored date is shown in the site's own format and a calculated "
+        "text is shown as it is, so the key would do nothing."
     ),
     FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN: (
         "A form header or footer references a calculated column. "

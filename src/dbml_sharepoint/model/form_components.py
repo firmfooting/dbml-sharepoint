@@ -23,6 +23,7 @@ from dbml_sharepoint.model.form_tree import (
 )
 
 _VALUE = "{value}"
+DATE_ORDERS = ("dmy", "mdy", "ymd")
 
 
 def _text(raw: object, context: str) -> str:
@@ -119,7 +120,9 @@ def _badge(raw: object, context: str) -> Badge:
 
 def _bubble(raw: object, context: str) -> Bubble:
     block = _known_keys(
-        raw, {"column", "label", "text", "hide_values", "tokens", "due", "when"}, context,
+        raw,
+        {"column", "label", "text", "hide_values", "tokens", "due", "date_order", "when"},
+        context,
     )
     due = block.get("due", False)
     if not isinstance(due, bool):
@@ -134,6 +137,11 @@ def _bubble(raw: object, context: str) -> Bubble:
     )
     label = block.get("label")
     text = block.get("text")
+    order = block.get("date_order")
+    if order is not None and order not in DATE_ORDERS:
+        raise MappingValueError(
+            f"{context}.date_order: expected one of {', '.join(DATE_ORDERS)}, got {order!r}"
+        )
     return Bubble(
         column=_nonblank(block.get("column"), f"{context}.column"),
         label=None if label is None else _text(label, f"{context}.label"),
@@ -144,6 +152,7 @@ def _bubble(raw: object, context: str) -> Bubble:
             for k, v in tokens.items()
         },
         due=due,
+        date_order=order,
         when=_when(block, context),
     )
 

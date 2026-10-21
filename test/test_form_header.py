@@ -182,15 +182,11 @@ def test_inline_calculated_skips_quoted_text() -> None:
     assert inline_calculated("[$Other] == [$Calc]", {"Calc": "(x)"}) == "[$Other] == (x)"
 
 
-def test_a_calculated_number_and_a_calculated_date_are_refused_naming_the_column() -> None:
+def test_a_calculated_number_is_refused_naming_the_column() -> None:
     with pytest.raises(HeaderRefusal) as number:
         _bubble(Bubble("Count"))
     assert number.value.finding.code is FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED
     assert "Task.Count" in number.value.finding.message
-    with pytest.raises(HeaderRefusal) as day:
-        _bubble(Bubble("Later", due=True))
-    assert day.value.finding.code is FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED
-    assert "Task.Later" in day.value.finding.message
 
 
 # --- title and subtitle -------------------------------------------------------------------------

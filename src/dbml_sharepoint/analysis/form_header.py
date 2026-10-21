@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.condition_rendering import ConditionRefusal, to_ex
 from dbml_sharepoint.analysis.conditions import REFUSAL_FINDING_CODES
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.formatter_values import quoted
+from dbml_sharepoint.analysis.formula.civil import parts_of
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
@@ -51,6 +52,8 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
 }
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
 _SECONDARY = "ms-fontColor-neutralSecondary"
+_NEVER = "0 == 1"
+_ALWAYS = "0 == 0"
 Json = dict[str, object]
 
 
@@ -82,6 +85,13 @@ def inline_calculated(expression: str, translations: Mapping[str, str]) -> str:
     for i in range(0, len(parts), 2):
         parts[i] = _REF.sub(lambda m: translations.get(m[1], m[0]), parts[i])
     return "".join(parts)
+
+
+def _date_text(day: str, order: str) -> str:
+    """A day number written as `order` joined by '/', unpadded: toString(45) gives "45" (Learn)."""
+    year, month, date = parts_of(day)
+    parts = {"d": date, "m": month, "y": year}
+    return " + '/' + ".join(f"toString({parts[letter]})" for letter in order)
 
 
 def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
@@ -138,6 +148,8 @@ class _Render:
             moments=frozenset(n for n, t in ctx.types.items() if t == "datetime"),
         )
         self.translated: dict[str, str] = {}
+        self.days: dict[str, tuple[str, str]] = {}  # calculated date -> (day number, blank test)
+        self.units: dict[str, str] = {}  # calculated column -> the text it adds, for sizing
         # The renderer refuses a calculated column; it is typed as its result and inlined after.
         self.condition_types = {
             n: _CALCULATED_AS.get(t, t) for n, t in ctx.types.items()
@@ -163,6 +175,9 @@ class _Render:
                 formula = self.ctx.formulas[column]
                 raise self.from_formula(error, column, f"the header formula {formula!r}") from error
             self.translated[column] = "(" + found.expression[1:] + ")"
+            self.units[column] = found.day or self.translated[column]
+            if found.result == "date":
+                self.days[column] = (found.day, found.blank)
         return self.translated[column]
 
     def inline(self, expression: str) -> str:
@@ -171,10 +186,29 @@ class _Render:
             expression, {n: self.calc(n) for n in sorted(names) if n in self.ctx.formulas}
         )
 
-    def value(self, column: str) -> _Value:
+    def is_calculated_date(self, column: str) -> bool:
+        kind = _CALCULATED_KIND.get(self.ctx.types[column])
+        return column in self.ctx.formulas and kind == "date"
+
+    def date_value(self, column: str, order: str | None) -> _Value:
+        if order is None:
+            raise self.refusal(
+                FindingCode.FORM_HEADER_DATE_ORDER_NEEDED, column,
+                "the header shows a calculated date as text, and core cannot know the site's "
+                "regional date order: set date_order (dmy, mdy or ymd) on a bubble for it.",
+            )
+        self.calc(column)
+        day, blank = self.days[column]
+        # A blank row is hidden by the bubble, so the text is not guarded again.
+        filled = f"if({blank}, {_NEVER}, {_ALWAYS})" if blank else _ALWAYS
+        return _Value(_date_text(day, order), blank or _NEVER, filled)
+
+    def value(self, column: str, order: str | None = None) -> _Value:
         declared = self.ctx.types[column]
+        if self.is_calculated_date(column):
+            return self.date_value(column, order)
         if column in self.ctx.formulas:
-            code = self.calc(column)  # a date result refuses here with its own finding
+            code = self.calc(column)
             if _CALCULATED_KIND[declared] != "text":
                 raise self.refusal(
                     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, column,
@@ -194,7 +228,10 @@ class _Render:
         )
 
     def date_blank(self, found: re.Match[str]) -> str:
-        if found[1] is None or self.ctx.types.get(found[1]) not in ("date", "datetime"):
+        if found[1] is None or not (
+            self.ctx.types.get(found[1]) in ("date", "datetime")
+            or self.is_calculated_date(found[1])
+        ):
             return found[0]
         return f"toString([${found[1]}]) {found[2]} ''"
 
@@ -206,6 +243,15 @@ class _Render:
             raise self.refusal(code, error.field, str(error)) from error
         # A blank date field is not '' (measured), so its blank test is on its text.
         raw = _DATE_BLANK.sub(self.date_blank, raw)
+        for part in _LITERAL.split(raw)[::2]:
+            for ref in _REF.finditer(part):
+                before = part[: ref.start()]
+                if self.is_calculated_date(ref[1]) and not before.endswith("toString("):
+                    raise self.refusal(
+                        FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED, ref[1],
+                        "a condition compares a calculated date, and only blank or not blank "
+                        "is supported.",
+                    )
         return "(" + self.inline(raw) + ")"
 
     # --- text -----------------------------------------------------------------------------
@@ -305,7 +351,7 @@ class _Render:
         if len(text) <= FORM_HEADER_MAX_CHARS:
             return
         # Name the calculated column that adds the most characters.
-        spent = {c: text.count(json.dumps(t)[1:-1]) * len(t) for c, t in self.translated.items()}
+        spent = {c: text.count(json.dumps(t)[1:-1]) * len(t) for c, t in self.units.items()}
         column = max(spent, key=lambda c: spent[c], default=None)
         raise self.refusal(
             FindingCode.FORM_HEADER_TOO_LARGE, column, f"the header {too_large(len(text)).detail}."
@@ -427,7 +473,12 @@ class _Render:
                 FindingCode.FORM_HEADER_DUE_NEEDS_DATE, column,
                 f"{column} is marked due but is a {self.ctx.types[column]} column, not a date.",
             )
-        v = self.value(column)
+        if bubble.date_order is not None and not self.is_calculated_date(column):
+            raise self.refusal(
+                FindingCode.FORM_HEADER_DATE_ORDER_UNUSED, column,
+                f"{column} sets date_order but is not a calculated date column.",
+            )
+        v = self.value(column, bubble.date_order)
         hidden = [
             v.blank,
             *(f"{v.code} == {self.lit(h, 'hide_values', column)}" for h in bubble.hide_values),
@@ -470,6 +521,10 @@ class _Render:
             raise self.from_formula(error, column, "the due test") from error
         # Number(@now) as epoch milliseconds is inferred (Learn shows @now + 86400000).
         due, now = f"Number([${column}])", "Number(@now)"
+        if self.is_calculated_date(column):  # its day number is already the site's day
+            day = self.days[column][0]
+            guard = [] if rule.daylight is None else [out_of_span_instant(now, rule)]
+            return f"({site_day(now, rule)} > {day})", guard
         # Both days are whole-day arithmetic on the instant, so the browser's zone is never read.
         overdue = f"({site_day(now, rule)} > {site_day(due, rule)})"
         guard = [] if rule.daylight is None else [

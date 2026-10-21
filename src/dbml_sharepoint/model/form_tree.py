@@ -42,6 +42,7 @@ class Bubble:
     hide_values: tuple[str, ...] = ()
     tokens: dict[str, str] = field(default_factory=dict)
     due: bool = False
+    date_order: str | None = None  # dmy, mdy or ymd: how a computed date is written
     when: Condition | None = None
 
 

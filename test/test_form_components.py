@@ -137,3 +137,23 @@ def test_text_with_quotes_and_braces_parses_verbatim() -> None:
 def test_an_unknown_key_is_refused_by_name() -> None:
     with pytest.raises(UnknownMappingKeyError, match="colour"):
         _parse(_row({"column": "Risk", "colour": "red"}))
+
+
+@pytest.mark.parametrize("order", ["dmy", "mdy", "ymd"])
+def test_a_bubble_keeps_its_date_order(order: str) -> None:
+    tree = _parse(_row({"column": "Review", "date_order": order}))
+    item = tree.rows[0].items[0]
+    assert isinstance(item, Bubble)
+    assert item.date_order == order
+
+
+def test_a_bubble_without_a_date_order_has_none() -> None:
+    item = _parse(_row({"column": "Review"})).rows[0].items[0]
+    assert isinstance(item, Bubble)
+    assert item.date_order is None
+
+
+@pytest.mark.parametrize("order", ["DMY", "dd/mm/yyyy", "", 5])
+def test_any_other_date_order_is_refused_naming_the_key(order: object) -> None:
+    with pytest.raises(MappingValueError, match=r"date_order"):
+        _parse(_row({"column": "Review", "date_order": order}))

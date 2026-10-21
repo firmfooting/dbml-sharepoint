@@ -53,6 +53,7 @@ from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 # These two never hold a blank, so a formula may read them without testing for one.
 _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
 _NEVER = "0 == 1"
+_ALWAYS = "0 == 0"
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
 _MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
@@ -69,8 +70,13 @@ _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}
 
 @dataclass(frozen=True, slots=True)
 class Translation:
+    """`expression` is the whole value. A date's value is its day number, `day`, or '' while `blank`
+    holds (empty when it never does); the two parts are kept so a header can show the day."""
+
     expression: str
     result: Literal["text", "number", "date"]
+    day: str = ""
+    blank: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,7 +239,30 @@ class _Translator:
             expr = parse_formula(self.ctx.formulas[name])
         except FormulaSyntaxError as error:
             return _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"does not parse: {error}")
+        if not stack and (guarded := self.blank_guarded(expr, stack)) is not None:
+            return guarded
         return self.go(expr, (*stack, name))
+
+    def blank_guarded(self, expr: Expr, stack: tuple[str, ...]) -> _Tr | None:
+        """IF(test, "", date) or IF(test, date, ""): the date, blank where the formula gives ''.
+
+        Only as the whole formula, so a blank never feeds further arithmetic.
+        """
+        if not (isinstance(expr, Call) and expr.name == "IF" and len(expr.args) == 3):
+            return None
+        test, yes, no = expr.args
+        empty_yes, empty_no = (isinstance(a, Text) and a.value == "" for a in (yes, no))
+        if empty_yes == empty_no:
+            return None
+        if_true, if_false = _filled(test)
+        kept, filled = (no, if_false) if empty_yes else (yes, if_true)
+        condition = self.go(test, stack)
+        found, fail = self.scoped(kept, stack, self.filled | filled)
+        if found.kind != "date":
+            return None
+        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {_NEVER}, {_ALWAYS})"
+        self.fails.append(f"if({blank}, {_ALWAYS}, {fail or _NEVER})")
+        return found
 
     def go(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
         tr = self.node(node, stack)
@@ -649,21 +678,32 @@ def translate_column(column: str, ctx: TranslationContext) -> Translation:
         )
     translator = _Translator(ctx)
     tr = translator.column(column, ())
-    if tr.kind == "date":
-        _refuse(
-            FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
-            "returns a date, whose display a header cannot match: how a formatter shows a date "
-            "in the site's regional format is not measured",
-        )
     code = _Translator.value(tr)
     if tr.kind != declared:
         _refuse(
             FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
             f"returns a {tr.kind} but the column is {declared}",
         )
+    if tr.kind == "date":
+        return _date_result(translator, tr)
     if translator.fails:
         # A value outside what the arithmetic proves is left blank rather than shown wrong.
         code = f"if({_any(translator.fails)}, '', {code})"
     if len(code) > FORM_HEADER_MAX_CHARS:
         raise too_large(len(code))
     return Translation("=" + code, declared)
+
+
+def _date_result(translator: _Translator, tr: _Tr) -> Translation:
+    if tr.moment:
+        _refuse(
+            FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED,
+            "returns a date and time value, whose display is not measured",
+        )
+    # The day is shown through the calendar parts, so it must be where they are exact.
+    translator.civil("the result", tr)
+    blank = _any(translator.fails)
+    code = f"if({blank}, '', {tr.code})" if blank else tr.code
+    if len(code) > FORM_HEADER_MAX_CHARS:
+        raise too_large(len(code))
+    return Translation("=" + code, "date", tr.code, blank)
