@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.31.1...v0.32.0) (2026-10-21)
+
+
+### Features
+
+* **form-header:** help for this step links on next-step rules ([#928](https://github.com/firmfooting/dbml-sharepoint/issues/928)) ([ece0ea6](https://github.com/firmfooting/dbml-sharepoint/commit/ece0ea6ec24b8199a11811af387ed7f9979f6061))
+
 ## [0.31.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.31.0...v0.31.1) (2026-10-21)
 
 
