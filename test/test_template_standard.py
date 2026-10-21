@@ -2490,7 +2490,7 @@ def _check_shared_level_declaration(declared: cabc.Sequence[str]) -> None:
 
 
 def test_the_pinned_level_is_the_tool_owned_name() -> None:
-    assert {_SHARED_LEVEL} == TOOL_OWNED_LEVEL_NAMES
+    assert {_SHARED_LEVEL, "Managed Owner"} == TOOL_OWNED_LEVEL_NAMES
 
 
 def test_shared_level_pin_excludes_delete() -> None:

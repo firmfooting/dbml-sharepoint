@@ -1,9 +1,13 @@
 """The permission level Description composition, and the budget it leaves a human note."""
 
+from test_template_standard import _contribute_names
+
 from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 from dbml_sharepoint.analysis.role_definition_description import (
     LEVEL_MARKER_GROWTH_RESERVE,
+    TOOL_OWNED_LEVEL_NAMES,
+    TOOL_OWNED_LEVELS,
     level_description,
     level_description_budget,
     marker_for_level,
@@ -100,6 +104,19 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 
 def test_tool_owned_level_marker_names_no_family() -> None:
     name = "Automation Contribute No Delete"
+    assert marker_for_level("risk-register", name) == marker_for_level("other-family", name)
+    assert "risk-register" not in marker_for_level("risk-register", name)
+
+
+def test_managed_owner_is_edit_plus_approve_and_enumerate() -> None:
+    owned = TOOL_OWNED_LEVELS["Managed Owner"]
+    assert owned == _contribute_names() | {"ManageLists", "ApproveItems", "EnumeratePermissions"}
+    assert "ManagePermissions" not in owned
+    assert "Managed Owner" in TOOL_OWNED_LEVEL_NAMES
+
+
+def test_managed_owner_marker_names_no_family() -> None:
+    name = "Managed Owner"
     assert marker_for_level("risk-register", name) == marker_for_level("other-family", name)
     assert "risk-register" not in marker_for_level("risk-register", name)
 

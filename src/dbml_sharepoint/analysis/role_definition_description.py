@@ -67,29 +67,39 @@ from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 #: still fits, which `test_template_standard.py` holds.
 LEVEL_MARKER_GROWTH_RESERVE = 21
 
+#: Contribute minus the delete bits, the base of both tool-owned levels below.
+_CONTRIBUTE_NO_DELETE = frozenset({
+    "ViewListItems",
+    "AddListItems",
+    "EditListItems",
+    "OpenItems",
+    "ViewVersions",
+    "ManagePersonalViews",
+    "ViewFormPages",
+    "Open",
+    "ViewPages",
+    "CreateSSCSite",
+    "BrowseDirectories",
+    "BrowseUserInfo",
+    "AddDelPrivateWebParts",
+    "UpdatePersonalWebParts",
+    "UseClientIntegration",
+    "UseRemoteAPIs",
+    "CreateAlerts",
+    "EditMyUserInfo",
+})
+
 #: Levels the tool names for itself, one per site whichever family declares them,
-#: with the one bitmap every declaration must carry (Contribute minus the delete bits).
+#: with the one bitmap every declaration must carry (see each entry).
 TOOL_OWNED_LEVELS: dict[str, frozenset[str]] = {
-    "Automation Contribute No Delete": frozenset({
-        "ViewListItems",
-        "AddListItems",
-        "EditListItems",
-        "OpenItems",
-        "ViewVersions",
-        "ManagePersonalViews",
-        "ViewFormPages",
-        "Open",
-        "ViewPages",
-        "CreateSSCSite",
-        "BrowseDirectories",
-        "BrowseUserInfo",
-        "AddDelPrivateWebParts",
-        "UpdatePersonalWebParts",
-        "UseClientIntegration",
-        "UseRemoteAPIs",
-        "CreateAlerts",
-        "EditMyUserInfo",
-    }),
+    "Automation Contribute No Delete": _CONTRIBUTE_NO_DELETE,
+    # Edit's base permissions (Contribute plus ManageLists) with approval and the
+    # permissions listing, and without ManagePermissions: a list owner who edits the
+    # list but cannot change who holds access.
+    "Managed Owner": _CONTRIBUTE_NO_DELETE | {
+        "DeleteListItems", "DeleteVersions",
+        "ManageLists", "ApproveItems", "EnumeratePermissions",
+    },
 }
 TOOL_OWNED_LEVEL_NAMES: frozenset[str] = frozenset(TOOL_OWNED_LEVELS)
 

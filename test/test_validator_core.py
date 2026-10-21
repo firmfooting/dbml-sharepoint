@@ -2928,6 +2928,20 @@ def test_a_tool_owned_level_with_a_divergent_bitmap_is_refused() -> None:
     )
 
 
+def test_a_divergent_managed_owner_bitmap_is_refused() -> None:
+    canonical = sorted(TOOL_OWNED_LEVELS["Managed Owner"])
+    only(
+        _owned_findings(
+            name="Managed Owner", perms=[*canonical, "ManagePermissions"], renamed_from=[],
+        ),
+        FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+    )
+    none_of(
+        _owned_findings(name="Managed Owner", perms=canonical, renamed_from=[]),
+        FindingCode.TOOL_OWNED_LEVEL_BITMAP_DIVERGES,
+    )
+
+
 def test_a_tool_owned_level_name_cannot_be_a_rename_source() -> None:
     only(
         _owned_findings(name="XX Writers", perms=["ViewListItems"], renamed_from=[_SHARED]),
