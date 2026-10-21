@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.30.0...v0.31.0) (2026-10-21)
+
+
+### Features
+
+* **forms:** web-relative link templates, title prefix, optional label colon and number bubbles ([#925](https://github.com/firmfooting/dbml-sharepoint/issues/925)) ([2b497d8](https://github.com/firmfooting/dbml-sharepoint/commit/2b497d854d0ee0606aa66fb446a4a354ebe2c035))
+
 ## [0.30.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.29.0...v0.30.0) (2026-10-21)
 
 
