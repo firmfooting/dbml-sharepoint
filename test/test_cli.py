@@ -3934,7 +3934,7 @@ def test_a_declined_reader_is_not_reported_as_used(tmp_path: Path) -> None:
 
     env = tmp_path / "dbml-sharepoint.env"
     env.write_text("DBMLSP_IDENTITY_ENTERPRISE_READER=user:r@example.com\n", encoding="utf-8")
-    *_, provenance = resolve_env_settings(
+    *_, provenance, _help = resolve_env_settings(
         env, ENTERPRISE_READER_DECLINED, None, None, None, None, "UTC",
     )
     (value,) = provenance.values

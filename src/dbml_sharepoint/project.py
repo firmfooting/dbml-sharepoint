@@ -39,6 +39,8 @@ from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_PARAMETER,
     ENV_FILENAME,
     ENV_SETTINGS,
+    HELP_BASE_URL_PARAMETER,
+    HELP_GUIDES_PARAMETER,
     NO_ENV_FILE,
     TIME_ZONE_KEY,
     TIME_ZONE_PARAMETER,
@@ -50,6 +52,7 @@ from dbml_sharepoint.model.env_file import (
     identity_name_from_key,
     read_env_file,
 )
+from dbml_sharepoint.model.help_guides import HelpSettings
 from dbml_sharepoint.model.identities import (
     BUILTIN_IDENTITIES,
     IdentityError,
@@ -500,6 +503,7 @@ def resolve_env_settings(
     str | None, str | None, str | None, str | None, str | None,
     dict[str, str],
     EnvProvenance,
+    HelpSettings,
 ]:
     """Apply a resolved dbml-sharepoint.env file, honouring anything already
     supplied explicitly. Builds the `EnvProvenance` in the same pass that
@@ -524,6 +528,7 @@ def resolve_env_settings(
         return (
             enterprise_reader, deployment_log_list, deployment_log_change_list,
             deployment_log_site, change_log_list, time_zone, {}, NO_ENV_FILE,
+            HelpSettings(None, None, None),
         )
 
     try:
@@ -544,6 +549,8 @@ def resolve_env_settings(
         DEPLOYMENT_LOG_SITE_PARAMETER: deployment_log_site,
         CHANGE_LOG_LIST_PARAMETER: change_log_list,
         TIME_ZONE_PARAMETER: time_zone,
+        HELP_BASE_URL_PARAMETER: None,  # file only, no flag
+        HELP_GUIDES_PARAMETER: None,
     }
     resolved_reader = enterprise_reader
     values: list[EnvValue] = []
@@ -639,6 +646,9 @@ def resolve_env_settings(
         resolved[TIME_ZONE_PARAMETER],
         file_identities,
         provenance,
+        HelpSettings(
+            resolved[HELP_BASE_URL_PARAMETER], resolved[HELP_GUIDES_PARAMETER], env_file.parent,
+        ),
     )
 
 
@@ -744,7 +754,7 @@ def resolve_env_time_zone(
     """
     (
         _reader, _log_list, _change_list, _log_site, _change_log,
-        resolved, _identities, provenance,
+        resolved, _identities, provenance, _help,
     ) = resolve_env_settings(env_file, None, None, None, None, None, time_zone)
     return resolved, replace(
         provenance,

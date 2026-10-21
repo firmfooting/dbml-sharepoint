@@ -543,6 +543,11 @@ class FindingCode(StrEnum):
     FORM_HEADER_ICON_UNKNOWN = "form_header_icon_unknown", "error"
     FORM_HEADER_DATE_ORDER_NEEDED = "form_header_date_order_needed", "error"
     FORM_HEADER_DATE_ORDER_UNUSED = "form_header_date_order_unused", "error"
+    FORM_HELP_SETTING_INCOMPLETE = "form_help_setting_incomplete", "error"
+    FORM_HELP_BASE_URL_INVALID = "form_help_base_url_invalid", "error"
+    FORM_HELP_PAGE_INVALID = "form_help_page_invalid", "error"
+    FORM_HELP_KEY_UNMAPPED = "form_help_key_unmapped", "error"
+    FORM_HELP_OFF = "form_help_off", "warning"
 
     REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form", "error"
     REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = (

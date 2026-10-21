@@ -113,6 +113,30 @@ TIME_ZONE_KEY = 'DBMLSP_TIME_ZONE'
 TIME_ZONE_PARAMETER = 'time_zone'
 ```
 
+### `HELP_BASE_URL_KEY`
+
+```python
+HELP_BASE_URL_KEY = 'DBMLSP_HELP_BASE_URL'
+```
+
+### `HELP_BASE_URL_PARAMETER`
+
+```python
+HELP_BASE_URL_PARAMETER = 'help_base_url'
+```
+
+### `HELP_GUIDES_KEY`
+
+```python
+HELP_GUIDES_KEY = 'DBMLSP_HELP_GUIDES'
+```
+
+### `HELP_GUIDES_PARAMETER`
+
+```python
+HELP_GUIDES_PARAMETER = 'help_guides'
+```
+
 ### `IDENTITY_KEY_PREFIX`
 
 ```python

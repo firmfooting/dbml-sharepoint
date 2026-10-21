@@ -171,7 +171,7 @@ def test_the_file_reader_alias_and_its_canonical_key_are_refused_together(
 
 def test_the_file_reader_alias_is_folded_into_the_identities(tmp_path: Path) -> None:
     path = _env(tmp_path, "DBMLSP_ENTERPRISE_READER=reader@example.com\n")
-    *_, file_identities, _provenance = resolve_env_settings(
+    *_, file_identities, _provenance, _help = resolve_env_settings(
         path, None, None, None, None, None, None,
     )
     assert file_identities == {"enterprise_reader": "user:reader@example.com"}
@@ -181,7 +181,7 @@ def test_an_overridden_identity_is_described_by_hash(tmp_path: Path) -> None:
     """Review focus 1: the provenance line reaches the central log."""
     path = _env(tmp_path, "DBMLSP_IDENTITY_AUTOMATION=user:old@example.com\n"
                           "DBMLSP_ENTERPRISE_READER=reader@example.com\n")
-    *_, file_identities, provenance = resolve_env_settings(
+    *_, file_identities, provenance, _help = resolve_env_settings(
         path, "flagged@example.com", None, None, None, None, None,
         identity_flags=("automation=user:new@example.com",),
     )
@@ -197,7 +197,7 @@ def test_a_reader_flag_over_the_canonical_file_key_is_described_by_hash(
     tmp_path: Path,
 ) -> None:
     path = _env(tmp_path, "DBMLSP_IDENTITY_ENTERPRISE_READER=user:old@example.com\n")
-    *_, provenance = resolve_env_settings(
+    *_, provenance, _help = resolve_env_settings(
         path, "flagged@example.com", None, None, None, None, None,
     )
     line = describe_env_provenance(provenance)
@@ -207,7 +207,7 @@ def test_a_reader_flag_over_the_canonical_file_key_is_described_by_hash(
 
 def test_an_identity_flag_beats_the_file_reader_alias(tmp_path: Path) -> None:
     path = _env(tmp_path, "DBMLSP_ENTERPRISE_READER=old@example.com\n")
-    reader, *_, file_identities, provenance = resolve_env_settings(
+    reader, *_, file_identities, provenance, _help = resolve_env_settings(
         path, None, None, None, None, None, None,
         identity_flags=("enterprise_reader=user:new@example.com",),
     )
@@ -228,7 +228,7 @@ def test_the_reader_flag_and_an_identity_flag_are_still_refused_over_a_file_alia
     tmp_path: Path,
 ) -> None:
     path = _env(tmp_path, "DBMLSP_ENTERPRISE_READER=old@example.com\n")
-    reader, *_, file_identities, _ = resolve_env_settings(
+    reader, *_, file_identities, _, _help = resolve_env_settings(
         path, "a@example.com", None, None, None, None, None,
         identity_flags=("enterprise_reader=user:b@example.com",),
     )
@@ -253,7 +253,7 @@ def test_resolve_env_settings_leaves_a_bad_identity_flag_to_resolve_identities(
     tmp_path: Path, flags: tuple[str, ...], capsys: pytest.CaptureFixture[str],
 ) -> None:
     path = _env(tmp_path, "DBMLSP_IDENTITY_AUTOMATION=user:old@example.com\n")
-    *_, provenance = resolve_env_settings(
+    *_, provenance, _help = resolve_env_settings(
         path, None, None, None, None, None, None, identity_flags=flags,
     )
     assert "example.com" not in describe_env_provenance(provenance)
