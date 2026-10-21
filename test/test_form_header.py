@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -763,11 +764,61 @@ def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> Non
     )
 
 
-def test_a_list_token_without_a_declared_list_url_is_refused() -> None:
+def _list_href(
+    *, kind: Literal["List", "DocumentLibrary"] = "List", title: str | None = None,
+    internal_name: str | None = None, renamed_from: tuple[str, ...] = (),
+    previous_prefixes: tuple[str, ...] = (),
+) -> object:
+    schema_, base = _bundle(HeaderTree())
+    entity = dataclasses.replace(
+        base.mapping.entities["Task"], kind=kind, title=title, internal_name=internal_name,
+        renamed_from=renamed_from,
+    )
+    mapping = dataclasses.replace(
+        base.mapping, entities={"Task": entity}, previous_prefixes=previous_prefixes,
+    )
+    ctx = form_header._context(schema_, dataclasses.replace(base, mapping=mapping), "Task", SITE)
+    assert ctx is not None
     chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
+    return _chip_href(chip, ctx)
+
+
+def test_a_list_token_with_an_internal_name_is_encoded_per_segment() -> None:
+    assert _list_href(internal_name="Lists/Tasks #1") == (
+        "=@currentWeb + '/Lists/Tasks%20%231/x?' + [$Case]"
+    )
+
+
+def test_a_list_token_without_an_internal_name_is_the_derived_list_path() -> None:
+    assert _list_href() == "=@currentWeb + '/Lists/APP_Task/x?' + [$Case]"
+
+
+def test_a_list_token_without_an_internal_name_on_a_library_has_no_lists_prefix() -> None:
+    assert _list_href(kind="DocumentLibrary") == (
+        "=@currentWeb + '/APP_Task/x?' + [$Case]"
+    )
+
+
+@pytest.mark.parametrize(("renamed", "prefixes"), [(("Old",), ()), ((), ("OLD_",))])
+def test_a_derived_list_token_is_refused_when_a_rename_keeps_the_old_root(
+    renamed: tuple[str, ...], prefixes: tuple[str, ...],
+) -> None:
     with pytest.raises(HeaderRefusal) as found:
-        _chip_href(chip, _ctx())
+        _list_href(renamed_from=renamed, previous_prefixes=prefixes)
     assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+    assert "Set internal_name" in found.value.finding.message
+
+
+def test_a_derived_list_token_is_refused_when_a_title_is_added() -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _list_href(title="Task Log")
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_a_declared_internal_name_survives_a_rename() -> None:
+    assert _list_href(internal_name="Lists/Tasks", renamed_from=("Old",)) == (
+        "=@currentWeb + '/Lists/Tasks/x?' + [$Case]"
+    )
 
 
 def test_a_web_template_keeps_the_quote_refusal() -> None:
@@ -804,7 +855,7 @@ NUMBERS = {**TYPES, "Points": "int", "Cost": "number", "Loose": "number"}
 
 
 def _numbers(filled: frozenset[str] = frozenset({"Points", "Cost"})) -> RenderContext:
-    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, None, filled)
+    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, "", filled)
 
 
 def test_a_required_number_with_a_default_shows_its_raw_value() -> None:

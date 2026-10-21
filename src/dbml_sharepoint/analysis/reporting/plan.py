@@ -27,7 +27,7 @@ from dbml_sharepoint.analysis.derived import (
     lookup_key_columns,
 )
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
-from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
+from dbml_sharepoint.analysis.list_url import list_folder, list_url_key
 from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.rendered_columns import is_declared_builtin
@@ -256,12 +256,13 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     under /<Title>/Forms/.
     """
     entity = bundle.mapping.entities.get(entity_name)
+    folder = list_folder(entity, list_title)
     if entity is not None and entity.is_library:
-        return f"/{entity.internal_name or list_title}/Forms/DispForm.aspx?ID="
+        return f"/{folder}/Forms/DispForm.aspx?ID="
     if entity is not None and entity.internal_name:
-        segments = list_url_path(entity.internal_name).split("/")
-        return "/" + "/".join(quote(seg, safe="") for seg in segments) + "/DispForm.aspx?ID="
-    return f"/Lists/{list_title}/DispForm.aspx?ID="
+        encoded = "/".join(quote(seg, safe="") for seg in folder.split("/"))
+        return f"/{encoded}/DispForm.aspx?ID="
+    return f"/{folder}/DispForm.aspx?ID="
 
 
 def key_identity(list_url: str, list_title: str) -> str:
