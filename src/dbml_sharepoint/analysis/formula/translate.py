@@ -170,7 +170,10 @@ def _text_of(node: Expr, tr: _Tr, name: str) -> str:
         return tr.code
     # A computed number prints with SharePoint's 15 significant digits, which toString does not.
     if isinstance(node, Num):
-        return quoted(f"{node.value:.15g}")
+        text = f"{node.value:.15g}"
+        # Scientific forms (1e+18, 1e-05) are not known to match how the column prints them.
+        if abs(node.value) < 1e15 and "e" not in text:
+            return quoted(text)
     return _unsupported(
         name, "which joins a number as text and a header cannot print it the same way"
     )

@@ -217,3 +217,19 @@ def test_a_single_quote_in_a_text_is_refused(formula: str) -> None:
         translate_column("Calc", _ctx(formula, "text"))
     assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
     assert "single quote" in found.value.detail
+
+
+@pytest.mark.parametrize("literal", ["1000000000000000000", "0.00001", "123456789012345678"])
+@pytest.mark.parametrize("join", ['"a"&{}', 'CONCATENATE("a",{})'])
+def test_a_number_literal_that_prints_in_scientific_form_is_not_joined_as_text(
+    literal: str, join: str
+) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(join.format(literal), "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+
+
+@pytest.mark.parametrize("literal", ["0.0001", "999999999999999", "5"])
+def test_a_plain_decimal_literal_is_joined_as_text(literal: str) -> None:
+    expression = translate_column("Calc", _ctx(f'"a"&{literal}', "text")).expression
+    assert f"'{literal}'" in expression
