@@ -12,6 +12,7 @@ import math
 from collections.abc import Callable, Mapping
 from typing import Protocol
 
+from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.syntax import (
     Binary,
@@ -36,10 +37,6 @@ class Coded(Protocol):
 
 class _NotATable(Exception):  # noqa: N818 -- control flow, not an error
     pass
-
-
-def quoted(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
 
 
 class _Rewrite:
@@ -88,8 +85,10 @@ class _Rewrite:
         return Binary(op, self.go(left, stack), self.go(right, stack))
 
     def compare(self, op: str, name: str, literal: str) -> Expr:
-        if literal == "":
-            raise _NotATable  # a blank would then be a listed value, not part of the other class
+        if literal == "" or "'" in literal:
+            # A blank would be a listed value, and a quote has no documented escape: the plain
+            # translation refuses the latter by name.
+            raise _NotATable
         key = literal.lower()
         self.uses.setdefault(name, {}).setdefault(key, literal)
         equal = self.picked is not None and self.picked[name] == key

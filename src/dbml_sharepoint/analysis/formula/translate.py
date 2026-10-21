@@ -22,6 +22,7 @@ from typing import Literal, NoReturn
 
 from dbml_sharepoint.analysis.column_refs import calculated_cycle, formula_column_refs
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.civil import (
     END_DAY,
     FIRST_DAY,
@@ -45,7 +46,6 @@ from dbml_sharepoint.analysis.formula.syntax import (
     Ref,
     Text,
 )
-from dbml_sharepoint.analysis.formula.tables import quoted
 from dbml_sharepoint.analysis.formula.tables import tabulate as build_table
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
@@ -63,6 +63,7 @@ _NO_EQUIVALENT = {
     "LEN": "and the formatting reference documents no text-length operator",
     "RIGHT": "and the formatting reference documents no text-length operator to count from the end",
 }
+_NO_QUOTE = "and the formatting reference gives no escape for one inside an expression"
 # A choice column reads as text; its listed values do not matter to a formula.
 _CHOICE_KINDS = frozenset({"choice"})
 _KIND = {"text": "text", "choice": "text", "number": "number", "date": "date"}
@@ -136,9 +137,6 @@ def _unsupported(name: str, why: str) -> NoReturn:
     _refuse(FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, f"uses {name}, {why}")
 
 
-_q = quoted
-
-
 def _lit(value: float) -> str:
     return str(int(value)) if value == int(value) else f"{Decimal(repr(value)):f}"
 
@@ -172,7 +170,7 @@ def _text_of(node: Expr, tr: _Tr, name: str) -> str:
         return tr.code
     # A computed number prints with SharePoint's 15 significant digits, which toString does not.
     if isinstance(node, Num):
-        return _q(f"{node.value:.15g}")
+        return quoted(f"{node.value:.15g}")
     return _unsupported(
         name, "which joins a number as text and a header cannot print it the same way"
     )
@@ -289,7 +287,9 @@ class _Translator:
             case Num(value=value):
                 return _Tr(_lit(value), "number", frozenset({value}))
             case Text(value=value):
-                return _Tr(_q(value), "text")
+                if "'" in value:
+                    _unsupported("a text with a single quote", _NO_QUOTE)
+                return _Tr(quoted(value), "text")
             case Ref(name=name):
                 return self.ref(name, stack)
             case Neg(operand=operand):

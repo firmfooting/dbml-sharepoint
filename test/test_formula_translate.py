@@ -205,3 +205,15 @@ def test_a_refusal_names_the_formula_and_what_it_refused(
     assert refusal.code is code
     assert named in refusal.detail
     assert formula in message
+
+
+# A quote has no documented escape inside an expression literal, in a plain or a table formula.
+@pytest.mark.parametrize(
+    "formula",
+    ['"It\'s"', 'IF([Status]="O\'pen","a","b")', 'IF([Status]="Open","It\'s","b")', '[Name]&"\'"'],
+)
+def test_a_single_quote_in_a_text_is_refused(formula: str) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(formula, "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "single quote" in found.value.detail

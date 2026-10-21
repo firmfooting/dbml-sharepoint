@@ -1216,7 +1216,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED: (
         "A calculated column's formula uses a function or operator that has "
         "no exact formatting-expression equivalent, so a header could differ "
-        "from the column."
+        "from the column. That includes a text or choice literal with a "
+        "single quote, because the formatting reference documents no escape "
+        "for one inside an expression, and arithmetic or a comparison whose "
+        "operands are not provably safe (a divisor that may be zero, a number "
+        "not known to be whole, a stored date compared by its instant)."
     ),
     FindingCode.FORM_FORMULA_VOLATILE: (
         "A calculated column's formula calls TODAY or NOW. Its value changes "

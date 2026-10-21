@@ -15,6 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dbml_sharepoint.analysis.form_header import resolve_form_headers
+from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.bundle import write_artifact
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -25,6 +26,8 @@ DATE_ORDER = "dmy"
 LIST_TITLE = "FormHeaderParity"
 OWNERSHIP = "dbml-sharepoint form-header-parity probe scratch list. Safe to delete."
 APOSTROPHE = "Can't start"
+# The badge text in form.yaml; the header's span is then given a hand-written expression literal.
+APOSTROPHE_SLOT = "Apostrophe slot"
 DAYS = {"Low": 14, "Medium": 21, "High": 30, "Critical": 28}
 RANK = 'IF([Impact]="Low",1,IF([Impact]="Medium",2,IF([Impact]="High",3,4)))'
 RISK_RANK = 'IF([Risk]="Low",1,IF([Risk]="Medium",2,3))'
@@ -106,7 +109,7 @@ FORM = f"""Task:
           - {{ column: Review, label: "Review on", date_order: {DATE_ORDER} }}
           - {{ column: Chased, label: "Chased on", date_order: {DATE_ORDER} }}
           - {{ column: Rating, label: "Rating now", tokens: {{ High: severe, Medium: warning, Low: good }} }}
-          - badge: {{ text: "{APOSTROPHE}", token: warning, when: {{ field: Status, op: eq, value: Open }} }}
+          - badge: {{ text: "{APOSTROPHE_SLOT}", token: warning, when: {{ field: Status, op: eq, value: Open }} }}
 """  # noqa: E501 -- a form.yaml flow line
 
 
@@ -128,6 +131,19 @@ calculated_formulas:
 """
 
 
+def _fill_slot(node: object) -> int:
+    """Replace the slot text with an expression literal holding the apostrophe; the count."""
+    found = 0
+    if isinstance(node, dict):
+        if node.get("txtContent") == APOSTROPHE_SLOT:
+            node["txtContent"] = "=" + quoted(APOSTROPHE)
+            found += 1
+        found += sum(_fill_slot(v) for v in node.values())
+    elif isinstance(node, list):
+        found += sum(_fill_slot(v) for v in node)
+    return found
+
+
 def _header(zone: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -139,6 +155,8 @@ def _header(zone: str) -> str:
     assert not findings, findings
     header = resolved.mapping.form_formatting["Task"].header
     assert header is not None
+    # The build refuses a quote in a literal, so the probe writes the doubled form by hand.
+    assert _fill_slot(header) == 1
     return json.dumps({"headerJSONFormatter": header}, separators=(",", ":"))
 
 
