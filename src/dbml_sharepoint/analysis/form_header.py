@@ -39,6 +39,7 @@ from dbml_sharepoint.analysis.formula.translate import (
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
+from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition
@@ -73,7 +74,7 @@ class RenderContext:
     formulas: Mapping[str, str]  # calculated column -> formula
     choices: Mapping[str, tuple[str, ...]]  # choice column -> its values
     zone: str
-    list_path: str | None = None  # the list's declared web-relative URL, for a {list} token
+    list_path: str = ""  # the list's web-relative folder, for a {list} token
     # stored number columns that are required and have a default, so are never blank
     filled_numbers: frozenset[str] = frozenset()
 
@@ -324,13 +325,7 @@ class _Render:
         if text.startswith(_WEB):
             lead, text = ["@currentWeb"], text.removeprefix(_WEB)
         if "{list}" in text:
-            if self.ctx.list_path is None:
-                raise self.refusal(
-                    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, chip.url_column,
-                    "the chip url uses {list}, and the entity declares no internal_name "
-                    "to give the list's address.",
-                )
-            # Per-segment encoding as reporting/plan.py::_item_url_path does, so # and % survive.
+            # Per-segment encoding as every item link does, so # and % survive.
             encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
             text = text.replace("{list}", encoded)
         return lead + self.template(text, value, "chip url", chip.url_column)
@@ -709,7 +704,7 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},
         zone=zone,
-        list_path=entry.internal_name,
+        list_path=list_folder(entry, bundle.mapping.list_title(entity)),
         filled_numbers=frozenset(
             c.name for c in table.columns
             if c.type in NUMBER_TYPES and c.required and c.default is not None

@@ -9,6 +9,7 @@ import re
 from unicodedata import category
 
 from dbml_sharepoint.model.errors import MappingValueError
+from dbml_sharepoint.model.mapping_types import EntityMapping
 
 _ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 
@@ -42,3 +43,16 @@ def server_relative(site_path: str, declared: str) -> str:
     """The server-relative URL GetList takes: the site's path and the list's."""
     site = site_path.strip().strip("/")
     return "/" + "/".join(p for p in (site, list_url_path(declared)) if p)
+
+
+def list_folder(entity: EntityMapping | None, list_title: str) -> str:
+    """The web-relative folder a list or library lives in, decoded, no edge slashes.
+
+    The declared URL when there is one; else the title, behind ``Lists/`` for a
+    list and bare for a library. One home for deploy-side item links and form headers.
+    """
+    if entity is not None and entity.internal_name:
+        return list_url_path(entity.internal_name)
+    if entity is not None and entity.is_library:
+        return list_title
+    return f"Lists/{list_title}"

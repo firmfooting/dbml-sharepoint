@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -763,11 +764,35 @@ def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> Non
     )
 
 
-def test_a_list_token_without_a_declared_list_url_is_refused() -> None:
+def _list_href(
+    *, kind: Literal["List", "DocumentLibrary"] = "List", title: str | None = None,
+    internal_name: str | None = None,
+) -> object:
+    schema_, base = _bundle(HeaderTree())
+    entity = dataclasses.replace(
+        base.mapping.entities["Task"], kind=kind, title=title, internal_name=internal_name,
+    )
+    mapping = dataclasses.replace(base.mapping, entities={"Task": entity})
+    ctx = form_header._context(schema_, dataclasses.replace(base, mapping=mapping), "Task", SITE)
+    assert ctx is not None
     chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
-    with pytest.raises(HeaderRefusal) as found:
-        _chip_href(chip, _ctx())
-    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+    return _chip_href(chip, ctx)
+
+
+def test_a_list_token_with_an_internal_name_is_encoded_per_segment() -> None:
+    assert _list_href(internal_name="Lists/Tasks #1") == (
+        "=@currentWeb + '/Lists/Tasks%20%231/x?' + [$Case]"
+    )
+
+
+def test_a_list_token_without_an_internal_name_is_the_derived_list_path() -> None:
+    assert _list_href(title="Task Log") == "=@currentWeb + '/Lists/Task%20Log/x?' + [$Case]"
+
+
+def test_a_list_token_without_an_internal_name_on_a_library_has_no_lists_prefix() -> None:
+    assert _list_href(kind="DocumentLibrary", title="Task Docs") == (
+        "=@currentWeb + '/Task%20Docs/x?' + [$Case]"
+    )
 
 
 def test_a_web_template_keeps_the_quote_refusal() -> None:
@@ -804,7 +829,7 @@ NUMBERS = {**TYPES, "Points": "int", "Cost": "number", "Loose": "number"}
 
 
 def _numbers(filled: frozenset[str] = frozenset({"Points", "Cost"})) -> RenderContext:
-    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, None, filled)
+    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, "", filled)
 
 
 def test_a_required_number_with_a_default_shows_its_raw_value() -> None:
