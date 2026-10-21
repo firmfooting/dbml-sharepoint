@@ -984,6 +984,10 @@ def build_schema_json(
                 entity.settings.enable_folder_creation
                 if entity.is_library and entity.settings is not None else None
             ),
+            "content_approval": (
+                entity.settings.content_approval
+                if entity.is_library and entity.settings is not None else None
+            ),
             # The integer SharePoint stores (`DraftVisibilityType`).
             "draft_version_visibility": (
                 DRAFT_VISIBILITY_VALUES[entity.settings.draft_version_visibility]

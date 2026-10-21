@@ -401,7 +401,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           : { ok: true, status: 200, headers: { get: () => null },
               text: async () => DEFAULTS_FILE };
       }
-      const prop = /\$select=(EnableFolderCreation|DraftVersionVisibility)/.exec(u);
+      const prop =
+        /\$select=(EnableFolderCreation|DraftVersionVisibility|EnableModeration)/.exec(u);
       if (prop) {
         return LIBRARY_PROP === undefined
           ? respond(404, { error: { message: { value: 'no list' } } })
@@ -1090,3 +1091,15 @@ def test_verify_targets_cover_declared_folders_without_defaults() -> None:
     entry = verify_targets(schema, bundle, "default")["library_settings"][0]
     assert entry["folder_defaults"][0]["folder"] == "A"
     assert entry["folder_defaults"][1].value == {"folder": "B", "values": []}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("live", "verdict"), [
+    ("true", "VERIFIED"), ("false", "MISMATCH"), ("undefined", "NOT-VERIFIED"),
+])
+def test_content_approval_is_verified_read_only(live: str, verdict: str) -> None:
+    out = _run_verify_full(
+        _switches_verify_js(LibrarySettings(content_approval=True)), LIBRARY_PROP=live,
+    )
+    assert out["verdict"] == verdict
+    assert _no_writes(out)

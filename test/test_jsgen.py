@@ -471,3 +471,30 @@ def test_folder_defaults_are_emitted_for_declared_folders_only() -> None:
     assert entry["folder_defaults"] == [
         {"folder": "B", "values": [{"field": "Note", "value": "x"}]},
     ]
+
+
+def test_content_approval_is_emitted_only_for_a_library_that_declares_it() -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import LibrarySettings
+
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+
+    def emitted(settings: LibrarySettings | None) -> JsonValue:
+        entity = replace(base.mapping.entities["Docs"], settings=settings)
+        bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+        (entry,) = build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
+        return entry["content_approval"]
+
+    assert emitted(LibrarySettings(content_approval=False)) is False
+    assert emitted(LibrarySettings(content_approval=True)) is True
+    assert emitted(LibrarySettings(require_checkout=True)) is None
+    assert emitted(None) is None

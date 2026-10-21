@@ -1764,3 +1764,27 @@ def test_folder_default_on_a_unique_column_is_refused(tmp_path: Path) -> None:
         tmp_path, _one("FolderA", "Code", "x"), extra_columns="Code nvarchar [unique]",
     )
     assert "[unique]" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
+
+
+@pytest.mark.parametrize(("approval", "findings"), [(True, 0), (False, 1), (None, 1)])
+def test_content_approval_lets_draft_visibility_stand_without_minor_versions(
+    approval: bool | None, findings: int,
+) -> None:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(draft_version_visibility="approver", content_approval=approval),
+    )
+    got = [
+        f for f in _library_findings(
+            entity, versioning_default=Versioning(enable_minor_versions=False),
+        ) if f.code == FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS
+    ]
+    assert len(got) == findings
+
+
+def test_content_approval_is_refused_on_a_list() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="List", base_template=100, site_role="default",
+        settings=LibrarySettings(content_approval=True),
+    )
+    only(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)

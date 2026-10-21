@@ -146,6 +146,7 @@ class LibrarySettings:
     require_checkout: bool | None = None
     enable_folder_creation: bool | None = None
     draft_version_visibility: dbml_sharepoint.model.mapping_types.DraftVisibility | None = None
+    content_approval: bool | None = None
 ```
 
 `entities.<name>.settings`, a document library's own switches.

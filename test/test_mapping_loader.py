@@ -6062,3 +6062,15 @@ def test_folder_default_values_must_be_text_or_numbers(tmp_path: Path, value: st
 def test_folder_defaults_must_map_folders_to_columns(tmp_path: Path) -> None:
     path = _folder_defaults(tmp_path, "              FolderA: oops")
     _refuses(path, MappingShapeError)
+
+
+def test_settings_accept_content_approval(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              content_approval: true")
+    settings = load_mapping(path).mapping.entities["Document"].settings
+    assert settings is not None
+    assert settings.content_approval is True and settings.require_checkout is None
+
+
+def test_content_approval_must_be_a_bool(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              content_approval: maybe")
+    _refuses(path, MappingShapeError, "content_approval")

@@ -32,6 +32,22 @@ explicit migration.
 > inactive and use an approved versioned migration/rebuild procedure. Never use
 > generated rollback against a site containing real records.
 
+{% set approved = lists | selectattr('content_approval', 'defined') | rejectattr('content_approval', 'none') | list %}
+{% if approved %}
+## Content approval
+
+{% for l in approved %}
+- **{{ l.title }}**: content approval {{ 'on' if l.content_approval else 'off' }}.
+{% endfor %}
+
+With content approval on, a new or changed item waits for an approver.
+Readers see only approved versions when `draft_version_visibility` is
+`author` or `approver`; at the default (`reader`) they also see items
+waiting for approval. Turning it off is refused while the
+library holds items pending approval, unless `const
+ACKNOWLEDGE_PENDING_APPROVALS = true;` is set near the top of the script.
+
+{% endif %}
 ## How to run this deployment
 
 1. **Assess the site first**: paste `assess.js.txt` (read-only; it makes no

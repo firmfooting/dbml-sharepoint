@@ -78,16 +78,18 @@ def check(vc: ValidationContext) -> list[Finding]:
 def _draft_visibility_needs_minor_versions(
     vc: ValidationContext, entity_name: str, entity: EntityMapping,
 ) -> list[Finding]:
-    """Refuse a non-default draft visibility on a library with minor versions off.
+    """Refuse a non-default draft visibility on a library with neither minor versions nor approval.
 
     Measured on a SharePoint Online tenant (library settings finding): the MERGE
     answers 204 and the value stays 0, so the write would be silently ignored.
+    With approval on the value sticks (`library.approval.draft-visibility-sticks`).
     Judged on the resolved versioning, as `_minor_versions_need_versioning` is.
     """
     settings = entity.settings
     if (
         settings is None or not entity.is_library
         or settings.draft_version_visibility in (None, "reader")
+        or settings.content_approval is True
         or (
             vc.bundle.mapping.versioning_for(entity_name).enable_versioning
             and vc.bundle.mapping.versioning_for(entity_name).enable_minor_versions
@@ -98,8 +100,9 @@ def _draft_visibility_needs_minor_versions(
         FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS,
         f"entities[{entity_name}].settings.draft_version_visibility: "
         f"{settings.draft_version_visibility} has no effect while versioning or "
-        f"minor versions are off, because SharePoint keeps Reader. Set enable_versioning "
-        f"and enable_minor_versions to true in the versioning that reaches {entity_name}, "
+        f"minor versions are off and content_approval is not true, because SharePoint "
+        f"keeps Reader. Set content_approval: true, or set enable_versioning and "
+        f"enable_minor_versions to true in the versioning that reaches {entity_name}, "
         f"or remove the key.",
         location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
     )]

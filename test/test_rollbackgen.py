@@ -460,3 +460,9 @@ def test_rollback_targets_previous_titles_with_their_own_markers() -> None:
             "is_library": False,
         },
     ]
+
+
+def test_rollback_only_deletes_lists_and_never_changes_content_approval() -> None:
+    schema, bundle, release = _load_fixtures()
+    js = generate_rollback_js(schema=schema, bundle=bundle, release=release, **_COMMON_ARGS)
+    assert "EnableModeration" not in js and "list-setting" not in js

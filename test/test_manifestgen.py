@@ -2059,3 +2059,38 @@ def test_an_identity_enrolled_in_two_groups_prints_its_values_once(tmp_path: Pat
     )
     assert "XX Writers Two" in text
     assert text.count("automation = `user:flows@example.com`") == 1
+
+
+def _approval_manifest(approval: bool | None) -> str:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import LibrarySettings
+
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": replace(
+        entity, settings=None if approval is None else LibrarySettings(content_approval=approval),
+    )}))
+    resolved = resolve(schema, bundle.mapping)
+    return generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[], bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def test_manifest_says_what_content_approval_changes_for_readers() -> None:
+    md = _approval_manifest(True)
+    assert "## Content approval" in md and "**APP_Docs**: content approval on." in md
+    assert "Readers see only approved versions" in md and "ACKNOWLEDGE_PENDING_APPROVALS" in md
+    assert "content approval off." in _approval_manifest(False)
+    assert "## Content approval" not in _approval_manifest(None)

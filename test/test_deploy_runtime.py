@@ -235,7 +235,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // EnableFolderCreation and DraftVersionVisibility, one pair for the site.
     // IGNORE_LIBRARY_PROP_WRITES answers the MERGE 200 and keeps the old values.
     const IGNORE_LIBRARY_PROP_WRITES = false;
-    const libraryProps = { EnableFolderCreation: true, DraftVersionVisibility: 0 };
+    const libraryProps = {
+      EnableFolderCreation: true, DraftVersionVisibility: 0, EnableModeration: false,
+    };
+    // Items pending approval (_ModerationStatus 2), and the HTTP status of that query.
+    const PENDING_APPROVALS = 0;
+    const PENDING_QUERY_STATUS = 200;
     const DROP_LIST_MARKER_AFTER_READS = null;
     const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
     // Drop every list's marker the moment a named phase announces itself. A
@@ -748,6 +753,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         return url.includes("contenttypes('")
           ? { d: state } : { d: { results: [state] } };
       }
+      if (url.includes('getbytitle') && url.includes('OData__ModerationStatus')) {
+        if (PENDING_QUERY_STATUS !== 200) {
+          return { error: { code: 'query', status: PENDING_QUERY_STATUS } };
+        }
+        const length = Math.min(PENDING_APPROVALS, 1);
+        return { d: { results: Array.from({ length }, () => ({ Id: 1 })) } };
+      }
       if (/\/items(\?|$)/.test(url)) {
         return { d: { results: itemsOf(listOf(url)) } };
       }
@@ -778,7 +790,8 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
         return { d: { EnableAttachments: attachmentsEnabled } };
       }
-      const propSelect = /\$select=((?:EnableFolderCreation|DraftVersionVisibility)[\w,]*)/
+      const propSelect =
+        /\$select=((?:EnableFolderCreation|DraftVersionVisibility|EnableModeration)[\w,]*)/
         .exec(url);
       if (url.includes('getbytitle') && propSelect) {
         return { d: Object.fromEntries(propSelect[1].split(',').map(n => [n, libraryProps[n]])) };
@@ -1787,6 +1800,10 @@ def _run_adopted_deploy(
     force_checkout_fault: Mapping[str, object] | None = None,
     library_switches: Mapping[str, bool | int] | None = None,
     ignore_library_prop_writes: bool = False,
+    moderation_live: bool = False,
+    pending_approvals: int = 0,
+    pending_query_status: int = 200,
+    acknowledge_pending: bool = False,
 ) -> tuple[Json, list[Json], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -1840,6 +1857,15 @@ def _run_adopted_deploy(
         "const IGNORE_LIBRARY_PROP_WRITES = false;",
         f"const IGNORE_LIBRARY_PROP_WRITES = {json.dumps(ignore_library_prop_writes)};",
     ).replace(
+        "EnableModeration: false,",
+        f"EnableModeration: {json.dumps(moderation_live)},",
+    ).replace(
+        "const PENDING_APPROVALS = 0;",
+        f"const PENDING_APPROVALS = {pending_approvals};",
+    ).replace(
+        "const PENDING_QUERY_STATUS = 200;",
+        f"const PENDING_QUERY_STATUS = {pending_query_status};",
+    ).replace(
         "const FORCE_CHECKOUT_FAULT = null;",
         f"const FORCE_CHECKOUT_FAULT = {json.dumps(force_checkout_fault)};",
     ).replace(
@@ -1868,6 +1894,10 @@ def _run_adopted_deploy(
     for key, value in (library_switches or {}).items():
         assert f'"{key}": null' in deploy_js
         deploy_js = deploy_js.replace(f'"{key}": null', f'"{key}": {json.dumps(value)}')
+    if acknowledge_pending:
+        flag = "const ACKNOWLEDGE_PENDING_APPROVALS = false;"
+        assert flag in deploy_js
+        deploy_js = deploy_js.replace(flag, flag.replace("false", "true"))
     # The change writer is wrapped so a test can read the rows it was handed.
     shim = "let logChange = (change) => { DEPLOY_CHANGES.push(change); };"
     assert shim in deploy_js
@@ -1921,6 +1951,10 @@ class _AdoptedKnobs(TypedDict, total=False, closed=True):
     force_checkout_fault: Mapping[str, object] | None
     library_switches: Mapping[str, bool | int] | None
     ignore_library_prop_writes: bool
+    moderation_live: bool
+    pending_approvals: int
+    pending_query_status: int
+    acknowledge_pending: bool
 
 
 def _force_checkout_run(
@@ -2030,7 +2064,8 @@ def _switch_run(
     merges = [
         Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c["body"]
-        and ("EnableFolderCreation" in c["body"] or "DraftVersionVisibility" in c["body"])
+        and ("EnableFolderCreation" in c["body"] or "DraftVersionVisibility" in c["body"]
+             or "EnableModeration" in c["body"])
     ]
     reads = sum(
         1 for c in calls
@@ -2045,7 +2080,7 @@ def _switch_run(
 
 def _changed_settings(changes: list[Json]) -> list[str]:
     return [
-        name for name in ("EnableFolderCreation", "DraftVersionVisibility")
+        name for name in ("EnableFolderCreation", "DraftVersionVisibility", "EnableModeration")
         for c in changes if c["key"].endswith(f":{name}")
     ]
 
@@ -11159,3 +11194,73 @@ def test_an_aborted_run_removes_only_what_it_added() -> None:
     assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
     assert [u for u in removed if f"removebyid({_FLOWS['Id']})" in u], removed
     assert not [u for u in removed if f"removebyid({_OTHER['Id']})" in u], removed
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_content_approval_on_is_written_and_read_back(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(tmp_path, library_switches={"content_approval": True})
+    assert summary.get("errors") == [], summary["errors"]
+    assert [m["EnableModeration"] for m in merges] == [True]
+    assert _changed_settings(changes) == ["EnableModeration"]
+    assert (changes[0]["oldValue"], changes[0]["newValue"]) == ("false", "true")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_unchanged_content_approval_issues_no_merge(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": False},
+    )
+    assert summary.get("aborted").value is None, summary
+    assert merges == [] and changes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_content_approval_read_back_mismatch_throws(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": True}, ignore_library_prop_writes=True,
+    )
+    assert merges and changes == []
+    (error,) = [e["error"] for e in summary["errors"] if "EnableModeration" in e["error"]]
+    assert "read back false" in error
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_content_approval_off_with_nothing_pending_is_written(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": False}, moderation_live=True,
+    )
+    assert summary.get("errors") == [], summary["errors"]
+    assert [m["EnableModeration"] for m in merges] == [False]
+    assert _changed_settings(changes) == ["EnableModeration"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_content_approval_off_is_refused_while_items_are_pending(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": False},
+        moderation_live=True, pending_approvals=3,
+    )
+    assert merges == [] and changes == []
+    (error,) = [e["error"] for e in summary["errors"] if "pending approval" in e["error"]]
+    assert "ACKNOWLEDGE_PENDING_APPROVALS" in error
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_content_approval_off_is_refused_when_pending_cannot_be_counted(tmp_path: Path) -> None:
+    summary, merges, _, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": False},
+        moderation_live=True, pending_query_status=500,
+    )
+    assert merges == []
+    assert any("could not be counted" in e["error"] for e in summary["errors"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_acknowledging_pending_approvals_turns_approval_off(tmp_path: Path) -> None:
+    summary, merges, changes, _ = _switch_run(
+        tmp_path, library_switches={"content_approval": False},
+        moderation_live=True, pending_approvals=3, acknowledge_pending=True,
+    )
+    assert summary.get("errors") == [], summary["errors"]
+    assert [m["EnableModeration"] for m in merges] == [False]
+    assert _changed_settings(changes) == ["EnableModeration"]

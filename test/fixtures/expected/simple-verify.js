@@ -478,6 +478,7 @@
       ['require_checkout', 'ForceCheckout'],
       ['enable_folder_creation', 'EnableFolderCreation'],
       ['draft_version_visibility', 'DraftVersionVisibility'],
+      ['content_approval', 'EnableModeration'],
     ];
     for (const lib of T.library_settings) {
       for (const [setting, prop] of LIBRARY_SETTINGS) {

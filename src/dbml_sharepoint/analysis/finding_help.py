@@ -731,7 +731,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`ForceCheckout`, the library's \"Require Check Out\" control "
         "(`library.checkout.force-checkout-merge`); `enable_folder_creation` is "
         "`EnableFolderCreation`; `draft_version_visibility` is "
-        "`DraftVersionVisibility`. Remove the key, or declare "
+        "`DraftVersionVisibility`; `content_approval` is `EnableModeration`. "
+        "Remove the key, or declare "
         "`kind: DocumentLibrary` with `base_template: 101`."
     ),
     FindingCode.FOLDER_DEFAULTS_ON_A_LIST: (
@@ -757,9 +758,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS: (
         "A library declares `settings.draft_version_visibility` as `author` or "
-        "`approver` while versioning or minor versions are off. SharePoint "
-        "answers the write with success and keeps the value at Reader, so the "
-        "setting would be ignored. Turn `enable_versioning` and "
+        "`approver` while versioning or minor versions are off and "
+        "`content_approval` is not `true`. SharePoint answers the write with "
+        "success and keeps the value at Reader, so the setting would be "
+        "ignored. Set `content_approval: true`, or turn `enable_versioning` and "
         "`enable_minor_versions` on for the library, or remove the key."
     ),
     FindingCode.FOLDER_NAME_INVALID: (
