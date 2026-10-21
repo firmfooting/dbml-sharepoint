@@ -82,7 +82,7 @@ def _read_entity(
         if pointer is not None and part != "visibility":
             formatting[part] = pointer
         elif part in _TREE_PARTS:
-            trees[part] = parse_header(value, where)
+            trees[part] = parse_header(value, where, footer=part == "footer")
         elif part == "body":
             formatting[part] = value  # an inline body
     return formatting, parts.get("visibility"), trees

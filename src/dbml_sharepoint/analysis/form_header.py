@@ -59,6 +59,7 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
     for t in CALCULATED_TYPES
 }
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
+_ALIGN = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}
 _SECONDARY = "ms-fontColor-neutralSecondary"
 Json = dict[str, object]
 
@@ -307,14 +308,27 @@ class _Render:
         self.known_columns(tree)
         children: list[Json] = []
         block = self.title_block(tree)
-        if block is not None:
-            children.append(block)
+        left = self.icon_tile(tree.icon, block) if tree.icon is not None else block
+        group = {"display": "flex", "flex-wrap": "wrap", "margin": "4px 0"}
+        beside = bool(tree.icon or tree.chips_align)
+        if beside:  # chips sit in the bar beside the title only when asked for, else stack below
+            group |= {"flex": "none", "align-self": _ALIGN[tree.chips_align or "middle"]}
+        chips: Json | None = None
         if tree.chips:
+            kids = [self.chip(c) for c in tree.chips]
+            chips = {"elmType": "div", "style": group, "children": kids}
+        if chips is not None and left is not None and beside:
             children.append({
                 "elmType": "div",
-                "style": {"display": "flex", "flex-wrap": "wrap", "margin": "4px 0"},
-                "children": [self.chip(c) for c in tree.chips],
+                "style": {
+                    "display": "flex", "flex-direction": "row",
+                    "justify-content": "space-between", "align-items": "stretch",
+                },
+                "children": [left, chips],
             })
+        else:
+            children += [left] if left is not None else []
+            children += [chips] if chips is not None else []
         children += [self.row(r) for r in tree.rows]
         if tree.banner is not None:
             children.append(self.banner(tree.banner))
@@ -345,6 +359,7 @@ class _Render:
         named += [c.url_column for c in tree.chips if c.url_column]
         named += [i.column for r in tree.rows for i in r.items if isinstance(i, Bubble)]
         icons = [("banner", tree.banner.icon)] if tree.banner else []
+        icons += [("header", tree.icon)] if tree.icon else []
         icons += [("chip", c.icon) for c in tree.chips]
         for where, icon in icons:
             if icon not in FLEET_ICONS:
@@ -370,6 +385,30 @@ class _Render:
         raise self.refusal(
             FindingCode.FORM_HEADER_TOO_LARGE, column, f"the header {too_large(len(text)).detail}."
         )
+
+    def icon_tile(self, icon: str, block: Json | None) -> Json:
+        tile: Json = {
+            "elmType": "div",
+            "attributes": {"class": TOKENS["neutral"].classes},
+            "style": {
+                "flex": "none", "width": "56px", "height": "56px", "border-radius": "8px",
+                "display": "flex", "align-items": "center", "justify-content": "center",
+                "margin-right": "12px",
+            },
+            "children": [{
+                "elmType": "div",
+                "attributes": {
+                    "iconName": icon,
+                    "aria-hidden": "true",
+                    "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+                },
+            }],
+        }
+        return {
+            "elmType": "div",
+            "style": {"display": "flex", "flex-direction": "row", "align-items": "center"},
+            "children": [tile] if block is None else [tile, block],
+        }
 
     def title_block(self, tree: HeaderTree) -> Json | None:
         kids: list[Json] = []
@@ -400,23 +439,37 @@ class _Render:
     def subtitle(self, tree: HeaderTree) -> Json:
         shown: list[str] = []  # whether each part shows
         terms: list[str] = []
+        only = tree.subtitle[0] if len(tree.subtitle) == 1 else None
+        if only and only.text and not only.columns and only.when is None:
+            # A lone static sentence is plain text, so it needs no expression.
+            text = self.plain(only.text, "subtitle")
+            return {
+                "elmType": "div",
+                "attributes": {"class": f"{_SECONDARY} ms-fontSize-12"},
+                "txtContent": text,
+            }
         for part in tree.subtitle:
             if part.column is not None:
                 v = self.value(part.column)
                 visible, text = v.filled, v.code
             else:
                 values = {c: self.value(c) for c in part.columns}
-                visible = " && ".join(v.filled for v in values.values())
+                visible = " && ".join(v.filled for v in values.values()) or "'' == ''"
                 wanted = self.when(part.when)
                 if wanted is not None:
                     visible = f"{wanted} && {visible}"
-                names = "|".join(map(re.escape, values))
+                column = part.columns[0] if part.columns else None
+                names = "|".join(map(re.escape, values)) or "(?!)"
                 chunks = re.split(r"\{(" + names + r")\}", part.text or "")
                 text = " + ".join(
-                    self.lit(c, 'subtitle', part.columns[0]) if i % 2 == 0 else values[c].code
+                    self.lit(c, 'subtitle', column) if i % 2 == 0 else values[c].code
                     for i, c in enumerate(chunks)
                     if i % 2 or c
                 ) or "''"
+                if part.fallback is not None:
+                    filled = " && ".join(v.filled for v in values.values())
+                    text = f"if({filled}, {text}, {self.lit(part.fallback, 'subtitle', column)})"
+                    visible = "'' == ''" if wanted is None else wanted
             visible = f"({visible})"
             lead = f"if({_any(shown)}, {quoted(f' {_SEPARATOR} ')}, '') + " if shown else ""
             terms.append(f"if({visible}, {lead}{text}, '')")
