@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.29.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.28.0...v0.29.0) (2026-10-21)
+
+
+### Features
+
+* **forms:** parse and evaluate SharePoint calculated-column formulas ([#912](https://github.com/firmfooting/dbml-sharepoint/issues/912)) ([66596e1](https://github.com/firmfooting/dbml-sharepoint/commit/66596e1237e18abd3cd5d0265e8774276a60e57e))
+* **forms:** read the form and its header components from form.yaml ([#911](https://github.com/firmfooting/dbml-sharepoint/issues/911)) ([632c5be](https://github.com/firmfooting/dbml-sharepoint/commit/632c5be51ae17764eeaff60a4f7ff10a7776b56e))
+* **forms:** render a form header from components with calculated columns inlined ([#914](https://github.com/firmfooting/dbml-sharepoint/issues/914)) ([8ef5c19](https://github.com/firmfooting/dbml-sharepoint/commit/8ef5c195d3538b932722d208eb341a32856189ad))
+* **forms:** translate calculated-column formulas into formatting expressions ([#913](https://github.com/firmfooting/dbml-sharepoint/issues/913)) ([c6f46e3](https://github.com/firmfooting/dbml-sharepoint/commit/c6f46e32d1c1f54f890e2b5fa4d820f572c1b7be))
+
+
+### Bug Fixes
+
+* **forms:** refuse header formulas that rest on unmeasured behaviour ([#915](https://github.com/firmfooting/dbml-sharepoint/issues/915)) ([49bd456](https://github.com/firmfooting/dbml-sharepoint/commit/49bd456668c9144a1598bfe904529e252b7ac421))
+
 ## [0.28.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.27.0...v0.28.0) (2026-10-21)
 
 
