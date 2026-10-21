@@ -33,7 +33,7 @@ class LinkChip:
     url: str | None = None
     url_column: str | None = None
     url_template: str | None = None
-    title: str | None = None  # replaces the default tooltip, the text plus the new-tab note
+    title: str | None = None  # the tooltip, only when the author writes one
     when: Condition | None = None
 
 

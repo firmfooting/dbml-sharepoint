@@ -524,6 +524,9 @@ class _Render:
             href = "=" + " + ".join(self.url_pieces(chip, v.code))
         else:
             href = self.plain(chip.url or "", "chip url")
+        attributes = {"href": href, "target": "_blank", "rel": "noopener noreferrer"}
+        if chip.title is not None:  # a tooltip is a visible word, so only the author's own
+            attributes["title"] = self.plain(chip.title, "chip title")
         return {
             "elmType": "a",
             "style": {
@@ -531,12 +534,7 @@ class _Render:
                 "align-items": "center",
                 "padding": "2px 10px 2px 0",
             },
-            "attributes": {
-                "href": href,
-                "target": "_blank",
-                "rel": "noopener noreferrer",
-                "title": self.plain(chip.title or f"{chip.text}, opens in a new tab", "chip title"),
-            },
+            "attributes": attributes,
             "children": [
                 {
                     "elmType": "span",
