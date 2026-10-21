@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.3...v0.27.0) (2026-10-21)
+
+
+### Features
+
+* **mapping:** content approval for libraries ([#906](https://github.com/firmfooting/dbml-sharepoint/issues/906)) ([f72aae0](https://github.com/firmfooting/dbml-sharepoint/commit/f72aae07b9dcfa3d401705121691da6a496599a2))
+
 ## [0.26.3](https://github.com/firmfooting/dbml-sharepoint/compare/v0.26.2...v0.26.3) (2026-10-20)
 
 
