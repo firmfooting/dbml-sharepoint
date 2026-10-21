@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.32.0...v0.33.0) (2026-10-21)
+
+
+### Features
+
+* **form:** redesign the declarative form header ([#931](https://github.com/firmfooting/dbml-sharepoint/issues/931)) ([af08b8b](https://github.com/firmfooting/dbml-sharepoint/commit/af08b8b7dce849da00598b21da6bde2859f9b92a))
+
 ## [0.32.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.31.1...v0.32.0) (2026-10-21)
 
 
