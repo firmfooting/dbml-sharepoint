@@ -1228,8 +1228,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED: (
         "A calculated column's formula reads a column that is not a text, "
-        "number, date or choice column, whose blank value a header cannot "
-        "tell from zero, or a date column read where it can be blank."
+        "date or choice column: a stored number column is refused because "
+        "its blank value is not documented, as are lookup, person and "
+        "multi-value columns. A date column read where it can be blank is "
+        "refused too."
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "

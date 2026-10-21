@@ -1,7 +1,9 @@
 """Render a form.yaml header or footer component tree as formatter JSON.
 
-Core adds no words of its own: every visible word is a literal from the tree. A calculated
-column a header reads is replaced by its translated formula, because a header reads one as blank.
+The build adds no words: every visible word is a literal from the tree. It adds only structural
+punctuation: ` · ` between subtitle parts, `: ` after a bubble label and `/` in a computed date.
+A calculated column a header reads is replaced by its translated formula, because a header
+reads one as blank.
 Shapes follow the formatting syntax reference (Microsoft Learn,
 https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference):
 elmType div, span and a; the style properties display, flex, padding, margin, border-radius and

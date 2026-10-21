@@ -1348,9 +1348,11 @@ keys: `header`, `body`, `footer` and `visibility`.
   in the mapping.
 - `visibility` has no `file:` form; only `header`, `footer` and `body` do.
 
-Every visible word in a header comes from this file. The build adds no text
-of its own: a title with no value shows its `blank` text, and nothing else is
-defaulted.
+Every visible word in a header comes from this file. The build adds no
+words: a title with no value shows its `blank` text, and nothing else is
+defaulted. It adds only structural punctuation: a middle dot with a space
+either side between subtitle parts, a colon and a space after a bubble label,
+and `/` between the parts of a computed date.
 
 ### Components
 
@@ -1389,8 +1391,8 @@ formatting expression over the stored columns. It also re-derives a
 calculated column used in a `when` or a banner rule. A formula whose header
 value cannot be reproduced exactly fails the build rather than being noted.
 Dates are counted at the site's local midnight in the zone given to `build`.
-`validate` takes no zone, so it checks with UTC
-and reports only what is refused whatever the zone; a refusal that depends on
+`validate` and the wizard take no zone, so they check with UTC
+and report only what is refused whatever the zone; a refusal that depends on
 the zone is reported by `build`.
 
 A header can use these functions in a formula, taken from the code:
@@ -1410,14 +1412,26 @@ these:
   spaces.
 - A stored number column used as an operand: the blank value of a number
   column is not documented. Lookup, person, multi-value and other column
-  kinds are refused too.
+  kinds are refused too. A bubble, title or subtitle over a stored number,
+  person, lookup or boolean column is refused as well; only text, choice and
+  date columns are shown.
 - A stored date column used where it can be blank, unless the formula is
   guarded by an `ISBLANK` test that excludes the blank.
 - A result other than text, number or date. A Yes/No result is refused, and
   so is a calculated number shown as text.
 - A date result other than a calculated date shown through a bubble with
-  `date_order`. A date and time result is refused, and a calculated date can
-  be compared only with blank.
+  `date_order`. A title, subtitle or chip cannot show a calculated date. A
+  date and time result is refused, and a calculated date can be compared only
+  with blank.
+- A comparison or subtraction of a stored date column, or of that column plus
+  days. A calculated column sees a stored date as a fraction of a day, so a
+  header counting whole days could differ on a row. The year, month and day
+  of a stored date, and its display, are unaffected.
+- Division by a value not provably nonzero, a power whose base and exponent
+  could be a column error, `INT` or `ROUND` of a number not known to be
+  whole, and a comparison of numbers not known to be whole.
+- A number literal that prints in scientific form (such as `1e+18`) joined as
+  text.
 - A site zone whose daylight rule is not one offset, or two offsets switched
   on a weekday of a month, over the verified years. A stored date outside
   those years, or outside the supported calendar range, shows a blank header
@@ -1427,12 +1441,29 @@ these:
   finding names the calculated column adding the most characters.
 - A single quote in text that is placed inside an expression (a title blank,
   a subtitle text, a bubble label or text, a URL template, `hide_values`, a
-  token key or a banner rule text), and `[$` or `@` in static text (a chip
+  token key or a banner rule text), in a text or choice literal of a
+  calculated column's formula, and `[$` or `@` in static text (a chip
   text, a badge text, a banner label or a static chip URL). The formatting
   reference documents no escape for the first and does not say how the second
   is read.
 - A column the entity does not have, and `due` on a column that is not a date.
 - An icon outside the fleet vocabulary.
+
+### Unmeasured assumptions
+
+A header that is accepted still rests on these, which no live run has
+established:
+
+- A blank text or choice field equals `''`, taken from one documented sample.
+- `Number([$D])` and offset arithmetic are verified only with the site and the
+  browser in one zone; other zones are inferred.
+- `Created` plus days across a daylight change.
+- A calculated date that returns `''` displays blank.
+- `toString` of an integer prints the integer.
+- `Number(@now)` is epoch milliseconds.
+- Text equality that ignores case for non-ASCII characters.
+- A header at the saved-size floor is the largest size known to save, not one
+  shown to render.
 
 ## `column_validation`
 
