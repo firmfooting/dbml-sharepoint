@@ -359,6 +359,9 @@ _INSTANT_SHAPES = [
     ("IF([Due]+3>DATE(2026,10,4),1,0)", ">", "Due"),
     ("IF(DATE(2026,10,4)=[Due]-3,1,0)", "=", "Due"),
     ("IF([Created]+0>DATE(2026,1,1),1,0)", ">", "Created"),
+    ("([Created]+0)-[Due]", "-", "Created"),
+    ("[Due]-([Created]+0)", "-", "Due"),
+    ("([Created]+0)-([Created]+0)", "-", "Created"),
     # Through a chained column and through an IF that returns the stored date.
     ("IF(IF([Status]=\"Open\",[Due],[Due]+1)>DATE(2026,1,1),1,0)", ">", "Due"),
 ]
@@ -739,3 +742,23 @@ def test_an_instant_in_the_verified_years_is_never_outside_them() -> None:
         datetime(last + 1, 6, 1, tzinfo=UTC),
     ]
     assert _in_span(SITE, edges) == [True, False, False, True, True, True]
+
+
+_GUARD = 'IF(ISBLANK([Due]),"",{})'
+
+
+@pytest.mark.parametrize(
+    ("formula", "more"),
+    [
+        (_GUARD.format("[Calc]"), {}),
+        (_GUARD.format("[B]"), {"B": _GUARD.format("[Calc]")}),
+        (_GUARD.format("[B]"), {"B": _GUARD.format("[B]")}),
+    ],
+    ids=["self", "two columns", "self below"],
+)
+def test_a_cycle_through_the_blank_guard_is_refused_not_followed(
+    formula: str, more: dict[str, str]
+) -> None:
+    refusal = _refusal(formula, "date", **more)
+    assert refusal.code is FindingCode.FORM_FORMULA_UNPARSEABLE
+    assert "refers back" in refusal.detail or "circular" in refusal.detail

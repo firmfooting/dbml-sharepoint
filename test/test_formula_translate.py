@@ -171,6 +171,7 @@ REFUSED = [
     # column errors; the header would give Infinity or NaN instead.
     ("[Qty]/[Price]", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
     ("[Qty]/0", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
+    ("1/(2-2)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
     ("[Qty]/([Price]-1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "/"),
     ("[Price]^(0-1)", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
     ("([Price]-1)^[Price]", "number", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "^"),
@@ -249,3 +250,10 @@ def test_a_comparison_of_numbers_not_known_to_be_whole_is_refused_not_folded(for
         translate_column("Calc", _ctx(formula, "text"))
     assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
     assert "not known to be whole" in found.value.detail
+
+
+@pytest.mark.parametrize("name", ["MIN", "MAX"])
+def test_a_many_argument_extreme_is_refused_as_too_large_before_it_grows(name: str) -> None:
+    # Each step repeats the running code twice, so the size is checked inside the loop.
+    refusal, _ = _refusal(f"{name}({','.join(['[Qty]'] * 60)})")
+    assert refusal.code is FindingCode.FORM_HEADER_TOO_LARGE

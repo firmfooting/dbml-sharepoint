@@ -253,7 +253,7 @@ class _Translator:
             expr = parse_formula(self.ctx.formulas[name])
         except FormulaSyntaxError as error:
             return _refuse(FindingCode.FORM_FORMULA_UNPARSEABLE, f"does not parse: {error}")
-        if not stack and (guarded := self.blank_guarded(expr, stack)) is not None:
+        if not stack and (guarded := self.blank_guarded(expr, (name,))) is not None:
             return guarded
         return self.go(expr, (*stack, name))
 
@@ -652,6 +652,8 @@ class _Translator:
         code = parts[0]
         for part in parts[1:]:
             code = f"if({code} {sign} {part}, {code}, {part})"
+            if len(code) > FORM_HEADER_MAX_CHARS:  # each step doubles the code, so stop early
+                raise too_large(len(code))
         return code
 
     @staticmethod
