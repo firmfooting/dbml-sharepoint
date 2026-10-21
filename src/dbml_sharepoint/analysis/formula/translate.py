@@ -247,6 +247,7 @@ class _Translator:
         """IF(test, "", date) or IF(test, date, ""): the date, blank where the formula gives ''.
 
         Only as the whole formula, so a blank never feeds further arithmetic.
+        Assumes (unmeasured) that a computed date returning "" displays blank.
         """
         if not (isinstance(expr, Call) and expr.name == "IF" and len(expr.args) == 3):
             return None

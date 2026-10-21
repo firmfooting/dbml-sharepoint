@@ -319,3 +319,39 @@ def test_the_date_headers_stay_under_the_size_budget() -> None:
         size = len(json.dumps(header, separators=(",", ":")))
         print(f"SIZE {name} {size}")  # noqa: T201
         assert size <= FORM_HEADER_MAX_CHARS
+
+
+def test_hide_values_and_tokens_compare_the_written_date() -> None:
+    item = Bubble(
+        "Deadline", date_order="dmy", hide_values=("20/10/2026",),
+        tokens={"21/10/2026": "severe", "default": "good"},
+    )
+    bubble = _bubble(item)
+    tz = ZoneInfo(SITE)
+    rows: list[Row_] = [
+        {"Created": _ms(datetime(2026, 10, d, 12, tzinfo=tz)), "Impact": "Low"} for d in (6, 7, 8)
+    ]
+    for browser in BROWSERS:
+        assert _eval(bubble, "display", rows, browser) == ["none", "inline-flex", "inline-flex"]
+        classes = _eval(bubble, "class", rows, browser)
+        assert str(classes[1]).startswith(TOKENS["severe"].classes)
+        assert str(classes[2]).startswith(TOKENS["good"].classes)
+
+
+@pytest.mark.parametrize("name", sorted(FORMULAS))
+def test_no_rendered_header_reads_any_calculated_column(name: str) -> None:
+    if name == "Wait":
+        row = Row((Bubble("Plain"),), Leaf("Wait", "gt", 20))
+    elif TYPES[name] == "calculated_date":
+        row = Row((Bubble(name, date_order="ymd", due=True),), Leaf(name, "is_not_null"))
+    else:
+        row = Row((Bubble(name),), Leaf(name, "eq", "x"))
+    text = json.dumps(render_header(HeaderTree(rows=(row,)), _ctx()))
+    assert f"[${name}" not in text
+
+
+def test_two_review_bubbles_overflow_the_budget_naming_the_column() -> None:
+    both = (Bubble("Review", date_order="dmy"), Bubble("Review", date_order="mdy"))
+    refusal = _refused(HeaderTree(rows=(Row(both),)))
+    assert refusal.finding.code is FindingCode.FORM_HEADER_TOO_LARGE
+    assert "Task.Review" in refusal.finding.message

@@ -1232,7 +1232,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formula's result does not match the column's declared type. A header "
         "also refuses a calculated number shown as text (its display is not "
         "measured), a date and time result (its time of day is not measured), "
-        "and a calculated date compared with anything but blank."
+        "and a calculated date compared with anything but blank. A computed "
+        "date whose blank case returns an empty string is assumed to display "
+        "blank; that has not been measured."
     ),
     FindingCode.FORM_FORMULA_ZONE_UNSUPPORTED: (
         "A calculated column's date formula needs the site's time zone, and "

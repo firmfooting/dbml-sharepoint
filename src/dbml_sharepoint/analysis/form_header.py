@@ -91,7 +91,8 @@ def _date_text(day: str, order: str) -> str:
     """A day number written as `order` joined by '/', unpadded: toString(45) gives "45" (Learn)."""
     year, month, date = parts_of(day)
     parts = {"d": date, "m": month, "y": year}
-    return " + '/' + ".join(f"toString({parts[letter]})" for letter in order)
+    # Parenthesised so no comparison built around the text depends on + against == precedence.
+    return "(" + " + '/' + ".join(f"toString({parts[letter]})" for letter in order) + ")"
 
 
 def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
