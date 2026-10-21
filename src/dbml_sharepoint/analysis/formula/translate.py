@@ -412,6 +412,10 @@ class _Translator:
                 _unsupported(op, "which orders text and a header cannot match the column's order")
             # Text equality ignores case (measured); toLowerCase is on the Learn page.
             return _Tr(f"(toLowerCase({a.code}) {js} toLowerCase({b.code}))", "bool")
+        _num(a, op), _num(b, op)
+        if not (a.whole and b.whole):
+            # Python or JavaScript floats can disagree with the column's arithmetic (0.1+0.2=0.3).
+            _unsupported(op, "which compares numbers not known to be whole")
         truth = None
         if a.values is not None and b.values is not None and len(a.values) == len(b.values) == 1:
             (x,), (y,) = a.values, b.values

@@ -233,3 +233,19 @@ def test_a_number_literal_that_prints_in_scientific_form_is_not_joined_as_text(
 def test_a_plain_decimal_literal_is_joined_as_text(literal: str) -> None:
     expression = translate_column("Calc", _ctx(f'"a"&{literal}', "text")).expression
     assert f"'{literal}'" in expression
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        'IF(0.1+0.2=0.3,"y","n")',
+        'IF([Qty]/4>0.5,"y","n")',
+        'IF([Qty]%=0.03,"y","n")',
+        'IF(1.5<>1.5,"y","n")',
+    ],
+)
+def test_a_comparison_of_numbers_not_known_to_be_whole_is_refused_not_folded(formula: str) -> None:
+    with pytest.raises(FormulaRefusal) as found:
+        translate_column("Calc", _ctx(formula, "text"))
+    assert found.value.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+    assert "not known to be whole" in found.value.detail
