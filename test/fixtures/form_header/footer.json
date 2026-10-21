@@ -89,6 +89,7 @@
           },
           "attributes": {
             "iconName": "Lightbulb",
+            "aria-hidden": "true",
             "class": "ms-fontSize-14"
           }
         },

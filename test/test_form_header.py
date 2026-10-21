@@ -1074,7 +1074,9 @@ def test_step_box_is_content_width() -> None:
 
 def test_the_banner_icon_defaults_to_forward() -> None:
     tree = HeaderTree(banner=Banner(rules=(BannerRule(OPEN, "t"),)))
-    assert _attr(_kids(_kids(_render(tree))[0])[0], "iconName") == "Forward"
+    arrow = _kids(_kids(_render(tree))[0])[0]
+    assert _attr(arrow, "iconName") == "Forward"
+    assert _attr(arrow, "aria-hidden") == "true"
 
 
 def test_a_hidden_banner_hides_the_link() -> None:

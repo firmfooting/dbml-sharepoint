@@ -805,7 +805,9 @@ class _Render:
                 {
                     "elmType": "span",
                     "style": {"flex": "none", "align-self": "flex-start", "margin": "3px 8px 0 0"},
-                    "attributes": {"iconName": banner.icon, "class": "ms-fontSize-14"},
+                    "attributes": {
+                        "iconName": banner.icon, "aria-hidden": "true", "class": "ms-fontSize-14",
+                    },
                 },
                 {
                     "elmType": "div",

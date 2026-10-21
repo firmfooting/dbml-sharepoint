@@ -262,6 +262,7 @@
           },
           "attributes": {
             "iconName": "Forward",
+            "aria-hidden": "true",
             "class": "ms-fontSize-14"
           }
         },
