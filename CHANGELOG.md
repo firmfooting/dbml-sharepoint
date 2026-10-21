@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.31.0...v0.31.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **forms:** resolve {list} to the list path core derives when no internal name is set ([#927](https://github.com/firmfooting/dbml-sharepoint/issues/927)) ([ec50ef8](https://github.com/firmfooting/dbml-sharepoint/commit/ec50ef830707b5c1a18d4beb1289a2af5119917f))
+
 ## [0.31.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.30.0...v0.31.0) (2026-10-21)
 
 
