@@ -2091,6 +2091,6 @@ def _approval_manifest(approval: bool | None) -> str:
 def test_manifest_says_what_content_approval_changes_for_readers() -> None:
     md = _approval_manifest(True)
     assert "## Content approval" in md and "**APP_Docs**: content approval on." in md
-    assert "readers see only approved items" in md and "ACKNOWLEDGE_PENDING_APPROVALS" in md
+    assert "Readers see only approved versions" in md and "ACKNOWLEDGE_PENDING_APPROVALS" in md
     assert "content approval off." in _approval_manifest(False)
     assert "## Content approval" not in _approval_manifest(None)

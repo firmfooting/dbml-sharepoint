@@ -40,8 +40,10 @@ explicit migration.
 - **{{ l.title }}**: content approval {{ 'on' if l.content_approval else 'off' }}.
 {% endfor %}
 
-With content approval on, readers see only approved items, and a new or
-changed item waits for an approver. Turning it off is refused while the
+With content approval on, a new or changed item waits for an approver.
+Readers see only approved versions when `draft_version_visibility` is
+`author` or `approver`; at the default (`reader`) they also see items
+waiting for approval. Turning it off is refused while the
 library holds items pending approval, unless `const
 ACKNOWLEDGE_PENDING_APPROVALS = true;` is set near the top of the script.
 

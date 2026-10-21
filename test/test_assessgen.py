@@ -3643,7 +3643,7 @@ def _assess_approval(live: object, *, declared: bool) -> list[Json]:
 def test_assess_says_what_content_approval_changes_for_readers() -> None:
     (on,) = _assess_approval(False, declared=True)
     assert on["level"] == "INFO" and "will change" in on["detail"]
-    assert "readers see only approved items" in on["detail"]
+    assert "Readers see only approved versions" in on["detail"]
     (off,) = _assess_approval(True, declared=False)
     assert "ACKNOWLEDGE_PENDING_APPROVALS" in off["detail"]
     (same,) = _assess_approval(False, declared=False)

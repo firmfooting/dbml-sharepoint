@@ -82,6 +82,7 @@ def _draft_visibility_needs_minor_versions(
 
     Measured on a SharePoint Online tenant (library settings finding): the MERGE
     answers 204 and the value stays 0, so the write would be silently ignored.
+    With approval on the value sticks (`library.approval.draft-visibility-sticks`).
     Judged on the resolved versioning, as `_minor_versions_need_versioning` is.
     """
     settings = entity.settings

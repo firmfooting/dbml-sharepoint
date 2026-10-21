@@ -829,6 +829,7 @@
     const live = await read('probe');
     if (live === wanted) return;
     if (!wanted && !ACKNOWLEDGE_PENDING_APPROVALS) {
+      // library.approval.pending-filter-hit; an unknown field answers 500 (pending-filter-unknown-field), never empty.
       const resp = await fetchWithRetry(
         apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/items?$select=Id&$filter=OData__ModerationStatus eq 2&$top=1`),
         { headers: { 'Accept': 'application/json;odata=verbose' } });

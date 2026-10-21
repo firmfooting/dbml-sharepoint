@@ -973,7 +973,7 @@
 
     // EnableFolderCreation and DraftVersionVisibility, read only and INFO for the same reason.
     const SWITCH_NOTES = {
-      EnableModeration: ' While it is on, readers see only approved items, and a new or changed item waits for an approver.',
+      EnableModeration: ' While it is on, a new or changed item waits for an approver. Readers see only approved versions when draft_version_visibility is author or approver; at the default (reader) they also see items waiting for approval.',
     };
     for (const [title, setting, prop, declared] of TARGETS.library_switches) {
       const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=${prop}`);
