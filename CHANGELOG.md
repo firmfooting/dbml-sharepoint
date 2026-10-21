@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.29.0...v0.30.0) (2026-10-21)
+
+
+### Features
+
+* **forms:** declare a header icon tile in form.yaml ([#923](https://github.com/firmfooting/dbml-sharepoint/issues/923)) ([0746d15](https://github.com/firmfooting/dbml-sharepoint/commit/0746d1589469b1a23e419d650b3c93c762437135))
+
 ## [0.29.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.28.0...v0.29.0) (2026-10-21)
 
 
