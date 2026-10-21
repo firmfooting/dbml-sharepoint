@@ -44,7 +44,7 @@ from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
@@ -74,7 +74,7 @@ class RenderContext:
     formulas: Mapping[str, str]  # calculated column -> formula
     choices: Mapping[str, tuple[str, ...]]  # choice column -> its values
     zone: str
-    list_path: str = ""  # the list's web-relative folder, for a {list} token
+    list_path: str | None = None  # the list's web-relative folder; None when a retitle may move it
     # stored number columns that are required and have a default, so are never blank
     filled_numbers: frozenset[str] = frozenset()
 
@@ -325,6 +325,13 @@ class _Render:
         if text.startswith(_WEB):
             lead, text = ["@currentWeb"], text.removeprefix(_WEB)
         if "{list}" in text:
+            if self.ctx.list_path is None:
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, chip.url_column,
+                    "the chip url uses {list}, and the list keeps the root folder of an earlier "
+                    "title (renamed_from or previous_prefixes), which its current title does "
+                    "not give. Set internal_name to the retained root.",
+                )
             # Per-segment encoding as every item link does, so # and % survive.
             encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
             text = text.replace("{list}", encoded)
@@ -687,6 +694,11 @@ def render_header(tree: HeaderTree, ctx: RenderContext) -> Json:
     return _Render(ctx).tree(tree)
 
 
+def _retitled(bundle: MappingBundle, entry: EntityMapping) -> bool:
+    """A title-derived path is unsafe when a rename keeps the old root folder."""
+    return not entry.internal_name and bool(entry.renamed_from or bundle.mapping.previous_prefixes)
+
+
 def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> RenderContext | None:
     table = next((t for t in schema.tables if t.name == entity), None)
     entry = bundle.mapping.entities.get(entity)
@@ -704,7 +716,9 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},
         zone=zone,
-        list_path=list_folder(entry, bundle.mapping.list_title(entity)),
+        list_path=None if _retitled(bundle, entry) else list_folder(
+            entry, bundle.mapping.list_title(entity),
+        ),
         filled_numbers=frozenset(
             c.name for c in table.columns
             if c.type in NUMBER_TYPES and c.required and c.default is not None

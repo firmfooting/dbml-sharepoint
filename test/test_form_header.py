@@ -766,13 +766,17 @@ def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> Non
 
 def _list_href(
     *, kind: Literal["List", "DocumentLibrary"] = "List", title: str | None = None,
-    internal_name: str | None = None,
+    internal_name: str | None = None, renamed_from: tuple[str, ...] = (),
+    previous_prefixes: tuple[str, ...] = (),
 ) -> object:
     schema_, base = _bundle(HeaderTree())
     entity = dataclasses.replace(
         base.mapping.entities["Task"], kind=kind, title=title, internal_name=internal_name,
+        renamed_from=renamed_from,
     )
-    mapping = dataclasses.replace(base.mapping, entities={"Task": entity})
+    mapping = dataclasses.replace(
+        base.mapping, entities={"Task": entity}, previous_prefixes=previous_prefixes,
+    )
     ctx = form_header._context(schema_, dataclasses.replace(base, mapping=mapping), "Task", SITE)
     assert ctx is not None
     chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
@@ -792,6 +796,22 @@ def test_a_list_token_without_an_internal_name_is_the_derived_list_path() -> Non
 def test_a_list_token_without_an_internal_name_on_a_library_has_no_lists_prefix() -> None:
     assert _list_href(kind="DocumentLibrary", title="Task Docs") == (
         "=@currentWeb + '/Task%20Docs/x?' + [$Case]"
+    )
+
+
+@pytest.mark.parametrize(("renamed", "prefixes"), [(("Old",), ()), ((), ("OLD_",))])
+def test_a_derived_list_token_is_refused_when_a_rename_keeps_the_old_root(
+    renamed: tuple[str, ...], prefixes: tuple[str, ...],
+) -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _list_href(renamed_from=renamed, previous_prefixes=prefixes)
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+    assert "Set internal_name" in found.value.finding.message
+
+
+def test_a_declared_internal_name_survives_a_rename() -> None:
+    assert _list_href(internal_name="Lists/Tasks", renamed_from=("Old",)) == (
+        "=@currentWeb + '/Lists/Tasks/x?' + [$Case]"
     )
 
 

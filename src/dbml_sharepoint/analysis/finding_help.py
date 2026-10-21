@@ -1266,7 +1266,9 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.FORM_HEADER_TEXT_UNSUPPORTED: (
         "A header or footer text cannot be written safely: it has a single "
         "quote where it is placed inside an expression (a text, a token key or a "
-        "condition value), or `[$` or `@` where it is a plain string. No "
+        "condition value), or `[$` or `@` where it is a plain string, or a chip "
+        "url uses `{list}` on a list with no `internal_name` that keeps an "
+        "earlier title's root folder (`renamed_from` or `previous_prefixes`). No "
         "escape for a single quote inside an expression is measured, and the "
         "formatting reference does not say how the second is read."
     ),
