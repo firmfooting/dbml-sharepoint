@@ -67,7 +67,7 @@ def test_a_component_footer_is_written_too(tmp_path: Path) -> None:
     footer = _formatter(_fixture_build(tmp_path))["footerJSONFormatter"]
     text = "\n".join(_texts(footer))
     assert "Critical impact" in text
-    assert "Notice" in text
+    assert "To do now:" in text
 
 
 def test_a_different_site_zone_changes_only_the_form_formatting(tmp_path: Path) -> None:

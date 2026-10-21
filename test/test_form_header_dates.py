@@ -112,7 +112,7 @@ def _eval(
 
 
 def _span_text(node: object) -> str:
-    return _str(node, "children", 0, "txtContent")
+    return _str(node, "txtContent")
 
 
 def _rows() -> list[Row_]:
@@ -184,7 +184,7 @@ def test_the_overdue_colour_turns_at_the_site_midnight_in_every_browser_zone(zon
             shown = _eval(bubble, "display", rows, browser, now)
             for row, cls, disp in zip(rows, classes, shown, strict=True):
                 due = _day(_created(row), zone) + timedelta(days=DAYS[str(row["Impact"])])
-                assert disp == "inline-flex"
+                assert disp == "inline-block"
                 assert str(cls).startswith(blocked) is (today > due), (now, browser, row)
 
 
@@ -222,7 +222,7 @@ def test_a_review_date_from_a_stored_date_plus_months_by_a_risk_score() -> None:
         assert got[:-1] == [w for _, w in cases]
         shown = _eval(bubble, "display", rows, browser)
         assert shown[-1] == "none"
-        assert set(shown[:-1]) == {"inline-flex"}
+        assert set(shown[:-1]) == {"inline-block"}
 
 
 def test_a_chained_column_feeding_a_date_column() -> None:
@@ -332,7 +332,7 @@ def test_hide_values_and_tokens_compare_the_written_date() -> None:
         {"Created": _ms(datetime(2026, 10, d, 12, tzinfo=tz)), "Impact": "Low"} for d in (6, 7, 8)
     ]
     for browser in BROWSERS:
-        assert _eval(bubble, "display", rows, browser) == ["none", "inline-flex", "inline-flex"]
+        assert _eval(bubble, "display", rows, browser) == ["none", "inline-block", "inline-block"]
         classes = _eval(bubble, "class", rows, browser)
         assert str(classes[1]).startswith(TOKENS["severe"].classes)
         assert str(classes[2]).startswith(TOKENS["good"].classes)
