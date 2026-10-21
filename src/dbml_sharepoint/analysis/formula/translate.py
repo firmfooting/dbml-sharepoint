@@ -143,6 +143,16 @@ def _lit(value: float) -> str:
     return str(int(value)) if value == int(value) else f"{Decimal(repr(value)):f}"
 
 
+def _power_is_safe(base: _Tr, exponent: _Tr) -> bool:
+    """Every base and exponent pair is known and none is zero to a non-positive power or a
+    negative base to a fractional one, which are column errors (zero to zero is measured)."""
+    if base.values is None or exponent.values is None:
+        return False
+    return not any(
+        (x == 0 and y <= 0) or (x < 0 and y != int(y)) for x in base.values for y in exponent.values
+    )
+
+
 def _num(tr: _Tr, what: str) -> str:
     if tr.kind != "number":
         _unsupported(what, f"which cannot take a {tr.kind} value")
@@ -350,6 +360,10 @@ class _Translator:
         if op in ("=", "<>", "<", ">", "<=", ">="):
             return self.compare(op, a, b)
         x, y = _num(a, op), _num(b, op)
+        if op == "/" and (b.values is None or 0 in b.values):
+            _unsupported(op, "with a divisor not provably nonzero, where the column is an error")
+        if op == "^" and not _power_is_safe(a, b):
+            _unsupported(op, "with a base and exponent not provably free of a column error")
         # pow and the arithmetic signs are on the Learn page (Binary operators).
         ops: dict[str, Callable[[float, float], float]] = {
             "+": lambda p, q: p + q,
@@ -475,6 +489,8 @@ class _Translator:
             case "ABS" | "INT":
                 fn = "abs" if name == "ABS" else "floor"  # Learn: abs, floor
                 shape = abs if name == "ABS" else math.floor
+                if name == "INT" and not vals[0].whole:
+                    _unsupported(name, "of a number not known to be whole, which is not measured")
                 whole = name == "INT" or vals[0].whole
                 code = f"{fn}({_num(vals[0], name)})"
                 return _Tr(code, "number", _mapped(vals[0], shape), whole)
@@ -639,6 +655,8 @@ class _Translator:
                 "ROUND", "with places other than 0, which a header cannot round the same way"
             )
         x = _num(vals[0], "ROUND")
+        if not vals[0].whole:
+            _unsupported("ROUND", "of a number not known to be whole, which is not measured")
         # Half away from zero, built from floor (Learn: floor) because the page lists no round.
         values = _mapped(vals[0], lambda v: -math.floor(0.5 - v) if v < 0 else math.floor(v + 0.5))
         code = f"if({x} < 0, 0 - floor(0 - {x} + 0.5), floor({x} + 0.5))"
