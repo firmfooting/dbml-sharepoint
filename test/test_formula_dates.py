@@ -19,6 +19,7 @@ from _formula_facts import (
     DATE_FIELD_EPOCH_MS,
     DATE_ONLY_STORED_AS_WRITTEN,
     DATE_OVERFLOW,
+    HEADER_SIZE_LIMIT,
 )
 from _formula_grid import check_parity
 from _node import NODE
@@ -298,6 +299,10 @@ def test_a_nested_date_that_outgrows_a_saved_formatter_is_refused() -> None:
     assert "too large" in refusal.detail
     small = _translate("DAY([D2])", **{k: v for k, v in chain.items() if k in ("D0", "D1", "D2")})
     assert len(small) < FORMATTER_SAVED_SIZE_FLOOR
+
+
+def test_the_saved_size_floor_is_the_largest_formatter_the_probe_saved() -> None:
+    assert HEADER_SIZE_LIMIT["largest_saved"] == FORMATTER_SAVED_SIZE_FLOOR
 
 
 def test_the_date_functions_each_have_a_parity_case() -> None:
