@@ -55,7 +55,7 @@ def test_the_full_tree_parses() -> None:
             {"badge": {"text": "No assessment", "token": "muted"}},
         ]}],
         "banner": {
-            "label": "Status", "icon": "Info",
+            "icon": "Info",
             "rules": [{"when": _IS_OPEN, "text": "Open"}],
         },
     })
@@ -83,7 +83,7 @@ def test_the_full_tree_parses() -> None:
             ),
             _OPEN,
         ),),
-        banner=Banner("Status", "Info", (BannerRule(_OPEN, "Open"),)),
+        banner=Banner((BannerRule(_OPEN, "Open"),), "Info"),
     )
 
 
@@ -124,7 +124,7 @@ def test_a_row_with_no_items_is_refused() -> None:
 
 def test_a_banner_with_no_rules_is_refused() -> None:
     with pytest.raises(MappingShapeError, match="at least one rule"):
-        _parse({"banner": {"label": "Status", "icon": "Info", "rules": []}})
+        _parse({"banner": {"icon": "Info", "rules": []}})
 
 
 def test_text_with_quotes_and_braces_parses_verbatim() -> None:
@@ -180,16 +180,17 @@ def test_a_subtitle_fallback_parses_and_needs_columns() -> None:
         _parse({"subtitle": [{"text": "Plain.", "fallback": "x"}]})
 
 
-def test_chips_align_parses_and_refuses_other_values() -> None:
-    assert _parse({"chips_align": "bottom"}).chips_align == "bottom"
-    assert _parse({}).chips_align is None
-    with pytest.raises(MappingValueError, match=r"chips_align.*top, middle, bottom"):
-        _parse({"chips_align": "centre"})
+def test_label_and_chips_align_are_refused_as_unknown_keys() -> None:
+    with pytest.raises(UnknownMappingKeyError, match="chips_align"):
+        _parse({"chips_align": "top"})
+    rules = [{"when": _IS_OPEN, "text": "a"}]
+    with pytest.raises(UnknownMappingKeyError, match="label"):
+        _parse({"banner": {"label": "Notice", "icon": "Info", "rules": rules}})
 
 
-@pytest.mark.parametrize("key", ["icon", "title", "chips_align"])
+@pytest.mark.parametrize("key", ["icon", "title"])
 def test_a_footer_refuses_header_only_keys(key: str) -> None:
-    raw = {"icon": "Shield", "title": {"column": "T", "blank": "x"}, "chips_align": "top"}
+    raw = {"icon": "Shield", "title": {"column": "T", "blank": "x"}}
     with pytest.raises(MappingShapeError, match=f"footer.{key}: a footer takes no {key}"):
         parse_header({key: raw[key]}, "footer", footer=True)
 
@@ -235,7 +236,7 @@ def test_chip_title_and_bubble_blank_parse() -> None:
 
 
 def test_a_banner_rule_help_key_is_parsed_and_defaults_to_none() -> None:
-    tree = _parse({"banner": {"label": "L", "icon": "Info", "rules": [
+    tree = _parse({"banner": {"icon": "Info", "rules": [
         {"when": _IS_OPEN, "text": "a", "help": "g-a"},
         {"when": _IS_OPEN, "text": "b"},
     ]}})
@@ -246,6 +247,43 @@ def test_a_banner_rule_help_key_is_parsed_and_defaults_to_none() -> None:
 @pytest.mark.parametrize("blank", ["", None])
 def test_a_blank_banner_rule_help_key_is_refused_naming_it(blank: object) -> None:
     with pytest.raises(MappingShapeError, match=r"rules\[0\]\.help"):
-        _parse({"banner": {"label": "L", "icon": "Info", "rules": [
+        _parse({"banner": {"icon": "Info", "rules": [
             {"when": _IS_OPEN, "text": "a", "help": blank},
         ]}})
+
+
+def test_next_is_parsed_and_defaults_to_none() -> None:
+    tree = _parse({"banner": {"rules": [
+        {"when": _IS_OPEN, "text": "a", "next": "The owner replies."},
+        {"when": _IS_OPEN, "text": "b"},
+    ]}})
+    assert tree.banner is not None
+    assert [rule.next for rule in tree.banner.rules] == ["The owner replies.", None]
+    assert tree.banner.icon == "Forward"
+
+
+def test_next_without_text_is_refused_naming_the_rule() -> None:
+    with pytest.raises(MappingShapeError, match=r"header\.banner\.rules\[1\]\.text"):
+        _parse({"banner": {"rules": [
+            {"when": _IS_OPEN, "text": "a"},
+            {"when": _IS_OPEN, "next": "Then this."},
+        ]}})
+
+
+@pytest.mark.parametrize("blank", ["", None])
+def test_a_blank_next_is_refused_naming_it(blank: object) -> None:
+    with pytest.raises(MappingShapeError, match=r"rules\[0\]\.next"):
+        _parse({"banner": {"rules": [{"when": _IS_OPEN, "text": "a", "next": blank}]}})
+
+
+def test_emphasis_defaults_to_secondary() -> None:
+    chip = {"text": "H", "icon": "Link", "url": "u"}
+    assert _parse({"chips": [chip]}).chips[0].emphasis == "secondary"
+    assert _parse({"chips": [{**chip, "emphasis": "primary"}]}).chips[0].emphasis == "primary"
+
+
+@pytest.mark.parametrize("emphasis", ["Primary", "tertiary", "", None, 1])
+def test_emphasis_other_than_primary_or_secondary_is_refused(emphasis: object) -> None:
+    chip = {"text": "H", "icon": "Link", "url": "u", "emphasis": emphasis}
+    with pytest.raises(MappingValueError, match=r"chips\[0\]\.emphasis.*primary, secondary"):
+        _parse({"chips": [chip]})

@@ -1,0 +1,373 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json",
+  "elmType": "div",
+  "attributes": {
+    "class": "ms-borderColor-neutralLight"
+  },
+  "style": {
+    "display": "flex",
+    "flex-direction": "column",
+    "width": "100%",
+    "box-sizing": "border-box",
+    "border-width": "0 0 1px 0",
+    "border-style": "solid",
+    "padding-bottom": "10px",
+    "margin-bottom": "16px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": {
+        "display": "flex",
+        "flex-direction": "row",
+        "flex-wrap": "wrap",
+        "justify-content": "space-between",
+        "align-items": "flex-start",
+        "width": "100%",
+        "box-sizing": "border-box"
+      },
+      "children": [
+        {
+          "elmType": "div",
+          "style": {
+            "display": "flex",
+            "align-items": "flex-start",
+            "min-width": "0",
+            "margin-bottom": "6px"
+          },
+          "children": [
+            {
+              "elmType": "div",
+              "attributes": {
+                "class": "ms-bgColor-neutralLighter"
+              },
+              "style": {
+                "display": "flex",
+                "align-items": "center",
+                "justify-content": "center",
+                "width": "40px",
+                "height": "40px",
+                "border-radius": "8px",
+                "flex": "none",
+                "margin-right": "10px",
+                "align-self": "flex-start"
+              },
+              "children": [
+                {
+                  "elmType": "div",
+                  "attributes": {
+                    "iconName": "WorkItem",
+                    "aria-hidden": "true",
+                    "class": "ms-fontSize-24 ms-fontColor-themePrimary"
+                  }
+                }
+              ]
+            },
+            {
+              "elmType": "div",
+              "style": {
+                "display": "flex",
+                "flex-direction": "column",
+                "min-width": "0"
+              },
+              "children": [
+                {
+                  "elmType": "div",
+                  "style": {
+                    "display": "block",
+                    "line-height": "24px"
+                  },
+                  "attributes": {
+                    "class": "ms-fontColor-neutralPrimary ms-fontWeight-bold ms-fontSize-20"
+                  },
+                  "txtContent": "=if(toString([$Title]) == '', 'Untitled', [$Title])"
+                },
+                {
+                  "elmType": "div",
+                  "style": {
+                    "line-height": "16px"
+                  },
+                  "attributes": {
+                    "class": "ms-fontColor-neutralSecondary ms-fontSize-12"
+                  },
+                  "txtContent": "Action item"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "elmType": "div",
+          "style": {
+            "display": "flex",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            "margin-left": "-8px",
+            "max-width": "100%"
+          },
+          "children": [
+            {
+              "elmType": "a",
+              "style": {
+                "display": "inline-flex",
+                "align-items": "center",
+                "padding": "4px 10px",
+                "border-radius": "4px",
+                "border-width": "1px",
+                "border-style": "solid",
+                "border-color": "transparent",
+                "text-decoration": "none",
+                "box-sizing": "border-box",
+                "margin": "0 0 4px 8px",
+                "white-space": "normal",
+                "text-align": "left"
+              },
+              "attributes": {
+                "class": "ms-bgColor-themePrimary ms-fontColor-white ms-fontSize-12 ms-fontWeight-semibold",
+                "href": "https://hub.fabrikam.net/sites/help/SitePages/Guide.aspx",
+                "target": "_blank",
+                "rel": "noopener noreferrer"
+              },
+              "children": [
+                {
+                  "elmType": "span",
+                  "style": {
+                    "margin-right": "6px"
+                  },
+                  "attributes": {
+                    "iconName": "Lightbulb",
+                    "aria-hidden": "true"
+                  }
+                },
+                {
+                  "elmType": "span",
+                  "txtContent": "Meeting guide"
+                }
+              ]
+            },
+            {
+              "elmType": "a",
+              "style": {
+                "display": "inline-flex",
+                "align-items": "center",
+                "padding": "4px 10px",
+                "border-radius": "4px",
+                "border-width": "1px",
+                "border-style": "solid",
+                "text-decoration": "none",
+                "box-sizing": "border-box",
+                "margin": "0 0 4px 8px",
+                "white-space": "normal",
+                "text-align": "left"
+              },
+              "attributes": {
+                "class": "ms-bgColor-neutralLighter ms-borderColor-neutralLight ms-fontColor-neutralPrimary ms-fontSize-12 ms-fontWeight-semibold",
+                "href": "https://hub.fabrikam.net/sites/help/SitePages/Actions.aspx",
+                "target": "_blank",
+                "rel": "noopener noreferrer"
+              },
+              "children": [
+                {
+                  "elmType": "span",
+                  "style": {
+                    "margin-right": "6px"
+                  },
+                  "attributes": {
+                    "iconName": "ClipboardList",
+                    "aria-hidden": "true"
+                  }
+                },
+                {
+                  "elmType": "span",
+                  "txtContent": "See actions of this type"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "style": {
+        "display": "flex",
+        "flex-wrap": "wrap",
+        "align-items": "center",
+        "width": "100%"
+      },
+      "children": [
+        {
+          "elmType": "span",
+          "style": {
+            "display": "=if((toString([$Status]) == ''), 'none', 'inline-block')",
+            "border-radius": "12px",
+            "padding": "1px 8px",
+            "line-height": "18px",
+            "border-width": "1px",
+            "border-style": "solid",
+            "margin": "0 6px 4px 0",
+            "box-sizing": "border-box",
+            "color": "=if([$Status] == 'Open', '#323130', if([$Status] == 'Late', '#323130', ''))"
+          },
+          "attributes": {
+            "class": "=if([$Status] == 'Open', 'sp-field-severity--low ms-borderColor-neutralTertiary ms-fontSize-12 ms-fontWeight-semibold', if([$Status] == 'Late', 'sp-field-severity--blocked ms-borderColor-neutralLighter ms-fontSize-12 ms-fontWeight-semibold', 'ms-bgColor-neutralLighter ms-borderColor-neutralLighter ms-fontColor-neutralPrimary ms-fontSize-12 ms-fontWeight-semibold'))"
+          },
+          "txtContent": "=[$Status]"
+        },
+        {
+          "elmType": "span",
+          "style": {
+            "display": "inline-block",
+            "border-radius": "12px",
+            "padding": "1px 8px",
+            "line-height": "18px",
+            "border-width": "1px",
+            "border-style": "solid",
+            "margin": "0 6px 4px 0",
+            "box-sizing": "border-box"
+          },
+          "attributes": {
+            "class": "ms-bgColor-neutralLighter ms-borderColor-neutralLighter ms-fontColor-neutralPrimary ms-fontSize-12 ms-fontWeight-semibold"
+          },
+          "txtContent": "Item type: Action"
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "style": {
+        "display": "=if((([$Status] == 'Open') || ([$Status] == 'Late') || ([$Status] == 'Done')), 'flex', 'none')",
+        "flex-direction": "row",
+        "align-items": "flex-start",
+        "align-self": "flex-start",
+        "max-width": "100%",
+        "box-sizing": "border-box",
+        "margin-top": "4px",
+        "padding": "4px 10px",
+        "line-height": "20px",
+        "border-width": "1px",
+        "border-style": "solid",
+        "border-radius": "4px"
+      },
+      "attributes": {
+        "class": "ms-bgColor-themeLighterAlt ms-borderColor-themeLighter ms-fontColor-themeDarker ms-fontSize-14"
+      },
+      "children": [
+        {
+          "elmType": "span",
+          "style": {
+            "flex": "none",
+            "align-self": "flex-start",
+            "margin": "3px 8px 0 0"
+          },
+          "attributes": {
+            "iconName": "Forward",
+            "class": "ms-fontSize-14"
+          }
+        },
+        {
+          "elmType": "div",
+          "style": {
+            "display": "flex",
+            "flex-direction": "row",
+            "flex-wrap": "wrap",
+            "align-items": "baseline",
+            "column-gap": "16px",
+            "min-width": "0",
+            "overflow-wrap": "anywhere"
+          },
+          "children": [
+            {
+              "elmType": "span",
+              "style": {
+                "min-width": "0"
+              },
+              "children": [
+                {
+                  "elmType": "span",
+                  "style": {
+                    "margin-right": "4px"
+                  },
+                  "attributes": {
+                    "class": "ms-fontWeight-bold ms-fontColor-neutralPrimary"
+                  },
+                  "txtContent": "To do now:"
+                },
+                {
+                  "elmType": "a",
+                  "style": {
+                    "display": "=if(([$Status] == 'Open'), 'inline', if(([$Status] == 'Late'), 'none', if(([$Status] == 'Done'), 'none', 'none')))",
+                    "text-decoration": "underline"
+                  },
+                  "attributes": {
+                    "class": "ms-fontColor-themeDarker ms-fontWeight-semibold",
+                    "href": "=if(([$Status] == 'Open'), 'https://hub.fabrikam.net/sites/help/SitePages/Start.aspx', if(([$Status] == 'Late'), '', if(([$Status] == 'Done'), '', '')))",
+                    "target": "_blank",
+                    "rel": "noopener noreferrer",
+                    "aria-label": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', ''))) + ', opens the step guide in a new tab'",
+                    "title": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', ''))) + ', opens the step guide in a new tab'"
+                  },
+                  "children": [
+                    {
+                      "elmType": "span",
+                      "txtContent": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', '')))"
+                    },
+                    {
+                      "elmType": "span",
+                      "style": {
+                        "margin-left": "4px",
+                        "display": "inline-block",
+                        "text-decoration": "none"
+                      },
+                      "attributes": {
+                        "iconName": "OpenInNewWindow",
+                        "aria-hidden": "true",
+                        "class": "ms-fontSize-12"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "elmType": "span",
+                  "attributes": {
+                    "class": "ms-fontWeight-semibold"
+                  },
+                  "txtContent": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', '')))",
+                  "style": {
+                    "display": "=if(([$Status] == 'Open'), 'none', if(([$Status] == 'Late'), 'inline', if(([$Status] == 'Done'), 'inline', 'inline')))"
+                  }
+                }
+              ]
+            },
+            {
+              "elmType": "span",
+              "style": {
+                "display": "=if(([$Status] == 'Open'), 'inline', if(([$Status] == 'Late'), 'inline', if(([$Status] == 'Done'), 'none', 'none')))",
+                "min-width": "0"
+              },
+              "attributes": {
+                "class": "ms-fontColor-neutralSecondary ms-fontSize-12"
+              },
+              "children": [
+                {
+                  "elmType": "span",
+                  "style": {
+                    "margin-right": "4px"
+                  },
+                  "attributes": {
+                    "class": "ms-fontWeight-semibold"
+                  },
+                  "txtContent": "After that:"
+                },
+                {
+                  "elmType": "span",
+                  "txtContent": "=if(([$Status] == 'Open'), 'You set the status to In progress.', if(([$Status] == 'Late'), 'The owner replies in the thread.', if(([$Status] == 'Done'), '', '')))"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

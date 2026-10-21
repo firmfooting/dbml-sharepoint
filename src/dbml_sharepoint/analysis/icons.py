@@ -83,4 +83,6 @@ FLEET_ICONS: frozenset[str] = frozenset({
     "LineChart",
     "TaskManager",
     "Switch",
+    "Forward",
+    "OpenInNewWindow",
 })
