@@ -29,6 +29,7 @@ from _catalogue_fixtures import (
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 from _narrow import as_dict
+from _paths import FIXTURES
 
 from dbml_sharepoint import catalogue, wizard
 from dbml_sharepoint.catalogue import (
@@ -4238,6 +4239,38 @@ def test_a_provider_template_that_fails_validation_is_refused_before_writing(
     shown = _collapsed(console)
     assert "fails validation" in shown
     assert "entity_not_in_schema" in shown
+    assert not destination.exists()
+
+
+def test_a_provider_template_whose_form_header_is_refused_fails_the_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The template check renders form.yaml headers, so a refused formula stops the copy."""
+    root = tmp_path / "fake"
+    design, configure = root / "10-design", root / "20-configure"
+    design.mkdir(parents=True)
+    configure.mkdir()
+    shutil.copy(FIXTURES / "forms" / "schema.dbml", design / "schema.dbml")
+    shutil.copy(FIXTURES / "forms" / "form.yaml", configure / "form.yaml")
+    shutil.copy(FIXTURES / "release.yaml", configure / "release.yaml")
+    mapping = (FIXTURES / "forms" / "mapping.yaml").read_text(encoding="utf-8")
+    refused = mapping.replace(
+        "Chased: '=IF(ISBLANK([Start]),\"\",[Start]+[Wait])'", "Chased: '=[Start]+[Wait]'",
+    )
+    assert refused != mapping
+    (configure / "mapping.yaml").write_text(refused, encoding="utf-8", newline="\n")
+    solution = replace(
+        _fake_family(tmp_path / "unused"), root=root, distribution="acme-packs", license="BUSL-1.1",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "fails validation" in shown
+    assert "Chased" in shown
     assert not destination.exists()
 
 

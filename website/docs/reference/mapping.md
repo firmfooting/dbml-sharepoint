@@ -1346,6 +1346,7 @@ keys: `header`, `body`, `footer` and `visibility`.
   `{ file: <path> }` naming a JSON file. The file form is the escape hatch:
   it builds the same script as declaring that file under `form_formatting`
   in the mapping.
+- `visibility` has no `file:` form; only `header`, `footer` and `body` do.
 
 Every visible word in a header comes from this file. The build adds no text
 of its own: a title with no value shows its `blank` text, and nothing else is
@@ -1373,10 +1374,10 @@ calculated date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It
 states how a calculated date is written, because core cannot read the site's
 regional order. It is required to show a calculated date and refused on any
 other column. A stored date is shown in the site's own format. The tokens are
-`good`, `low`, `warning`, `severe`,
-`blocked`, `neutral` and `muted`. A token map may name `default` to set the
-fallback style. A chip or banner icon must be in the fleet icon vocabulary
-described in [the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
+`good`, `low`, `warning`, `severe`, `blocked`, `neutral` and `muted`. A token
+map may name `default` to set the fallback style. A chip or banner icon must be
+in the fleet icon vocabulary described in
+[the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 `when` takes the condition grammar of `views[].where`.
 
 ### Calculated columns
