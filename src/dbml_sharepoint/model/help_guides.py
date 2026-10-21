@@ -19,7 +19,7 @@ from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
 from dbml_sharepoint.model.yamlio import PARSE_ERRORS, safe_load
 
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
-_PLACEHOLDERS = ("<", ">", "replace", "example.")
+_PLACEHOLDERS = ("<", ">", "replace-me", "replace_with", "replace-with")
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,12 @@ def _base_problem(base: str) -> str | None:
         return "must be an https URL with a host"
     if parts.query or parts.fragment:
         return "must not have a query or a fragment"
-    if any(mark in base.lower() for mark in _PLACEHOLDERS) or host.endswith(".invalid"):
+    if "'" in parts.netloc or "\\" in parts.netloc:
+        return "has a character in its host that cannot be written into a formatter"
+    if (
+        any(mark in base.lower() for mark in _PLACEHOLDERS)
+        or host.endswith(".invalid") or host.startswith("example.") or ".example." in host
+    ):
         return "is still a placeholder"
     return None
 
@@ -105,5 +110,7 @@ def load_help_guides(settings: HelpSettings) -> tuple[HelpGuides | None, list[Fi
     pages = _read_pages(path)
     if isinstance(pages, str):
         return _refuse(FindingCode.FORM_HELP_PAGE_INVALID, pages)
-    prefix = base.rstrip("/") + "/"
+    parts = urlsplit(base)
+    # The path lands in a single-quoted formatter literal, so quote it as the pages are.
+    prefix = f"{parts.scheme}://{parts.netloc}{quote(parts.path.rstrip('/'), safe='/:%')}/"
     return HelpGuides({key: prefix + quote(leaf) for key, leaf in pages.items()}), []

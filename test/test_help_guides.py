@@ -129,3 +129,40 @@ def test_a_dot_or_blank_page_is_refused_naming_the_map_key(tmp_path: Path, page:
     code, message = _only(_load(tmp_path, BASE, f"bad-key: {page}\n"))
     assert code is FindingCode.FORM_HELP_PAGE_INVALID
     assert "bad-key" in message
+
+
+def test_an_apostrophe_or_backslash_in_the_base_path_is_percent_encoded(tmp_path: Path) -> None:
+    guides, findings = _load(tmp_path, "https://hub.fabrikam.net/it's\\guides/", "k: a.aspx\n")
+    assert findings == []
+    assert guides is not None
+    assert guides.urls == {"k": "https://hub.fabrikam.net/it%27s%5Cguides/a.aspx"}
+
+
+def test_an_existing_percent_escape_in_the_base_path_is_kept(tmp_path: Path) -> None:
+    guides, _ = _load(tmp_path, "https://hub.fabrikam.net/my%20guides/", "k: a.aspx\n")
+    assert guides is not None
+    assert guides.urls == {"k": "https://hub.fabrikam.net/my%20guides/a.aspx"}
+
+
+def test_an_apostrophe_in_the_host_is_refused(tmp_path: Path) -> None:
+    code, message = _only(_load(tmp_path, "https://hub'.fabrikam.net/p/", "k: a.aspx\n"))
+    assert code is FindingCode.FORM_HELP_BASE_URL_INVALID
+    assert "DBMLSP_HELP_BASE_URL" in message
+
+
+@pytest.mark.parametrize("base", [
+    "https://hub.fabrikam.net/sites/replacements/", "https://hub.fabrikam.net/sites/Replace/",
+])
+def test_a_real_address_containing_replace_is_accepted(tmp_path: Path, base: str) -> None:
+    guides, findings = _load(tmp_path, base, "k: a.aspx\n")
+    assert findings == []
+    assert guides is not None
+
+
+@pytest.mark.parametrize("base", [
+    "https://hub.fabrikam.net/replace_with_folder/", "https://hub.fabrikam.net/Replace-With/",
+    "https://hub.fabrikam.net/replace-me/", "https://example.org/p/", "https://hub.invalid/p/",
+])
+def test_the_concrete_placeholder_tokens_are_refused(tmp_path: Path, base: str) -> None:
+    code, _ = _only(_load(tmp_path, base, "k: a.aspx\n"))
+    assert code is FindingCode.FORM_HELP_BASE_URL_INVALID
