@@ -14,6 +14,7 @@ class Title:
     column: str
     blank: str
     when: Condition | None = None
+    prefix: str | None = None  # static text before the value, shown only while there is a value
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class Bubble:
     tokens: dict[str, str] = field(default_factory=dict)
     due: bool = False
     date_order: str | None = None  # dmy, mdy or ymd: how a computed date is written
+    label_colon: bool = True  # False writes the label as given, with no colon added
     when: Condition | None = None
 
 

@@ -198,3 +198,27 @@ def test_a_footer_parses_the_shared_components() -> None:
     tree = parse_header({"subtitle": [{"text": "Hi."}], "rows": [{"items": [{"column": "A"}]}]},
                         "footer", footer=True)
     assert tree.subtitle and tree.rows
+
+
+def test_title_prefix_and_label_colon_parse() -> None:
+    tree = _parse({
+        "title": {"column": "Title", "blank": "x", "prefix": "Workspace: "},
+        **_row({"column": "Risk", "label": "Gate ", "label_colon": False}),
+    })
+    assert tree.title == Title("Title", "x", prefix="Workspace: ")
+    assert tree.rows[0].items[0] == Bubble("Risk", label="Gate ", label_colon=False)
+
+
+def test_label_colon_must_be_a_boolean_and_prefix_not_empty() -> None:
+    with pytest.raises(MappingShapeError, match="label_colon"):
+        _parse(_row({"column": "Risk", "label_colon": "no"}))
+    with pytest.raises(MappingShapeError, match="prefix"):
+        _parse({"title": {"column": "Title", "blank": "", "prefix": ""}})
+
+
+def test_web_token_is_leading_only() -> None:
+    chip = {"text": "H", "icon": "Link", "url_column": "C"}
+    ok = _parse({"chips": [{**chip, "url_template": "{web}/{list}/x?{value}"}]})
+    assert ok.chips[0].url_template == "{web}/{list}/x?{value}"
+    with pytest.raises(MappingValueError, match=r"leading"):
+        _parse({"chips": [{**chip, "url_template": "x/{web}/{value}"}]})

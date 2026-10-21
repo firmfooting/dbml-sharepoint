@@ -23,6 +23,7 @@ from dbml_sharepoint.model.form_tree import (
 )
 
 _VALUE = "{value}"
+_WEB = "{web}"
 DATE_ORDERS = ("dmy", "mdy", "ymd")
 CHIP_ALIGNS = ("top", "middle", "bottom")
 _HEADER_ONLY = ("icon", "title", "chips_align")
@@ -61,19 +62,23 @@ def _token(raw: object, context: str) -> str:
     return name
 
 
-def _template(raw: object, context: str) -> str:
+def _template(raw: object, context: str, *, url: bool = False) -> str:
     value = _nonblank(raw, context)
     if _VALUE not in value:
         raise MappingValueError(f"{context}: must contain {_VALUE}, where the column's value goes")
+    if url and _WEB in value.removeprefix(_WEB):
+        raise MappingValueError(f"{context}: {_WEB} is the site's address, so only a leading one")
     return value
 
 
 def _title(raw: object, context: str) -> Title:
-    block = _known_keys(raw, {"column", "blank", "when"}, context)
+    block = _known_keys(raw, {"column", "blank", "prefix", "when"}, context)
+    prefix = block.get("prefix")
     return Title(
         _nonblank(block.get("column"), f"{context}.column"),
         _text(block.get("blank"), f"{context}.blank"),
         _when(block, context),
+        None if prefix is None else _nonblank(prefix, f"{context}.prefix"),
     )
 
 
@@ -113,7 +118,7 @@ def _chip(raw: object, context: str) -> LinkChip:
         _nonblank(block.get("icon"), f"{context}.icon"),
         None if url is None else _nonblank(url, f"{context}.url"),
         None if column is None else _nonblank(column, f"{context}.url_column"),
-        None if template is None else _template(template, f"{context}.url_template"),
+        None if template is None else _template(template, f"{context}.url_template", url=True),
         _when(block, context),
     )
 
@@ -130,12 +135,18 @@ def _badge(raw: object, context: str) -> Badge:
 def _bubble(raw: object, context: str) -> Bubble:
     block = _known_keys(
         raw,
-        {"column", "label", "text", "hide_values", "tokens", "due", "date_order", "when"},
+        {
+            "column", "label", "label_colon", "text", "hide_values", "tokens", "due",
+            "date_order", "when",
+        },
         context,
     )
     due = block.get("due", False)
     if not isinstance(due, bool):
         raise MappingShapeError(f"{context}.due: expected true or false, got {due!r}")
+    colon = block.get("label_colon", True)
+    if not isinstance(colon, bool):
+        raise MappingShapeError(f"{context}.label_colon: expected true or false, got {colon!r}")
     raw_tokens = block.get("tokens")
     if raw_tokens is not None and not isinstance(raw_tokens, dict):
         raise MappingShapeError(f"{context}.tokens: expected a mapping of value to token")
@@ -162,6 +173,7 @@ def _bubble(raw: object, context: str) -> Bubble:
         },
         due=due,
         date_order=order,
+        label_colon=colon,
         when=_when(block, context),
     )
 

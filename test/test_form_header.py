@@ -38,7 +38,7 @@ from dbml_sharepoint.model.form_tree import (
     Title,
 )
 from dbml_sharepoint.model.mapping_types import FormFormatting, MappingBundle
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Column, Schema
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
@@ -559,11 +559,11 @@ def test_an_oversize_header_with_no_calculated_column_says_the_header() -> None:
     assert "None" not in findings[0].message
 
 
-def _bundle(tree: HeaderTree) -> tuple[Schema, MappingBundle]:
+def _bundle(tree: HeaderTree, extra: list[Column] | None = None) -> tuple[Schema, MappingBundle]:
     task = table(
         "Task",
         column("Status", "task_status"), column("Risk"), column("Case"), column("Due", "date"),
-        column("Score", "calculated_text"),
+        column("Score", "calculated_text"), *(extra or []),
     )
     base = bundle(
         entities=["Task"],
@@ -743,3 +743,93 @@ def test_an_oversize_footer_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     base = dataclasses.replace(base, form_trees={"Task": {"footer": tree}})
     _, findings = resolve_form_headers(schema_, base, SITE)
     assert [f.code for f in findings] == [FindingCode.FORM_HEADER_TOO_LARGE]
+
+
+# --- web-relative links, title prefix, label colon and number bubbles -----------------------
+
+
+def _chip_href(chip: LinkChip, ctx: RenderContext) -> object:
+    node = _kids(_kids(render_header(HeaderTree(chips=(chip,)), ctx))[0])[0]
+    return _attr(node, "href")
+
+
+def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> None:
+    template = "{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}"
+    chip = LinkChip("History", "Feedback", url_column="Case", url_template=template)
+    ctx = dataclasses.replace(_ctx(), list_path="Lists/Tasks")
+    href = _chip_href(chip, ctx)
+    assert href == (
+        "=@currentWeb + '/Lists/Tasks/History.aspx?FilterField1=Case&FilterValue1=' + [$Case]"
+    )
+
+
+def test_a_list_token_without_a_declared_list_url_is_refused() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
+    with pytest.raises(HeaderRefusal) as found:
+        _chip_href(chip, _ctx())
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_a_web_template_keeps_the_quote_refusal() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/it's/{value}")
+    with pytest.raises(HeaderRefusal) as found:
+        _chip_href(chip, _ctx())
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_title_prefix_shows_only_with_a_value() -> None:
+    tree = HeaderTree(title=Title("Title", "Untitled", prefix="Workspace: "))
+    title = _kids(_kids(_render(tree))[0])[0]
+    assert title["txtContent"] == (
+        "=if(toString([$Title]) == '', 'Untitled', 'Workspace: ' + [$Title])"
+    )
+    assert _ev(title["txtContent"], {"Title": "Alpha"}) == "Workspace: Alpha"
+    assert _ev(title["txtContent"], {"Title": ""}) == "Untitled"
+
+
+def test_title_prefix_with_a_quote_is_refused() -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _render(HeaderTree(title=Title("Title", "x", prefix="It's ")))
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_label_colon_is_the_default_and_can_be_switched_off() -> None:
+    assert _text(_bubble(Bubble("Risk", label="Wave gate"))) == "='Wave gate: ' + [$Risk]"
+    off = _bubble(Bubble("Risk", label="Wave gate ", label_colon=False))
+    assert _text(off) == "='Wave gate ' + [$Risk]"
+    assert _ev(_text(off), {"Risk": "A"}) == "Wave gate A"
+
+
+NUMBERS = {**TYPES, "Points": "int", "Cost": "number", "Loose": "number"}
+
+
+def _numbers(filled: frozenset[str] = frozenset({"Points", "Cost"})) -> RenderContext:
+    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, None, filled)
+
+
+def test_a_required_number_with_a_default_shows_its_raw_value() -> None:
+    tree = HeaderTree(rows=(Row((Bubble("Points", label="Points", tokens={"3": "severe"}),)),))
+    bubble = _kids(_kids(render_header(tree, _numbers()))[0])[0]
+    assert _text(bubble) == "='Points: ' + toString([$Points])"
+    assert _shown(bubble, {"Points": 3})[2] == "Points: 3"
+    suffix = " ms-fontColor-neutralSecondary"
+    assert _shown(bubble, {"Points": 3})[1] == TOKENS["severe"].classes + suffix
+    assert _shown(bubble, {"Points": 4})[1] == TOKENS["neutral"].classes + suffix
+
+
+def test_a_number_that_can_be_blank_is_refused() -> None:
+    tree = HeaderTree(rows=(Row((Bubble("Loose"),)),))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(tree, _numbers())
+    assert found.value.finding.code is FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED
+    assert "Task.Loose" in found.value.finding.message
+
+
+def test_resolve_marks_only_required_numbers_with_a_default_as_showable() -> None:
+    cols = [column("Points", "int", required=True, default=1), column("Cost", "number")]
+    schema_, base = _bundle(
+        HeaderTree(rows=(Row((Bubble("Points"), Bubble("Cost"))),)), extra=cols,
+    )
+    _, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED]
+    assert "Cost" in findings[0].message
