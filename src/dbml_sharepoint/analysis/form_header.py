@@ -1,8 +1,8 @@
 """Render a form.yaml header or footer component tree as formatter JSON.
 
 The build adds no words: every visible word is a literal from the tree. It adds only structural
-punctuation: a middle dot between subtitle parts, a colon after a bubble label and a slash in a
-computed date.
+punctuation: a middle dot between subtitle parts, a colon after a bubble label (unless switched
+off) and a slash in a computed date.
 A calculated column a header reads is replaced by its translated formula, because a header
 reads one as blank.
 Shapes follow the formatting syntax reference (Microsoft Learn,
@@ -20,6 +20,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from dbml_sharepoint.analysis.column_projection import system_column_types_for
 from dbml_sharepoint.analysis.condition_rendering import ConditionRefusal, to_expression
@@ -39,7 +40,7 @@ from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day,
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 from dbml_sharepoint.analysis.styles import TOKENS
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -47,6 +48,7 @@ from dbml_sharepoint.model.parser import Schema
 
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
 _VALUE = "{value}"
+_WEB = "{web}"
 _SEPARATOR = chr(0xB7)  # middle dot; formatter text, so not a console message
 _LITERAL = re.compile(r"('(?:[^']|'')*')")
 _REF = re.compile(r"\[\$([A-Za-z0-9_]+)\]")
@@ -71,6 +73,9 @@ class RenderContext:
     formulas: Mapping[str, str]  # calculated column -> formula
     choices: Mapping[str, tuple[str, ...]]  # choice column -> its values
     zone: str
+    list_path: str | None = None  # the list's declared web-relative URL, for a {list} token
+    # stored number columns that are required and have a default, so are never blank
+    filled_numbers: frozenset[str] = frozenset()
 
 
 class HeaderRefusal(Exception):  # noqa: N818 -- named for the finding it becomes
@@ -229,10 +234,19 @@ class _Render:
         if declared in ("date", "datetime"):
             # The documented displayValue is the site's regional format; a blank date is ''.
             return _Value(f"[${column}.displayValue]", f"{stored} == ''", f"{stored} != ''")
+        if declared in NUMBER_TYPES:
+            # Learn does not say what a blank number is, so only a column that cannot be blank.
+            if column not in self.ctx.filled_numbers:
+                raise self.refusal(
+                    FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
+                    f"the header shows the {declared} column {column}, whose blank value is "
+                    "not documented: make it required with a default.",
+                )
+            return _Value(stored, NEVER, ALWAYS)  # raw value; its formatted display is unmeasured
         raise self.refusal(
             FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
-            f"the header shows a {declared} column, which it can show only for text, choice "
-            "and date columns.",
+            f"the header shows a {declared} column, which it can show only for text, choice, "
+            "date and number columns.",
         )
 
     def date_blank(self, found: re.Match[str]) -> str:
@@ -302,6 +316,24 @@ class _Render:
             if i < len(chunks) - 1:
                 pieces.append(value)
         return pieces or ["''"]
+
+    def url_pieces(self, chip: LinkChip, value: str) -> list[str]:
+        """The chip's url template: a leading {web} is @currentWeb, {list} the list's own path."""
+        text = chip.url_template or ""
+        lead: list[str] = []
+        if text.startswith(_WEB):
+            lead, text = ["@currentWeb"], text.removeprefix(_WEB)
+        if "{list}" in text:
+            if self.ctx.list_path is None:
+                raise self.refusal(
+                    FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, chip.url_column,
+                    "the chip url uses {list}, and the entity declares no internal_name "
+                    "to give the list's address.",
+                )
+            # Per-segment encoding as reporting/plan.py::_item_url_path does, so # and % survive.
+            encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
+            text = text.replace("{list}", encoded)
+        return lead + self.template(text, value, "chip url", chip.url_column)
 
     # --- components -----------------------------------------------------------------------
     def tree(self, tree: HeaderTree) -> Json:
@@ -416,7 +448,10 @@ class _Render:
         if title is not None:
             v = self.value(title.column)
             blank = self.lit(title.blank, "title blank", title.column)
-            shown = f"=if({v.blank}, {blank}, {v.code})"
+            lead = ""
+            if title.prefix is not None:
+                lead = self.lit(title.prefix, "title prefix", title.column) + " + "
+            shown = f"=if({v.blank}, {blank}, {lead}{v.code})"
             kids.append({
                 "elmType": "div",
                 "style": {"display": _display("block", when=self.when(title.when))},
@@ -486,10 +521,12 @@ class _Render:
         if chip.url_column is not None:
             v = self.value(chip.url_column)
             hidden = v.blank
-            pieces = self.template(chip.url_template or "", v.code, "chip url", chip.url_column)
-            href = "=" + " + ".join(pieces)
+            href = "=" + " + ".join(self.url_pieces(chip, v.code))
         else:
             href = self.plain(chip.url or "", "chip url")
+        attributes = {"href": href, "target": "_blank", "rel": "noopener noreferrer"}
+        if chip.title is not None:  # a tooltip is a visible word, so only the author's own
+            attributes["title"] = self.plain(chip.title, "chip title")
         return {
             "elmType": "a",
             "style": {
@@ -497,12 +534,12 @@ class _Render:
                 "align-items": "center",
                 "padding": "2px 10px 2px 0",
             },
-            "attributes": {"href": href, "target": "_blank", "rel": "noopener noreferrer"},
+            "attributes": attributes,
             "children": [
                 {
                     "elmType": "span",
                     "style": {"padding": "0 4px"},
-                    "attributes": {"iconName": chip.icon},
+                    "attributes": {"iconName": chip.icon, "aria-hidden": "true"},
                 },
                 {"elmType": "span", "txtContent": self.plain(chip.text, "chip")},
             ],
@@ -558,11 +595,19 @@ class _Render:
         fallback = TOKENS[bubble.tokens.get("default", "neutral")].classes
         if bubble.due:
             overdue, guard = self.overdue(column)
-            hidden += guard
+            # With a blank text a blank date stays visible, so it must not count as overdue.
+            hidden += [f"({v.filled} && {g})" for g in guard] if bubble.blank else guard
             pairs.insert(0, (overdue, TOKENS["blocked"].classes))
+        if bubble.blank is not None:
+            hidden = hidden[1:]  # the blank test no longer hides the bubble
+            pairs.insert(0, (v.blank, fallback))
         pieces = self.template(bubble.text, v.code, "text", column) if bubble.text else [v.code]
         if bubble.label is not None:
-            pieces.insert(0, self.lit(f"{bubble.label}: ", "label", column))
+            colon = ": " if bubble.label_colon else ""
+            pieces.insert(0, self.lit(f"{bubble.label}{colon}", "label", column))
+        if bubble.blank is not None:
+            shown = self.lit(bubble.blank, "blank", column)
+            pieces = [f"if({v.blank}, {shown}, {' + '.join(pieces)})"]
         css = (
             f"={_chain(pairs, fallback)} + {quoted(' ' + _SECONDARY)}"
             if pairs
@@ -572,7 +617,9 @@ class _Render:
             "elmType": "div",
             "style": {
                 "display": _display(
-                    "inline-flex", when=self.when(bubble.when), hidden=_any(hidden)
+                    "inline-flex",
+                    when=self.when(bubble.when),
+                    hidden=_any(hidden) if hidden else None,
                 ),
                 **_PILL,
             },
@@ -662,6 +709,11 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},
         zone=zone,
+        list_path=entry.internal_name,
+        filled_numbers=frozenset(
+            c.name for c in table.columns
+            if c.type in NUMBER_TYPES and c.required and c.default is not None
+        ),
     )
 
 

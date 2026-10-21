@@ -1351,8 +1351,8 @@ keys: `header`, `body`, `footer` and `visibility`.
 Every visible word in a header comes from this file. The build adds no
 words: a title with no value shows its `blank` text, and nothing else is
 defaulted. It adds only structural punctuation: a middle dot with a space
-either side between subtitle parts, a colon and a space after a bubble label,
-and `/` between the parts of a computed date.
+either side between subtitle parts, a colon and a space after a bubble label
+(unless `label_colon: false`), and `/` between the parts of a computed date.
 
 ### Components
 
@@ -1363,24 +1363,27 @@ A header or footer tree takes `icon`, `title`, `subtitle`, `chips`,
 | --- | --- |
 | `icon` | a fleet icon name, shown as a tile beside the title block |
 | `chips_align` | `top`, `middle` (the default) or `bottom`: where the chips sit against the header bar, beside the title block. It applies when the header has an `icon` or names `chips_align`; otherwise the chips stack below the title block |
-| `title` | `column`, `blank` (shown when the column is empty), `when` |
+| `title` | `column`, `blank` (shown when the column is empty), `prefix` (static text written before the value, such as `"Workspace: "`; the `blank` text is shown alone), `when` |
 | `subtitle` | a list of parts. A part is a column name, or `{ text, columns, fallback, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value, or `fallback` (plain text) shows in its place. A part with `text` and no `columns` is a static sentence |
-| `chips` | a list of `{ text, icon, url \| (url_column + url_template), when }`. `url_template` must contain `{value}` |
+| `chips` | a list of `{ text, icon, url \| (url_column + url_template), title, when }`. `title` is the tooltip, written only when you set it: say there that the link opens in a new tab. The icon is hidden from assistive technology. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the entity's `internal_name` (refused when none is declared), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
 | `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
 | `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text }` and the banner shows when a rule matches |
 
 A bubble takes `column`, `label`, `text` (a template containing `{value}`),
-`hide_values` (values for which the bubble is hidden), `tokens` (a map from a
-value to a style token), `due`, `date_order` and `when`. A bubble is hidden
-when its column is blank. A `due: true` bubble turns the `blocked` style from
-the day after the date, counted in the site's time zone, and needs a date or
-calculated date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It
-states how a calculated date is written, because core cannot read the site's
-regional order. It is required to show a calculated date and refused on any
-other column. A stored date is shown in the site's own format. The tokens are
-`good`, `low`, `warning`, `severe`, `blocked`, `neutral` and `muted`. A token
-map may name `default` to set the fallback style. A header, chip or banner
-icon must be in the fleet icon vocabulary described in
+`label_colon` (`false` writes the label exactly as given, with no colon or space
+added, so end it with the separator you want), `blank` (text shown alone while
+the column is empty, instead of hiding the bubble), `hide_values` (values for
+which the bubble is hidden), `tokens` (a map from a value to a style token),
+`due`, `date_order` and `when`. Without `blank`, a bubble is hidden when its
+column is blank. A `due: true` bubble turns the `blocked` style from the day
+after the date, counted in the site's time zone, and needs a date or calculated
+date column. `date_order` is one of `dmy`, `mdy` or `ymd`. It states how a
+calculated date is written, because core cannot read the site's regional order.
+It is required to show a calculated date and refused on any other column. A
+stored date is shown in the site's own format. The tokens are `good`, `low`,
+`warning`, `severe`, `blocked`, `neutral` and `muted`. A token map may name
+`default` to set the fallback style. A header, chip or banner icon must be in
+the fleet icon vocabulary described in
 [the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 `when` takes the condition grammar of `views[].where`.
 
@@ -1420,9 +1423,12 @@ these:
   spaces.
 - A stored number column used as an operand: the blank value of a number
   column is not documented. Lookup, person, multi-value and other column
-  kinds are refused too. A bubble, title or subtitle over a stored number,
-  person, lookup or boolean column is refused as well; only text, choice and
-  date columns are shown.
+  kinds are refused too. A bubble, title or subtitle over a stored
+  person, lookup or boolean column is refused as well. A stored `int` or
+  `number` column is shown only when it is required and has a default (so it
+  is never blank), as the raw value through `toString()`; its formatted
+  display is not measured, and a token or `hide_values` key is compared with
+  that text, such as `"3"`.
 - A stored date column used where it can be blank, unless the formula is
   guarded by an `ISBLANK` test that excludes the blank.
 - A result other than text, number or date. A Yes/No result is refused, and

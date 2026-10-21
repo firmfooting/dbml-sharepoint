@@ -1231,7 +1231,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "date or choice column: a stored number column is refused because "
         "its blank value is not documented, as are lookup, person and "
         "multi-value columns. A date column read where it can be blank is "
-        "refused too."
+        "refused too. A header shows a stored number only when it is "
+        "required and has a default, so it can never be blank."
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "
@@ -1265,7 +1266,8 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.FORM_HEADER_TEXT_UNSUPPORTED: (
         "A header or footer text cannot be written safely: it has a single "
         "quote where it is placed inside an expression (a text, a token key or a "
-        "condition value), or `[$` or `@` where it is a plain string. No "
+        "condition value), or `[$` or `@` where it is a plain string, or a chip "
+        "url uses `{list}` on an entity with no `internal_name`. No "
         "escape for a single quote inside an expression is measured, and the "
         "formatting reference does not say how the second is read."
     ),

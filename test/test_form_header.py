@@ -38,7 +38,7 @@ from dbml_sharepoint.model.form_tree import (
     Title,
 )
 from dbml_sharepoint.model.mapping_types import FormFormatting, MappingBundle
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Column, Schema
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
@@ -559,11 +559,11 @@ def test_an_oversize_header_with_no_calculated_column_says_the_header() -> None:
     assert "None" not in findings[0].message
 
 
-def _bundle(tree: HeaderTree) -> tuple[Schema, MappingBundle]:
+def _bundle(tree: HeaderTree, extra: list[Column] | None = None) -> tuple[Schema, MappingBundle]:
     task = table(
         "Task",
         column("Status", "task_status"), column("Risk"), column("Case"), column("Due", "date"),
-        column("Score", "calculated_text"),
+        column("Score", "calculated_text"), *(extra or []),
     )
     base = bundle(
         entities=["Task"],
@@ -674,7 +674,7 @@ def test_a_subtitle_fallback_shows_while_a_column_is_empty() -> None:
     assert _ev(_style(strap, "display"), {"Case": ""}) == "block"
 
 EXPECTED_BAR = (
-    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
+    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink","aria-hidden":"true"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
 )
 EXPECTED_FOOTER = (
     '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Static."}]},{"elmType":"div","style":{"display":"=if((([$Status] == \'Open\')), \'flex\', \'none\')","align-items":"center","padding":"6px 8px","margin":"8px 0 0 0"},"attributes":{"class":"ms-bgColor-themeLighter ms-fontColor-themePrimary"},"children":[{"elmType":"span","style":{"padding":"0 8px 0 0"},"attributes":{"iconName":"Lightbulb"}},{"elmType":"span","attributes":{"class":"ms-fontWeight-bold"},"style":{"padding":"0 8px 0 0"},"txtContent":"Notice"},{"elmType":"span","txtContent":"=if(([$Status] == \'Open\'), \'Open now\', \'\')"}]}]}'  # noqa: E501
@@ -743,3 +743,133 @@ def test_an_oversize_footer_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     base = dataclasses.replace(base, form_trees={"Task": {"footer": tree}})
     _, findings = resolve_form_headers(schema_, base, SITE)
     assert [f.code for f in findings] == [FindingCode.FORM_HEADER_TOO_LARGE]
+
+
+# --- web-relative links, title prefix, label colon and number bubbles -----------------------
+
+
+def _chip_href(chip: LinkChip, ctx: RenderContext) -> object:
+    node = _kids(_kids(render_header(HeaderTree(chips=(chip,)), ctx))[0])[0]
+    return _attr(node, "href")
+
+
+def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> None:
+    template = "{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}"
+    chip = LinkChip("History", "Feedback", url_column="Case", url_template=template)
+    ctx = dataclasses.replace(_ctx(), list_path="Lists/Tasks")
+    href = _chip_href(chip, ctx)
+    assert href == (
+        "=@currentWeb + '/Lists/Tasks/History.aspx?FilterField1=Case&FilterValue1=' + [$Case]"
+    )
+
+
+def test_a_list_token_without_a_declared_list_url_is_refused() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
+    with pytest.raises(HeaderRefusal) as found:
+        _chip_href(chip, _ctx())
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_a_web_template_keeps_the_quote_refusal() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/it's/{value}")
+    with pytest.raises(HeaderRefusal) as found:
+        _chip_href(chip, _ctx())
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_title_prefix_shows_only_with_a_value() -> None:
+    tree = HeaderTree(title=Title("Title", "Untitled", prefix="Workspace: "))
+    title = _kids(_kids(_render(tree))[0])[0]
+    assert title["txtContent"] == (
+        "=if(toString([$Title]) == '', 'Untitled', 'Workspace: ' + [$Title])"
+    )
+    assert _ev(title["txtContent"], {"Title": "Alpha"}) == "Workspace: Alpha"
+    assert _ev(title["txtContent"], {"Title": ""}) == "Untitled"
+
+
+def test_title_prefix_with_a_quote_is_refused() -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _render(HeaderTree(title=Title("Title", "x", prefix="It's ")))
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
+
+def test_label_colon_is_the_default_and_can_be_switched_off() -> None:
+    assert _text(_bubble(Bubble("Risk", label="Wave gate"))) == "='Wave gate: ' + [$Risk]"
+    off = _bubble(Bubble("Risk", label="Wave gate ", label_colon=False))
+    assert _text(off) == "='Wave gate ' + [$Risk]"
+    assert _ev(_text(off), {"Risk": "A"}) == "Wave gate A"
+
+
+NUMBERS = {**TYPES, "Points": "int", "Cost": "number", "Loose": "number"}
+
+
+def _numbers(filled: frozenset[str] = frozenset({"Points", "Cost"})) -> RenderContext:
+    return RenderContext("Task", NUMBERS, FORMULAS, {"Status": STATUSES}, SITE, None, filled)
+
+
+def test_a_required_number_with_a_default_shows_its_raw_value() -> None:
+    tree = HeaderTree(rows=(Row((Bubble("Points", label="Points", tokens={"3": "severe"}),)),))
+    bubble = _kids(_kids(render_header(tree, _numbers()))[0])[0]
+    assert _text(bubble) == "='Points: ' + toString([$Points])"
+    assert _shown(bubble, {"Points": 3})[2] == "Points: 3"
+    suffix = " ms-fontColor-neutralSecondary"
+    assert _shown(bubble, {"Points": 3})[1] == TOKENS["severe"].classes + suffix
+    assert _shown(bubble, {"Points": 4})[1] == TOKENS["neutral"].classes + suffix
+
+
+def test_a_number_that_can_be_blank_is_refused() -> None:
+    tree = HeaderTree(rows=(Row((Bubble("Loose"),)),))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(tree, _numbers())
+    assert found.value.finding.code is FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED
+    assert "Task.Loose" in found.value.finding.message
+
+
+def test_resolve_marks_only_required_numbers_with_a_default_as_showable() -> None:
+    cols = [column("Points", "int", required=True, default=1), column("Cost", "number")]
+    schema_, base = _bundle(
+        HeaderTree(rows=(Row((Bubble("Points"), Bubble("Cost"))),)), extra=cols,
+    )
+    _, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED]
+    assert "Cost" in findings[0].message
+
+
+def test_a_chip_tooltip_is_only_the_authors_and_its_icon_is_hidden() -> None:
+    chips = _kids(_kids(_render(HeaderTree(chips=(
+        LinkChip("Open case", "Feedback", url="u"),
+        LinkChip("Help", "Feedback", url="u", title="Help centre"),
+    ))))[0])
+    assert _attr(chips[0], "href") == "u"
+    assert chips[0]["attributes"] == {"href": "u", "target": "_blank", "rel": "noopener noreferrer"}
+    assert _attr(chips[1], "title") == "Help centre"
+    assert _attr(_kids(chips[0])[0], "aria-hidden") == "true"
+    assert _attr(chips[0], "target") == "_blank"
+
+
+def test_a_bubble_blank_text_shows_alone_while_the_column_is_empty() -> None:
+    bubble = _bubble(Bubble("Risk", label="Risk", blank="Not set", tokens={"High": "severe"}))
+    assert _text(bubble) == "=if(toString([$Risk]) == '', 'Not set', 'Risk: ' + [$Risk])"
+    assert _shown(bubble, {"Risk": ""}) == (
+        "inline-flex", f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary", "Not set",
+    )
+    assert _shown(bubble, {"Risk": "High"})[2] == "Risk: High"
+    assert str(_shown(bubble, {"Risk": "High"})[1]).startswith(TOKENS["severe"].classes)
+
+
+def test_a_blank_text_keeps_hide_values_and_a_blank_due_date_is_not_overdue() -> None:
+    hid = _bubble(Bubble("Risk", blank="Not set", hide_values=("None",)))
+    assert _shown(hid, {"Risk": "None"})[0] == "none"
+    assert _shown(hid, {"Risk": ""})[0] == "inline-flex"
+    due = _bubble(Bubble("Due", blank="No date", due=True))
+    empty = {"Due": date_field(None), "Due.displayValue": ""}
+    shown = _shown(due, empty)
+    assert shown[0] == "inline-flex"
+    assert shown[1] == f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary"
+    assert shown[2] == "No date"
+
+
+def test_a_list_token_percent_encodes_each_segment_and_keeps_the_slashes() -> None:
+    chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
+    ctx = dataclasses.replace(_ctx(), list_path="Lists/Cost #Centre 50%")
+    assert _chip_href(chip, ctx) == "=@currentWeb + '/Lists/Cost%20%23Centre%2050%25/x?' + [$Case]"
