@@ -2552,6 +2552,17 @@ its bitmap (Contribute without the delete permissions) and the validator
 refuses any other `base_permissions` for the name, because the last deploy that
 MERGEs it wins. The name also cannot appear in any level's `renamed_from`.
 
+**`Managed Owner` is a tool-owned level too.** It is Edit's base permissions
+(Contribute plus `ManageLists`) with `ApproveItems` and `EnumeratePermissions`
+added, and without `ManagePermissions`. Its marker names no family, there is
+one per site, and the validator refuses any other `base_permissions` for the
+name. It suits the people who run a list: they can edit the list and its
+items, approve items and see who has access, but cannot change who holds
+access. Measured on a test tenant by `library.list-access.owner-level-edits`,
+`library.list-access.owner-level-no-manage-permissions`,
+`library.list-access.owner-edits-group-membership` and
+`library.list-access.admin-bypasses`.
+
 **Why the `Managed` prefix.** These are the only groups the tool names for
 itself rather than for your organisation, so they carry a neutral
 shared prefix. That
