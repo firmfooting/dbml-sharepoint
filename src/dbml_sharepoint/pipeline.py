@@ -74,6 +74,7 @@ from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
 from dbml_sharepoint.generators.schema_types import SchemaJson
+from dbml_sharepoint.model.help_guides import load_help_guides
 from dbml_sharepoint.model.identities import IdentityError
 from dbml_sharepoint.project import (
     CONFIG_ERRORS,
@@ -257,7 +258,7 @@ def execute_build(
     (
         enterprise_reader, resolved_external, resolved_external_change,
         resolved_site, resolved_change, resolved_zone, file_identities,
-        env_provenance, _help_settings,
+        env_provenance, help_settings,
     ) = resolve_env_settings(
         env_file, enterprise_reader, deployment_log_list,
         deployment_log_change_list, deployment_log_site, change_log_list,
@@ -271,7 +272,11 @@ def execute_build(
         raise missing_time_zone()
     time_zone = validate_time_zone(resolved_zone)
     # Rendered headers change the mapping, so the resolution is rebuilt from it.
-    bundle, header_findings = resolve_form_headers(parsed_schema, bundle, time_zone)
+    help_guides, help_findings = load_help_guides(help_settings)
+    bundle, header_findings = resolve_form_headers(
+        parsed_schema, bundle, time_zone, help_guides,
+    )
+    header_findings = [*help_findings, *header_findings]
     resolved = resolve(parsed_schema, bundle.mapping)
     # Post-resolution defaults, and the three states the external log name
     # carries. Nothing said anywhere -- no flag, no file -- means the

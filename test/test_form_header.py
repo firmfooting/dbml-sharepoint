@@ -37,6 +37,7 @@ from dbml_sharepoint.model.form_tree import (
     SubtitlePart,
     Title,
 )
+from dbml_sharepoint.model.help_guides import HelpGuides
 from dbml_sharepoint.model.mapping_types import FormFormatting, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
 
@@ -873,3 +874,137 @@ def test_a_list_token_percent_encodes_each_segment_and_keeps_the_slashes() -> No
     chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
     ctx = dataclasses.replace(_ctx(), list_path="Lists/Cost #Centre 50%")
     assert _chip_href(chip, ctx) == "=@currentWeb + '/Lists/Cost%20%23Centre%2050%25/x?' + [$Case]"
+
+
+# --- the help link ------------------------------------------------------------------------------
+
+GUIDES = {"g-a": "https://h/a", "g-c": "https://h/c"}
+
+_MIXED = (
+    BannerRule(Leaf("Risk", "eq", "High"), "a", "g-a"),
+    BannerRule(Leaf("Risk", "eq", "Low"), "b"),
+    BannerRule(Leaf("Status", "eq", "Open"), "c", "g-c"),
+)
+
+
+def _help_ctx() -> RenderContext:
+    return dataclasses.replace(_ctx(), help_guides=GUIDES)
+
+
+def _help_banner(*rules: BannerRule, when: Leaf | None = None) -> dict[str, object]:
+    tree = HeaderTree(banner=Banner("N", "Lightbulb", rules, when=when))
+    return _kids(render_header(tree, _help_ctx()))[0]
+
+
+def test_banner_help_link_follows_the_first_matching_rule() -> None:
+    link = _kids(_help_banner(*_MIXED))[3]
+    for row, href, shown in (
+        ({"Risk": "High", "Status": "Open"}, "https://h/a", "inline"),
+        ({"Risk": "Low", "Status": "Open"}, "", "none"),
+        ({"Risk": "x", "Status": "Open"}, "https://h/c", "inline"),
+    ):
+        assert _ev(_attr(link, "href"), row) == href
+        assert _ev(_style(link, "display"), row) == shown
+
+
+def test_a_rule_without_help_renders_exactly_as_before() -> None:
+    tree = HeaderTree(banner=Banner("N", "Lightbulb", (
+        BannerRule(Leaf("Risk", "eq", "High"), "a"),
+        BannerRule(Leaf("Status", "eq", "Open"), "b"),
+    )))
+    golden = {
+        "elmType": "div",
+        "style": {
+            "display": "=if((([$Risk] == 'High') || ([$Status] == 'Open')), 'flex', 'none')",
+            "align-items": "center", "padding": "6px 8px", "margin": "8px 0 0 0",
+        },
+        "attributes": {"class": "ms-bgColor-themeLighter ms-fontColor-themePrimary"},
+        "children": [
+            {"elmType": "span", "style": {"padding": "0 8px 0 0"},
+             "attributes": {"iconName": "Lightbulb"}},
+            {"elmType": "span", "attributes": {"class": "ms-fontWeight-bold"},
+             "style": {"padding": "0 8px 0 0"}, "txtContent": "N"},
+            {"elmType": "span",
+             "txtContent": "=if(([$Risk] == 'High'), 'a', if(([$Status] == 'Open'), 'b', ''))"},
+        ],
+    }
+    assert _kids(render_header(tree, _help_ctx()))[0] == golden
+    assert _kids(render_header(tree, _ctx()))[0] == golden
+
+
+def test_mixed_rules_render_the_golden_href_and_display() -> None:
+    link = _kids(_help_banner(*_MIXED))[3]
+    a, b, c = "([$Risk] == 'High')", "([$Risk] == 'Low')", "([$Status] == 'Open')"
+    assert _attr(link, "href") == (
+        f"=if({a}, 'https://h/a', if({b}, '', if({c}, 'https://h/c', '')))"
+    )
+    assert _style(link, "display") == (
+        f"=if({a}, 'inline', if({b}, 'none', if({c}, 'inline', 'none')))"
+    )
+
+
+def test_the_link_has_name_target_rel_and_no_wrap() -> None:
+    banner = _help_banner(*_MIXED)
+    link = _kids(banner)[3]
+    assert link["elmType"] == "a"
+    assert link["txtContent"] == "Help for this step"
+    name = "Help for this step, opens in a new tab"
+    assert _attr(link, "title") == name
+    assert _attr(link, "aria-label") == name
+    assert _attr(link, "target") == "_blank"
+    assert _attr(link, "rel") == "noopener noreferrer"
+    assert _style(link, "white-space") == "nowrap"
+    assert _style(link, "flex") == "none"
+    assert _style(link, "padding") == "0 0 0 12px"
+    assert _style(_kids(banner)[2], "min-width") == "0"
+
+
+def test_the_banner_container_does_not_wrap() -> None:
+    assert _style(_help_banner(*_MIXED), "flex-wrap") == "nowrap"
+
+
+def test_a_hidden_banner_hides_the_link() -> None:
+    banner = _help_banner(*_MIXED, when=Leaf("Notes", "is_null"))
+    row = {"Risk": "High", "Status": "Open", "Notes": "x"}
+    assert _ev(_style(banner, "display"), row) == "none"  # the link is a child of it
+
+
+def test_an_unmatched_status_has_an_empty_href_and_display_none() -> None:
+    link = _kids(_help_banner(BannerRule(OPEN, "c", "g-c")))[3]
+    assert _ev(_attr(link, "href"), {"Status": ""}) == ""
+    assert _ev(_style(link, "display"), {"Status": ""}) == "none"
+
+
+def test_an_unmapped_key_is_refused_naming_key_entity_and_rule() -> None:
+    tree = HeaderTree(banner=Banner("N", "Lightbulb", (
+        BannerRule(OPEN, "a", "g-a"), BannerRule(Leaf("Risk", "eq", "x"), "b", "nope"),
+    )))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(tree, _help_ctx())
+    assert found.value.finding.code is FindingCode.FORM_HELP_KEY_UNMAPPED
+    assert found.value.finding.message == (
+        "Task: banner rule 2 help key 'nope' is not in DBMLSP_HELP_GUIDES."
+    )
+
+
+def test_help_off_renders_no_link_and_reports_one_warning() -> None:
+    tree = HeaderTree(banner=Banner("N", "Lightbulb", _MIXED))
+    schema_, base = _bundle(tree)
+    resolved, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HELP_OFF]
+    assert findings[0].severity == "warning"
+    assert "DBMLSP_HELP_BASE_URL" in findings[0].message
+    assert "DBMLSP_HELP_GUIDES" in findings[0].message
+    assert "Help for this step" not in json.dumps(resolved.mapping.form_formatting["Task"].header)
+
+
+def test_help_off_without_any_help_key_reports_nothing() -> None:
+    schema_, base = _bundle(HeaderTree(banner=Banner("N", "Lightbulb", (BannerRule(OPEN, "t"),))))
+    assert resolve_form_headers(schema_, base, SITE)[1] == []
+
+
+def test_help_on_through_resolve_renders_the_url() -> None:
+    schema_, base = _bundle(HeaderTree(banner=Banner("N", "Lightbulb", _MIXED)))
+    resolved, findings = resolve_form_headers(schema_, base, SITE, HelpGuides(GUIDES))
+    assert findings == []
+    assert "https://h/a" in json.dumps(resolved.mapping.form_formatting["Task"].header)

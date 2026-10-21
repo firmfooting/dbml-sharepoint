@@ -39,7 +39,7 @@ class HelpGuides:
 
 
 def _refuse(code: FindingCode, message: str) -> tuple[None, list[Finding]]:
-    return None, [Finding(code, message, Location(Section.FORM_FORMATTING))]
+    return None, [Finding(code, message, location=Location(Section.FORM_FORMATTING))]
 
 
 def _base_problem(base: str) -> str | None:
@@ -55,6 +55,29 @@ def _base_problem(base: str) -> str | None:
     if any(mark in base.lower() for mark in _PLACEHOLDERS) or host.endswith(".invalid"):
         return "is still a placeholder"
     return None
+
+
+def _read_pages(path: Path) -> dict[str, str] | str:
+    """The guide key to page name map, or the reason it cannot be used."""
+    try:
+        raw = safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        return f"{path}: could not read: {exc}"
+    except PARSE_ERRORS as exc:
+        return f"{path}: not valid YAML: {exc}"
+    if not isinstance(raw, dict) or not raw:
+        return f"{path}: must be a non-empty mapping of guide key to page name."
+    pages: dict[str, str] = {}
+    for key, leaf in raw.items():
+        if not isinstance(key, str) or not key:
+            return f"{path}: guide key {key!r} must be text."
+        if not isinstance(leaf, str) or not leaf or "/" in leaf or _SCHEME.match(leaf):
+            return (
+                f"{path}: guide '{key}' must name a page in the base folder, "
+                f"with no slash or scheme (got {leaf!r})."
+            )
+        pages[key] = leaf
+    return pages
 
 
 def load_help_guides(settings: HelpSettings) -> tuple[HelpGuides | None, list[Finding]]:
@@ -76,29 +99,8 @@ def load_help_guides(settings: HelpSettings) -> tuple[HelpGuides | None, list[Fi
     path = Path(file)
     if not path.is_absolute() and settings.env_dir is not None:
         path = settings.env_dir / path
-    try:
-        raw = safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError) as exc:
-        return _refuse(FindingCode.FORM_HELP_PAGE_INVALID, f"{path}: could not read: {exc}")
-    except PARSE_ERRORS as exc:
-        return _refuse(FindingCode.FORM_HELP_PAGE_INVALID, f"{path}: not valid YAML: {exc}")
-    if not isinstance(raw, dict) or not raw:
-        return _refuse(
-            FindingCode.FORM_HELP_PAGE_INVALID,
-            f"{path}: must be a non-empty mapping of guide key to page name.",
-        )
+    pages = _read_pages(path)
+    if isinstance(pages, str):
+        return _refuse(FindingCode.FORM_HELP_PAGE_INVALID, pages)
     prefix = base.rstrip("/") + "/"
-    urls: dict[str, str] = {}
-    for key, leaf in raw.items():
-        if not isinstance(key, str) or not key:
-            return _refuse(
-                FindingCode.FORM_HELP_PAGE_INVALID, f"{path}: guide key {key!r} must be text.",
-            )
-        if not isinstance(leaf, str) or not leaf or "/" in leaf or _SCHEME.match(leaf):
-            return _refuse(
-                FindingCode.FORM_HELP_PAGE_INVALID,
-                f"{path}: guide '{key}' must name a page in the base folder, "
-                f"with no slash or scheme (got {leaf!r}).",
-            )
-        urls[key] = prefix + quote(leaf)
-    return HelpGuides(urls), []
+    return HelpGuides({key: prefix + quote(leaf) for key, leaf in pages.items()}), []

@@ -68,6 +68,7 @@ class Row:
 class BannerRule:
     when: Condition
     text: str
+    help: str | None = None  # a guide key; the env's guides file resolves it to a URL
 
 
 @dataclass(frozen=True)

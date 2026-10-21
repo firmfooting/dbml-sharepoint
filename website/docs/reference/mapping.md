@@ -1367,7 +1367,16 @@ A header or footer tree takes `icon`, `title`, `subtitle`, `chips`,
 | `subtitle` | a list of parts. A part is a column name, or `{ text, columns, fallback, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value, or `fallback` (plain text) shows in its place. A part with `text` and no `columns` is a static sentence |
 | `chips` | a list of `{ text, icon, url \| (url_column + url_template), title, when }`. `title` is the tooltip, written only when you set it: say there that the link opens in a new tab. The icon is hidden from assistive technology. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the entity's `internal_name` (refused when none is declared), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
 | `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
-| `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text }` and the banner shows when a rule matches |
+| `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text, help }` and the banner shows when a rule matches. `help` is optional (see below) |
+
+A banner rule's `help` is a flat guide key, such as `risk-open`. When it
+matches, the banner shows a link, `Help for this step`, that opens the guide
+in a new tab. The key is not an address: the env file's `DBMLSP_HELP_BASE_URL`
+names the folder the guides live in, and `DBMLSP_HELP_GUIDES` names a YAML
+file that maps each key to a page name in it (see
+[the env file](./cli.md#defaults-from-dbml-sharepointenv)). Without both
+settings no link is rendered and the build reports one warning. A `help` key
+the file does not map, or one setting without the other, fails the build.
 
 A bubble takes `column`, `label`, `text` (a template containing `{value}`),
 `label_colon` (`false` writes the label exactly as given, with no colon or space
