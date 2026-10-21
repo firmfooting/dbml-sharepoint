@@ -329,8 +329,8 @@ class _Render:
                 raise self.refusal(
                     FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, chip.url_column,
                     "the chip url uses {list}, and the list keeps the root folder of an earlier "
-                    "title (renamed_from or previous_prefixes), which its current title does "
-                    "not give. Set internal_name to the retained root.",
+                    "title (renamed_from, previous_prefixes or an added title), which its "
+                    "current title does not give. Set internal_name to the retained root.",
                 )
             # Per-segment encoding as every item link does, so # and % survive.
             encoded = "/".join(quote(seg, safe="") for seg in self.ctx.list_path.split("/"))
@@ -694,9 +694,13 @@ def render_header(tree: HeaderTree, ctx: RenderContext) -> Json:
     return _Render(ctx).tree(tree)
 
 
-def _retitled(bundle: MappingBundle, entry: EntityMapping) -> bool:
+def _retitled(bundle: MappingBundle, name: str, entry: EntityMapping) -> bool:
     """A title-derived path is unsafe when a rename keeps the old root folder."""
-    return not entry.internal_name and bool(entry.renamed_from or bundle.mapping.previous_prefixes)
+    return not entry.internal_name and bool(
+        entry.renamed_from
+        or bundle.mapping.previous_prefixes
+        or bundle.mapping.implicit_previous_title(name),
+    )
 
 
 def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> RenderContext | None:
@@ -716,7 +720,7 @@ def _context(schema: Schema, bundle: MappingBundle, entity: str, zone: str) -> R
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},
         zone=zone,
-        list_path=None if _retitled(bundle, entry) else list_folder(
+        list_path=None if _retitled(bundle, entity, entry) else list_folder(
             entry, bundle.mapping.list_title(entity),
         ),
         filled_numbers=frozenset(

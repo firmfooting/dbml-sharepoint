@@ -790,12 +790,12 @@ def test_a_list_token_with_an_internal_name_is_encoded_per_segment() -> None:
 
 
 def test_a_list_token_without_an_internal_name_is_the_derived_list_path() -> None:
-    assert _list_href(title="Task Log") == "=@currentWeb + '/Lists/Task%20Log/x?' + [$Case]"
+    assert _list_href() == "=@currentWeb + '/Lists/APP_Task/x?' + [$Case]"
 
 
 def test_a_list_token_without_an_internal_name_on_a_library_has_no_lists_prefix() -> None:
-    assert _list_href(kind="DocumentLibrary", title="Task Docs") == (
-        "=@currentWeb + '/Task%20Docs/x?' + [$Case]"
+    assert _list_href(kind="DocumentLibrary") == (
+        "=@currentWeb + '/APP_Task/x?' + [$Case]"
     )
 
 
@@ -807,6 +807,12 @@ def test_a_derived_list_token_is_refused_when_a_rename_keeps_the_old_root(
         _list_href(renamed_from=renamed, previous_prefixes=prefixes)
     assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
     assert "Set internal_name" in found.value.finding.message
+
+
+def test_a_derived_list_token_is_refused_when_a_title_is_added() -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _list_href(title="Task Log")
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
 
 
 def test_a_declared_internal_name_survives_a_rename() -> None:
