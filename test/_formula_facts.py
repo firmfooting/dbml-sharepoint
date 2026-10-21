@@ -133,6 +133,7 @@ DATE_OVERFLOW = {
 
 TEXT_EQUALITY_CASE = {"literal": "T", "column": "T"}
 
+# Only the verdict is measured; the instants restate it for an arbitrary created time.
 CREATED_PLUS_DAYS_DAY = {
     "created": "2026-06-10T14:20:48Z",
     "utc_day": "2026-06-10",
