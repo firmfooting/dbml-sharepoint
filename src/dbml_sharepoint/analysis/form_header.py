@@ -1,7 +1,8 @@
 """Render a form.yaml header or footer component tree as formatter JSON.
 
 The build adds no words: every visible word is a literal from the tree. It adds only structural
-punctuation: ` · ` between subtitle parts, `: ` after a bubble label and `/` in a computed date.
+punctuation: a middle dot between subtitle parts, a colon after a bubble label and a slash in a
+computed date.
 A calculated column a header reads is replaced by its translated formula, because a header
 reads one as blank.
 Shapes follow the formatting syntax reference (Microsoft Learn,
@@ -28,7 +29,12 @@ from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.civil import parts_of
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal, too_large
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
-from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
+from dbml_sharepoint.analysis.formula.translate import (
+    ALWAYS,
+    NEVER,
+    TranslationContext,
+    translate_column,
+)
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
@@ -54,8 +60,6 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
 }
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
 _SECONDARY = "ms-fontColor-neutralSecondary"
-_NEVER = "0 == 1"
-_ALWAYS = "0 == 0"
 Json = dict[str, object]
 
 
@@ -203,8 +207,8 @@ class _Render:
         self.calc(column)
         day, blank = self.days[column]
         # A blank row is hidden by the bubble, so the text is not guarded again.
-        filled = f"if({blank}, {_NEVER}, {_ALWAYS})" if blank else _ALWAYS
-        return _Value(_date_text(day, order), blank or _NEVER, filled)
+        filled = f"if({blank}, {NEVER}, {ALWAYS})" if blank else ALWAYS
+        return _Value(_date_text(day, order), blank or NEVER, filled)
 
     def value(self, column: str, order: str | None = None) -> _Value:
         declared = self.ctx.types[column]

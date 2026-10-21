@@ -52,8 +52,8 @@ from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 
 # These two never hold a blank, so a formula may read them without testing for one.
 _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
-_NEVER = "0 == 1"
-_ALWAYS = "0 == 0"
+NEVER = "0 == 1"
+ALWAYS = "0 == 0"
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
 _MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
@@ -275,8 +275,8 @@ class _Translator:
         found, fail = self.scoped(kept, stack, self.filled | filled)
         if found.kind != "date":
             return None
-        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {_NEVER}, {_ALWAYS})"
-        self.fails.append(f"if({blank}, {_ALWAYS}, {fail or _NEVER})")
+        blank = _cond(condition) if empty_yes else f"if({_cond(condition)}, {NEVER}, {ALWAYS})"
+        self.fails.append(f"if({blank}, {ALWAYS}, {fail or NEVER})")
         return found
 
     def go(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
@@ -587,7 +587,7 @@ class _Translator:
                 self.fails.append(fail)
             return taken
         if yes_fail or no_fail:
-            self.fails.append(f"if({cond}, {yes_fail or _NEVER}, {no_fail or _NEVER})")
+            self.fails.append(f"if({cond}, {yes_fail or NEVER}, {no_fail or NEVER})")
         return self.joined(f"if({cond}, {self.value(yes)}, {self.value(no)})", [yes, no])
 
     def choose_branch(self, args: tuple[Expr, ...], first: _Tr, stack: tuple[str, ...]) -> _Tr:
@@ -611,7 +611,7 @@ class _Translator:
         for i in range(len(options) - 1, 0, -1):
             code = f"if({index} == {i}, {self.value(options[i - 1])}, {code})"
             if fail or scoped[i - 1][1]:
-                fail = f"if({index} == {i}, {scoped[i - 1][1] or _NEVER}, {fail or _NEVER})"
+                fail = f"if({index} == {i}, {scoped[i - 1][1] or NEVER}, {fail or NEVER})"
         if fail:
             self.fails.append(fail)
         return self.joined(code, options)

@@ -1,6 +1,6 @@
 """The measured formula facts the reference evaluator is pinned to.
 
-Printed by test/manual/formula-facts-probe.js from a live run on a test tenant. Dates in
+Printed by test/manual/formula-facts-probe.js. Dates in
 `instant` form are UTC instants of site-local midnight; `displayed` is the site-local date as
 the item text shows it (day/month/year).
 """
@@ -134,21 +134,21 @@ DATE_OVERFLOW = {
 TEXT_EQUALITY_CASE = {"literal": "T", "column": "T"}
 
 CREATED_PLUS_DAYS_DAY = {
-    "created": "2026-10-20T14:20:48Z",
-    "utc_day": "2026-10-20",
-    "standard_local_day": "2026-10-21",
-    "daylight_local_day": "2026-10-21",
-    "plus_zero": "2026-10-20T14:20:48Z",
-    "plus_one": "2026-10-21T14:20:48Z",
-    "shown_zero": "2026-10-21",
-    "shown_one": "2026-10-22",
+    "created": "2026-06-10T14:20:48Z",
+    "utc_day": "2026-06-10",
+    "standard_local_day": "2026-06-11",
+    "daylight_local_day": "2026-06-11",
+    "plus_zero": "2026-06-10T14:20:48Z",
+    "plus_one": "2026-06-11T14:20:48Z",
+    "shown_zero": "2026-06-11",
+    "shown_one": "2026-06-12",
     "verdict": "SITE-LOCAL DAY",
 }
 
 CALCULATED_DATE_READ = {
     "Cdr": {"rest": "2026-03-14T13:00:00Z", "text": "15/03/2026"},
-    "CdrTime": {"rest": "2026-10-20T14:20:48Z", "text": "21/10/2026 1:20 AM"},
-    "created_text": "21/10/2026 1:20 AM",
+    "CdrTime": {"rest": "2026-06-10T14:20:48Z", "text": "11/06/2026 12:20 AM"},
+    "created_text": "11/06/2026 12:20 AM",
 }
 
 CALCULATED_NUMBER_DISPLAY = {
