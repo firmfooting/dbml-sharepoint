@@ -1329,7 +1329,6 @@ Task:
           - badge: { text: "Done", token: good, when: { field: Status, op: eq, value: Done } }
   footer:
     banner:
-      label: "Notice"
       icon: Warning
       rules:
         - { when: { field: Impact, op: eq, value: Critical }, text: "Critical impact" }
@@ -1357,21 +1356,22 @@ either side between subtitle parts, a colon and a space after a bubble label
 ### Components
 
 A header or footer tree takes `icon`, `title`, `subtitle`, `chips`,
-`chips_align`, `rows` and `banner`. An unknown key is refused by name.
+`rows` and `banner`. An unknown key is refused by name.
 
 | Component | Keys |
 | --- | --- |
 | `icon` | a fleet icon name, shown as a tile beside the title block |
-| `chips_align` | `top`, `middle` (the default) or `bottom`: where the chips sit against the header bar, beside the title block. It applies when the header has an `icon` or names `chips_align`; otherwise the chips stack below the title block |
 | `title` | `column`, `blank` (shown when the column is empty), `prefix` (static text written before the value, such as `"Workspace: "`; the `blank` text is shown alone), `when` |
 | `subtitle` | a list of parts. A part is a column name, or `{ text, columns, fallback, when }` where `text` holds `{Column}` placeholders and shows only when every named column has a value, or `fallback` (plain text) shows in its place. A part with `text` and no `columns` is a static sentence |
-| `chips` | a list of `{ text, icon, url \| (url_column + url_template), title, when }`. `title` is the tooltip, written only when you set it: say there that the link opens in a new tab. The icon is hidden from assistive technology. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the list's web-relative path, percent-encoded per segment: its `internal_name` when declared, else the path core derives (`Lists/<title>` for a list, the bare title for a document library; refused when `renamed_from`, `previous_prefixes` or an added `title` means the old root folder is kept, so set `internal_name`), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
+| `chips` | a list of `{ text, icon, url \| (url_column + url_template), title, emphasis, when }`, drawn as buttons on the first row, right of the title and below it when narrow. `emphasis` is `primary` (a filled button) or `secondary` (the default, grey). `title` is the tooltip, written only when you set it: say there that the link opens in a new tab. The icon is hidden from assistive technology. `url_template` must contain `{value}`. A leading `{web}` is the site's address (`@currentWeb`), so the link works when the form is opened outside the list, and `{list}` is the list's web-relative path, percent-encoded per segment: its `internal_name` when declared, else the path core derives (`Lists/<title>` for a list, the bare title for a document library; refused when `renamed_from`, `previous_prefixes` or an added `title` means the old root folder is kept, so set `internal_name`), for example `{web}/{list}/History.aspx?FilterField1=Case&FilterValue1={value}` |
 | `rows` | a list of `{ items, when }`. An item is a bubble or `badge: { text, token, when }` |
-| `banner` | `{ label, icon, rules, when }`. Each rule is `{ when, text, help }` and the banner shows when a rule matches. `help` is optional (see below) |
+| `banner` | `{ icon, rules, when }`. The step box shows the text of the first rule whose `when` matches, and is hidden when none does. `icon` is optional and defaults to `Forward`. Each rule is `{ when, text, next, help }`: `text` is the action, written after the fixed label "To do now:"; `next` is optional and says who acts next, written after the fixed label "After that:"; `help` is optional (see below). Neither label can be changed. A `text` or `next` with a single quote is refused |
 
 A banner rule's `help` is a flat guide key, such as `risk-open`. When it
-matches, the banner shows a link, `Help for this step`, that opens the guide
-in a new tab. The key is not an address: the env file's `DBMLSP_HELP_BASE_URL`
+matches, the action text is itself the link: underlined, opening the guide in a
+new tab, with the accessible name "(action), opens the step guide in a new tab".
+A rule with no `help`, or any rule while help is off, shows the action as plain
+text. The key is not an address: the env file's `DBMLSP_HELP_BASE_URL`
 names the folder the guides live in, and `DBMLSP_HELP_GUIDES` names a YAML
 file that maps each key to a page name in it (see
 [the env file](./cli.md#defaults-from-dbml-sharepointenv)). Without both
@@ -1396,8 +1396,8 @@ the fleet icon vocabulary described in
 [the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 `when` takes the condition grammar of `views[].where`.
 
-A `footer` takes the same components as a header except `icon`, `title` and
-`chips_align`, which a footer refuses by name. It renders into the form's
+A `footer` takes the same components as a header except `icon` and `title`,
+which a footer refuses by name. It renders into the form's
 footer formatter through the same renderer, with the same refusals and the
 same size budget as a header (core measures no separate footer limit). `footer:
 { file: <path> }` still names a raw JSON file instead.
@@ -1464,9 +1464,9 @@ these:
   finding names the calculated column adding the most characters.
 - A single quote in text that is placed inside an expression (a title blank,
   a subtitle text, a bubble label or text, a URL template, `hide_values`, a
-  token key or a banner rule text), in a text or choice literal of a
+  token key, or a banner rule text or next), in a text or choice literal of a
   calculated column's formula, and `[$` or `@` in static text (a chip
-  text, a badge text, a banner label or a static chip URL). The formatting
+  text, a badge text or a static chip URL). The formatting
   reference documents no escape for the first and does not say how the second
   is read.
 - A column the entity does not have, and `due` on a column that is not a date.
