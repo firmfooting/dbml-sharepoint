@@ -166,3 +166,22 @@ def test_a_real_address_containing_replace_is_accepted(tmp_path: Path, base: str
 def test_the_concrete_placeholder_tokens_are_refused(tmp_path: Path, base: str) -> None:
     code, _ = _only(_load(tmp_path, base, "k: a.aspx\n"))
     assert code is FindingCode.FORM_HELP_BASE_URL_INVALID
+
+
+@pytest.mark.parametrize("base", [
+    "https://hub.fabrikam.net:abc/sites/help/", "https://hub.fabrikam.net:99999/sites/help/",
+    "https://hub fabrikam.net/sites/help/", "https://hub_x.fabrikam.net/sites/help/",
+    "https://hüb.fabrikam.net/sites/help/", "https://user@hub.fabrikam.net/sites/help/",
+    "https://user:pw@hub.fabrikam.net/sites/help/",
+])
+def test_a_malformed_authority_is_refused(tmp_path: Path, base: str) -> None:
+    code, message = _only(_load(tmp_path, base, "k: a.aspx\n"))
+    assert code is FindingCode.FORM_HELP_BASE_URL_INVALID
+    assert "DBMLSP_HELP_BASE_URL" in message
+
+
+def test_a_base_with_a_valid_port_is_accepted(tmp_path: Path) -> None:
+    guides, findings = _load(tmp_path, "https://hub.fabrikam.net:443/sites/help/", "k: a.aspx\n")
+    assert findings == []
+    assert guides is not None
+    assert guides.urls == {"k": "https://hub.fabrikam.net:443/sites/help/a.aspx"}

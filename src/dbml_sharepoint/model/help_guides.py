@@ -12,12 +12,13 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import SplitResult, quote, urlsplit
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
 from dbml_sharepoint.model.yamlio import PARSE_ERRORS, safe_load
 
+_HOST = re.compile(r"[A-Za-z0-9.-]+")
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _PLACEHOLDERS = ("<", ">", "replace-me", "replace_with", "replace-with")
 
@@ -42,6 +43,18 @@ def _refuse(code: FindingCode, message: str) -> tuple[None, list[Finding]]:
     return None, [Finding(code, message, location=Location(Section.FORM_FORMATTING))]
 
 
+def _authority_problem(parts: SplitResult) -> str | None:
+    try:
+        parts.port  # noqa: B018 -- reading it is the check: a non-numeric port raises
+    except ValueError:
+        return "has a port that is not a number in range"
+    if "@" in parts.netloc:
+        return "must not carry a user name or password"
+    if not _HOST.fullmatch(parts.hostname or ""):
+        return "must have a host of letters, digits, dots and hyphens (no IDNA hosts)"
+    return None
+
+
 def _base_problem(base: str) -> str | None:
     try:
         parts = urlsplit(base)
@@ -52,8 +65,8 @@ def _base_problem(base: str) -> str | None:
         return "must be an https URL with a host"
     if parts.query or parts.fragment:
         return "must not have a query or a fragment"
-    if "'" in parts.netloc or "\\" in parts.netloc:
-        return "has a character in its host that cannot be written into a formatter"
+    if (problem := _authority_problem(parts)) is not None:
+        return problem
     if (
         any(mark in base.lower() for mark in _PLACEHOLDERS)
         or host.endswith(".invalid") or host.startswith("example.") or ".example." in host
