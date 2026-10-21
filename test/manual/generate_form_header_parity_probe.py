@@ -155,7 +155,7 @@ def _header(zone: str) -> str:
     assert not findings, findings
     header = resolved.mapping.form_formatting["Task"].header
     assert header is not None
-    # The build refuses a quote in a literal, so the probe writes the doubled form by hand.
+    # A platform observation, not core output: the build refuses this literal.
     assert _fill_slot(header) == 1
     return json.dumps({"headerJSONFormatter": header}, separators=(",", ":"))
 

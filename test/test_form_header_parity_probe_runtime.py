@@ -113,11 +113,12 @@ _MOCK = textwrap.dedent(r"""
       if (CONFIG.wrong === it.Title && review) review = addDays(review, 1);
       let reviewText = review ? plain(review) : '';
       if (CONFIG.badDate === it.Title && review) reviewText = '29.5/3/2026';
+      const sep = CONFIG.colon ? ': ' : ' '; // the built header prints "Label: value"
       const lines = [it.Title, it.Status, it.Impact ? 'Impact ' + it.Impact : ''];
       if (c.Cutoff) {
-        lines.push('Due by ' + plain(c.Cutoff), 'Review on ' + reviewText, 'Chased on ' + plain(c.Chased));
+        lines.push('Due by' + sep + plain(c.Cutoff), 'Review on' + sep + reviewText, 'Chased on' + sep + plain(c.Chased));
       }
-      lines.push('Rating now ' + (CONFIG.wrongRating === it.Title ? 'Low' : rating(it)));
+      lines.push('Rating now' + sep + (CONFIG.wrongRating === it.Title ? 'Low' : rating(it)));
       if (it.Status === 'Open') lines.push(CONFIG.apostrophe);
       return lines.filter(Boolean).join('\n');
     };
@@ -271,6 +272,14 @@ def test_every_item_agrees_when_the_header_shows_what_the_columns_hold() -> None
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     assert rows[PARITY]["outcome"] == "AGREE" and rows[PARITY]["state"] == "settled"
     assert ended_with_report(output)
+
+
+@pytest.mark.parametrize("colon", [True, False])
+def test_the_label_reader_takes_the_value_with_or_without_a_colon(colon: bool) -> None:
+    _rows, _sent, output = _run({"colon": colon})
+
+    assert _lines(output, "DISAGREE") == []
+    assert [ln.removeprefix("AGREE ") for ln in _lines(output, "AGREE")] == TITLES
 
 
 def test_a_header_differing_from_its_column_prints_disagree_for_that_row_only() -> None:

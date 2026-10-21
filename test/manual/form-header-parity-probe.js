@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A GENERATED FORM HEADER AGAINST ITS CALCULATED COLUMNS ----
  *
- * REVISION: 46665101
+ * REVISION: 71b1897e
  *
  * QUESTION: does the form header the build generates for calculated columns show,
  * on every row of a grid of hard cases, the same value the calculated column holds?
@@ -486,7 +486,7 @@
     if (open) console.log('A question with no observation is NOT a pass. Report it as open.');
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 46665101. Quote this when reporting results.');
+  log('INFO', 'probe revision 71b1897e. Quote this when reporting results.');
 
   const F_LIST = 'form.display-form.fixture-parity-list';
   const F_COLS = 'form.display-form.fixture-parity-columns';
@@ -769,7 +769,7 @@
   // ---- Header against column, per item ---------------------------------
   const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const headerDate = (text, label) => {
-    const m = text.match(new RegExp(`(?:^|\\s)${escapeRe(label)}\\s+(\\S+)`));
+    const m = text.match(new RegExp(`(?:^|\\s)${escapeRe(label)}:?\\s+(\\S+)`));
     return m ? m[1] : null;
   };
   const columnDate = (shown) => (none(shown) ? null : dateParts(shown, DATA.dateOrder) || `UNPARSED ${JSON.stringify(shown)}`);

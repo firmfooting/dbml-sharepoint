@@ -434,7 +434,7 @@
   // ---- Header against column, per item ---------------------------------
   const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const headerDate = (text, label) => {
-    const m = text.match(new RegExp(`(?:^|\\s)${escapeRe(label)}\\s+(\\S+)`));
+    const m = text.match(new RegExp(`(?:^|\\s)${escapeRe(label)}:?\\s+(\\S+)`));
     return m ? m[1] : null;
   };
   const columnDate = (shown) => (none(shown) ? null : dateParts(shown, DATA.dateOrder) || `UNPARSED ${JSON.stringify(shown)}`);
