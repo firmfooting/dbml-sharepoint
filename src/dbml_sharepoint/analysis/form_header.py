@@ -661,9 +661,10 @@ class _Render:
                 style["color"] = colour
         else:
             css = "=" + _chain([(c, classes[t][0]) for c, t in pairs], classes[fallback][0])
-            dark = [(c, _DARK) for c, t in pairs if classes[t][1]]
-            if dark or classes[fallback][1]:
-                style["color"] = "=" + _chain(dark, _DARK if classes[fallback][1] else "")
+            # Same branches and order as the class chain, so a neutral branch wins with no colour.
+            inks = [(c, classes[t][1]) for c, t in pairs]
+            if any(ink for _, ink in inks) or classes[fallback][1]:
+                style["color"] = "=" + _chain(inks, classes[fallback][1])
         return {
             "elmType": "span",
             "style": style,
@@ -814,7 +815,7 @@ class _Render:
                     "style": {
                         "display": "flex", "flex-direction": "row", "flex-wrap": "wrap",
                         "align-items": "baseline", "column-gap": "16px", "min-width": "0",
-                        "overflow-wrap": "anywhere",
+                        "word-wrap": "break-word",
                     },
                     "children": lines,
                 },

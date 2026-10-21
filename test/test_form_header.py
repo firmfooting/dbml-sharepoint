@@ -1217,3 +1217,16 @@ def test_help_on_through_resolve_renders_the_url() -> None:
     resolved, findings = resolve_form_headers(schema_, base, SITE, HelpGuides(GUIDES))
     assert findings == []
     assert "https://h/a" in json.dumps(resolved.mapping.form_formatting["Task"].header)
+
+
+def test_a_neutral_branch_has_no_fixed_text_colour_ahead_of_a_severity_default() -> None:
+    bubble = _bubble(Bubble("Risk", tokens={"Done": "neutral", "default": "warning"}))
+    assert _ev(_style(bubble, "color"), {"Risk": "Done"}) == ""
+    assert _ev(_style(bubble, "color"), {"Risk": "Other"}) == "#323130"
+    assert "ms-fontColor-neutralPrimary" in str(_ev(_attr(bubble, "class"), {"Risk": "Done"}))
+
+
+def test_the_header_wraps_with_the_documented_property() -> None:
+    text = json.dumps(_full())
+    assert "overflow-wrap" not in text
+    assert '"word-wrap": "break-word"' in text
