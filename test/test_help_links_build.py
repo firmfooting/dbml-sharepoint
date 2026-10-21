@@ -8,7 +8,8 @@ import typer
 from _paths import FIXTURES
 from test_form_file_build import _formatter, _texts
 
-from dbml_sharepoint.pipeline import execute_build
+from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.pipeline import execute_build, execute_validation
 
 BASE = "https://hub.fabrikam.net/sites/help/SitePages/"
 GUIDES = "g-critical: Review a critical risk.aspx\ng-low: Low-impact.aspx\n"
@@ -98,3 +99,18 @@ def test_build_with_one_env_key_only_exits_1(
     assert exit_.value.exit_code == 1
     assert "DBMLSP_HELP_GUIDES" in capsys.readouterr().err
 
+
+
+def test_validate_of_a_help_mapping_emits_no_off_warning(tmp_path: Path) -> None:
+    project = _project(tmp_path, None)
+    findings = execute_validation(schema=project / "schema.dbml", mapping=project / "mapping.yaml")
+    assert FindingCode.FORM_HELP_OFF not in [f.code for f in findings]
+
+
+def test_refused_help_settings_do_not_also_report_the_off_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    project = _project(tmp_path, f"DBMLSP_HELP_BASE_URL={BASE}\n")
+    with pytest.raises(typer.Exit):
+        _run(project, tmp_path / "out")
+    assert "form_help_off" not in capsys.readouterr().err

@@ -122,3 +122,10 @@ def test_resolve_env_settings_returns_help_settings_from_the_file(tmp_path: Path
 def test_a_flag_free_run_with_no_file_returns_empty_help_settings() -> None:
     *_, help_settings = resolve_env_settings(None, None, None, None, None, None, None)
     assert help_settings == HelpSettings(None, None, None)
+
+
+@pytest.mark.parametrize("page", ["'.'", "'..'", "'   '"])
+def test_a_dot_or_blank_page_is_refused_naming_the_map_key(tmp_path: Path, page: str) -> None:
+    code, message = _only(_load(tmp_path, BASE, f"bad-key: {page}\n"))
+    assert code is FindingCode.FORM_HELP_PAGE_INVALID
+    assert "bad-key" in message

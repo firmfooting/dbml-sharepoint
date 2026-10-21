@@ -769,15 +769,17 @@ def _context(
 def resolve_form_headers(
     schema: Schema, bundle: MappingBundle, time_zone: str,
     help: HelpGuides | None = None,  # noqa: A002 -- the documented name
+    help_off_warning: bool = True,
 ) -> tuple[MappingBundle, list[Finding]]:
     """The bundle with each component tree rendered into its entity's header and footer JSON.
 
     An entity whose part is refused keeps `None` for that part, and the finding says why.
     `help` is None when help links are off: banner `help` keys then render nothing, and one
-    warning says so.
+    warning says so, unless `help_off_warning` is False (the caller cannot see the env settings
+    or has already reported why they are unusable).
     """
     findings: list[Finding] = []
-    if help is None and any(
+    if help is None and help_off_warning and any(
         rule.help is not None
         for trees in bundle.form_trees.values()
         for tree in trees.values()

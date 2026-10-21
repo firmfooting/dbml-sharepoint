@@ -274,7 +274,7 @@ def execute_build(
     # Rendered headers change the mapping, so the resolution is rebuilt from it.
     help_guides, help_findings = load_help_guides(help_settings)
     bundle, header_findings = resolve_form_headers(
-        parsed_schema, bundle, time_zone, help_guides,
+        parsed_schema, bundle, time_zone, help_guides, help_off_warning=not help_findings,
     )
     header_findings = [*help_findings, *header_findings]
     resolved = resolve(parsed_schema, bundle.mapping)
@@ -567,7 +567,9 @@ def execute_validation(
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
     require_known_site_role(bundle, site_role)
     # No site zone here, so UTC stands in; a zone-specific refusal is reported at build.
-    bundle, header_findings = resolve_form_headers(parsed_schema, bundle, "UTC")
+    bundle, header_findings = resolve_form_headers(
+        parsed_schema, bundle, "UTC", help_off_warning=False,  # validate sees no env file
+    )
     return validate_all(parsed_schema, bundle, ext) + header_findings
 
 

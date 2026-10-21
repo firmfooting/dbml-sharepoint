@@ -71,7 +71,10 @@ def _read_pages(path: Path) -> dict[str, str] | str:
     for key, leaf in raw.items():
         if not isinstance(key, str) or not key:
             return f"{path}: guide key {key!r} must be text."
-        if not isinstance(leaf, str) or not leaf or "/" in leaf or _SCHEME.match(leaf):
+        if (
+            not isinstance(leaf, str) or leaf.strip() in ("", ".", "..")
+            or "/" in leaf or _SCHEME.match(leaf)
+        ):
             return (
                 f"{path}: guide '{key}' must name a page in the base folder, "
                 f"with no slash or scheme (got {leaf!r})."
