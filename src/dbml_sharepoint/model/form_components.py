@@ -25,8 +25,8 @@ from dbml_sharepoint.model.form_tree import (
 _VALUE = "{value}"
 _WEB = "{web}"
 DATE_ORDERS = ("dmy", "mdy", "ymd")
-CHIP_ALIGNS = ("top", "middle", "bottom")
-_HEADER_ONLY = ("icon", "title", "chips_align")
+EMPHASES = ("primary", "secondary")
+_HEADER_ONLY = ("icon", "title")
 
 
 def _text(raw: object, context: str) -> str:
@@ -106,7 +106,9 @@ def _subtitle_part(raw: object, context: str) -> SubtitlePart:
 
 def _chip(raw: object, context: str) -> LinkChip:
     block = _known_keys(
-        raw, {"text", "icon", "url", "url_column", "url_template", "title", "when"}, context,
+        raw,
+        {"text", "icon", "url", "url_column", "url_template", "title", "when", "emphasis"},
+        context,
     )
     url, column, template = (block.get(k) for k in ("url", "url_column", "url_template"))
     if url is not None and (column is not None or template is not None):
@@ -114,6 +116,11 @@ def _chip(raw: object, context: str) -> LinkChip:
     if url is None and (column is None or template is None):
         raise MappingShapeError(f"{context}: give url, or both url_column and url_template")
     title = block.get("title")
+    emphasis = block.get("emphasis", "secondary")
+    if emphasis not in EMPHASES:
+        raise MappingValueError(
+            f"{context}.emphasis: expected one of {', '.join(EMPHASES)}, got {emphasis!r}"
+        )
     return LinkChip(
         _nonblank(block.get("text"), f"{context}.text"),
         _nonblank(block.get("icon"), f"{context}.icon"),
@@ -122,6 +129,7 @@ def _chip(raw: object, context: str) -> LinkChip:
         None if template is None else _template(template, f"{context}.url_template", url=True),
         None if title is None else _nonblank(title, f"{context}.title"),
         _when(block, context),
+        emphasis,
     )
 
 
@@ -196,24 +204,25 @@ def _row(raw: object, context: str) -> Row:
 
 
 def _banner(raw: object, context: str) -> Banner:
-    block = _known_keys(raw, {"label", "icon", "when", "rules"}, context)
+    block = _known_keys(raw, {"icon", "when", "rules"}, context)
     rules: list[BannerRule] = []
     for index, rule in enumerate(
         _list(block.get("rules"), f"{context}.rules", empty="a banner needs at least one rule"),
     ):
         where = f"{context}.rules[{index}]"
-        entry = _known_keys(rule, {"when", "text", "help"}, where)
+        entry = _known_keys(rule, {"when", "text", "next", "help"}, where)
         if entry.get("when") is None:
             raise MappingShapeError(f"{where}: 'when' is required on a rule")
         rules.append(BannerRule(
             parse_condition(entry["when"], f"{where}.when"),
             _nonblank(entry.get("text"), f"{where}.text"),
             None if "help" not in entry else _nonblank(entry["help"], f"{where}.help"),
+            None if "next" not in entry else _nonblank(entry["next"], f"{where}.next"),
         ))
+    icon = block.get("icon")
     return Banner(
-        _nonblank(block.get("label"), f"{context}.label"),
-        _nonblank(block.get("icon"), f"{context}.icon"),
         tuple(rules),
+        "Forward" if icon is None else _nonblank(icon, f"{context}.icon"),
         _when(block, context),
     )
 
@@ -233,23 +242,17 @@ def parse_header(raw: object, context: str, *, footer: bool = False) -> HeaderTr
     A footer has no title, icon tile or header bar, so those keys are refused on one.
     """
     block = _known_keys(
-        raw, {"icon", "title", "subtitle", "chips", "chips_align", "rows", "banner"}, context,
+        raw, {"icon", "title", "subtitle", "chips", "rows", "banner"}, context,
     )
     if footer:
         for key in _HEADER_ONLY:
             if block.get(key) is not None:
                 raise MappingShapeError(f"{context}.{key}: a footer takes no {key}; use a header")
-    align = block.get("chips_align")
-    if align is not None and align not in CHIP_ALIGNS:
-        raise MappingValueError(
-            f"{context}.chips_align: expected one of {', '.join(CHIP_ALIGNS)}, got {align!r}"
-        )
     return HeaderTree(
         icon=None if block.get("icon") is None else _nonblank(block["icon"], f"{context}.icon"),
         title=None if block.get("title") is None else _title(block["title"], f"{context}.title"),
         subtitle=_many(block, "subtitle", context, _subtitle_part),
         chips=_many(block, "chips", context, _chip),
-        chips_align=align,
         rows=_many(block, "rows", context, _row),
         banner=(
             None if block.get("banner") is None

@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -46,6 +47,10 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
 SITE = "Australia/Melbourne"
 NOW = "2026-10-20T12:00:00Z"
+TYPE = "ms-fontSize-12 ms-fontWeight-semibold"
+NEUTRAL = (
+    f"{TOKENS['neutral'].classes} ms-borderColor-neutralLighter ms-fontColor-neutralPrimary {TYPE}"
+)
 STATUSES = ("Open", "Done", "Late")
 SCORE = 'IF([Status]="Open","Hot",IF([Status]="Done","","Cold"))'
 TYPES = {
@@ -99,12 +104,37 @@ def _attr(node: dict[str, object], key: str) -> object:
     return attributes[key]
 
 
+def _parts(tree: HeaderTree) -> list[dict[str, object]]:
+    """The title and subtitle nodes: the text block inside row one's identity."""
+    identity = _kids(_kids(_render(tree))[0])[0]
+    return _kids(_kids(identity)[-1])
+
+
+def _chip_nodes(rendered: dict[str, object]) -> list[dict[str, object]]:
+    return _kids(_kids(_kids(rendered)[0])[-1])
+
+
+def _attrs(node: dict[str, object]) -> dict[str, object]:
+    attributes = node["attributes"]
+    assert isinstance(attributes, dict)
+    return attributes
+
+
+def _now(banner: dict[str, object]) -> list[dict[str, object]]:
+    """The label, the link when the rules map one, and the plain action of a step box."""
+    return _kids(_kids(_kids(banner)[1])[0])
+
+
+def _action(banner: dict[str, object]) -> dict[str, object]:
+    return _now(banner)[-1]
+
+
 def _bubble(item: Bubble, zone: str = SITE) -> dict[str, object]:
     return _kids(_kids(_render(HeaderTree(rows=(Row((item,)),)), zone))[0])[0]
 
 
 def _text(bubble: dict[str, object]) -> object:
-    return _kids(bubble)[0]["txtContent"]
+    return bubble["txtContent"]
 
 
 def _shown(bubble: dict[str, object], row: Mapping[str, object]) -> tuple[object, object, object]:
@@ -123,7 +153,7 @@ def test_rendered_header_never_references_a_calculated_column() -> None:
         title=Title("Title", "x", Leaf("Score", "eq", "Hot")),
         chips=(LinkChip("Go", "ContactLink", url_column="Score", url_template="https://e/{value}"),),
         rows=(Row((Bubble("Score", tokens={"Hot": "severe"}),), Leaf("Score", "eq", "Hot")),),
-        banner=Banner("L", "Lightbulb", (BannerRule(Leaf("Score", "eq", "Cold"), "t"),)),
+        banner=Banner(icon="Lightbulb", rules=(BannerRule(Leaf("Score", "eq", "Cold"), "t"),)),
     )
     header = _render(tree)
     assert "Score" not in formatter_field_refs(header)
@@ -141,7 +171,7 @@ def test_the_wrapper_follows_the_shipped_header_samples() -> None:
     header = _render(HeaderTree(title=Title("Title", "")))
     assert header["elmType"] == "div"
     assert str(header["$schema"]).endswith("column-formatting.schema.json")
-    assert _attr(header, "class") == "ms-borderColor-neutralTertiary"
+    assert _attr(header, "class") == "ms-borderColor-neutralLight"
 
 
 # --- calculated columns ------------------------------------------------------------------------
@@ -161,9 +191,9 @@ def test_blank_calculated_value_hides_the_bubble_with_no_second_condition() -> N
     bubble = _bubble(Bubble("Score"))
     display = _style(bubble, "display")
     assert isinstance(display, str)
-    assert display.endswith(", 'none', 'inline-flex')")
-    for status, expected in (("Open", "inline-flex"), ("Done", "none"), ("Late", "inline-flex"),
-                             ("", "inline-flex"), ("Other", "inline-flex")):
+    assert display.endswith(", 'none', 'inline-block')")
+    for status, expected in (("Open", "inline-block"), ("Done", "none"), ("Late", "inline-block"),
+                             ("", "inline-block"), ("Other", "inline-block")):
         assert _ev(display, {"Status": status}) == expected, status
 
 
@@ -195,14 +225,14 @@ def test_a_calculated_number_is_refused_naming_the_column() -> None:
 
 
 def test_title_shows_the_column_or_the_blank_text() -> None:
-    title = _kids(_kids(_render(HeaderTree(title=Title("Title", "Nothing yet"))))[0])[0]
+    title = _parts(HeaderTree(title=Title("Title", "Nothing yet")))[0]
     assert _ev(title["txtContent"], {"Title": "Alpha"}) == "Alpha"
     assert _ev(title["txtContent"], {"Title": ""}) == "Nothing yet"
     assert _style(title, "display") == "block"
 
 
 def test_a_false_title_when_hides_the_title() -> None:
-    title = _kids(_kids(_render(HeaderTree(title=Title("Title", "", OPEN))))[0])[0]
+    title = _parts(HeaderTree(title=Title("Title", "", OPEN)))[0]
     assert _ev(_style(title, "display"), {"Status": "Open"}) == "block"
     assert _ev(_style(title, "display"), {"Status": "Done"}) == "none"
 
@@ -213,7 +243,7 @@ def test_subtitle_parts_join_with_a_dot_only_between_shown_parts() -> None:
         SubtitlePart(text="Case {Case} / {Notes}", columns=("Case",), when=OPEN),
         SubtitlePart(text="Seen {Seen}", columns=("Seen",)),
     ))
-    node = _kids(_kids(_render(tree))[0])[0]
+    node = _parts(tree)[0]
     dot = " · "
     seen = date_field(1_000_000_000_000)
     base = {
@@ -237,10 +267,10 @@ def test_subtitle_parts_join_with_a_dot_only_between_shown_parts() -> None:
 
 
 def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
-    chip = _kids(_kids(_render(HeaderTree(chips=(
+    chip = _chip_nodes(_render(HeaderTree(chips=(
         LinkChip("Open case", "ContactLink", url_column="Case", url_template="https://e/x?id={value}"),
         LinkChip("Help", "Feedback", url="https://e/help"),
-    ))))[0])
+    ))))
     assert _ev(_style(chip[0], "display"), {"Case": ""}) == "none"
     assert _ev(_style(chip[0], "display"), {"Case": "7"}) == "inline-flex"
     assert _ev(_attr(chip[0], "href"), {"Case": "7"}) == "https://e/x?id=7"
@@ -252,7 +282,7 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
 
 def test_a_chip_when_hides_it() -> None:
     tree = HeaderTree(chips=(LinkChip("Help", "Feedback", url="u", when=OPEN),))
-    chip = _kids(_kids(_render(tree))[0])[0]
+    chip = _chip_nodes(_render(tree))[0]
     assert _ev(_style(chip, "display"), {"Status": "Open"}) == "inline-flex"
     assert _ev(_style(chip, "display"), {"Status": "Done"}) == "none"
 
@@ -272,19 +302,18 @@ def test_a_bubble_is_hidden_while_blank_and_for_hide_values() -> None:
     assert _shown(bubble, {"Risk": "None"})[0] == "none"
     assert _shown(bubble, {"Risk": "N/A"})[0] == "none"
     assert _shown(bubble, {"Risk": "High"}) == (
-        "inline-flex", f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary", "High",
+        "inline-block", NEUTRAL, "High",
     )
 
 
 def test_tokens_map_values_and_a_default_takes_the_rest() -> None:
     bubble = _bubble(Bubble("Risk", tokens={"High": "severe", "Low": "good", "default": "muted"}))
-    suffix = " ms-fontColor-neutralSecondary"
-    assert _shown(bubble, {"Risk": "High"})[1] == TOKENS["severe"].classes + suffix
-    assert _shown(bubble, {"Risk": "Low"})[1] == TOKENS["good"].classes + suffix
-    assert _shown(bubble, {"Risk": "Other"})[1] == TOKENS["muted"].classes + suffix
+    assert _shown(bubble, {"Risk": "High"})[1] == form_header._pill("severe")[0]
+    assert _shown(bubble, {"Risk": "Low"})[1] == form_header._pill("good")[0]
+    assert _shown(bubble, {"Risk": "Other"})[1] == form_header._pill("muted")[0]
     # No `default` key gives the neutral token.
     plain = _bubble(Bubble("Risk", tokens={"High": "severe"}))
-    assert _shown(plain, {"Risk": "Other"})[1] == TOKENS["neutral"].classes + suffix
+    assert _shown(plain, {"Risk": "Other"})[1] == NEUTRAL
 
 
 def test_label_and_text_template_wrap_the_value() -> None:
@@ -296,14 +325,14 @@ def test_label_and_text_template_wrap_the_value() -> None:
 
 def test_a_bubble_when_hides_it() -> None:
     bubble = _bubble(Bubble("Risk", when=OPEN))
-    assert _shown(bubble, {"Status": "Open", "Risk": "x"})[0] == "inline-flex"
+    assert _shown(bubble, {"Status": "Open", "Risk": "x"})[0] == "inline-block"
     assert _shown(bubble, {"Status": "Late", "Risk": "x"})[0] == "none"
 
 
 def test_a_stored_date_shows_its_display_value() -> None:
     bubble = _bubble(Bubble("Due"))
     shown = {"Due": date_field(1_800_000_000_000), "Due.displayValue": "5/3/2026"}
-    assert _shown(bubble, shown)[0::2] == ("inline-flex", "5/3/2026")
+    assert _shown(bubble, shown)[0::2] == ("inline-block", "5/3/2026")
     blank = {"Due": date_field(None), "Due.displayValue": ""}
     assert _shown(bubble, blank)[0] == "none"
 
@@ -312,9 +341,11 @@ def test_badge_is_fixed_text_with_a_token_and_a_when() -> None:
     node = _kids(_kids(_render(HeaderTree(rows=(
         Row((Badge("No assessment", "warning", OPEN),)),
     ))))[0])[0]
-    assert _kids(node)[0]["txtContent"] == "No assessment"
-    assert _attr(node, "class") == f"{TOKENS['warning'].classes} ms-fontColor-neutralSecondary"
-    assert _ev(_style(node, "display"), {"Status": "Open"}) == "inline-flex"
+    assert node["txtContent"] == "No assessment"
+    assert _attr(node, "class") == (
+        f"{TOKENS['warning'].classes} ms-borderColor-neutralLighter {TYPE}"
+    )
+    assert _ev(_style(node, "display"), {"Status": "Open"}) == "inline-block"
     assert _ev(_style(node, "display"), {"Status": "Done"}) == "none"
 
 
@@ -375,7 +406,7 @@ def test_the_due_bubble_hides_a_blank_date_and_keeps_its_normal_token() -> None:
     assert _shown(bubble, blank)[0] == "none"
     later = date_field(_ms(_local(SITE, "2026-12-31", "00:00:00")))
     early = {"Due": later, "Due.displayValue": "x"}
-    assert _shown(bubble, early)[1] == f"{TOKENS['good'].classes} ms-fontColor-neutralSecondary"
+    assert _shown(bubble, early)[1] == form_header._pill("good")[0]
 
 
 def test_due_on_a_text_column_is_refused() -> None:
@@ -396,15 +427,15 @@ def test_a_zone_the_expressions_cannot_encode_refuses_the_due_test() -> None:
 
 def test_banner_shows_the_first_matching_rule_and_hides_with_none() -> None:
     banner = _kids(_render(HeaderTree(banner=Banner(
-        "Next:", "Lightbulb",
-        (
+        icon="Lightbulb",
+        rules=(
             BannerRule(Leaf("Risk", "eq", "High"), "first"),
             BannerRule(Leaf("Status", "eq", "Open"), "second"),
             BannerRule(Leaf("Score", "eq", "Cold"), "third"),
         ),
         when=Leaf("Notes", "is_null"),
     ))))[0]
-    text = _kids(banner)[2]["txtContent"]
+    text = _action(banner)["txtContent"]
     for row, shown, said in (
         ({"Risk": "High", "Status": "Open"}, "flex", "first"),
         ({"Risk": "Low", "Status": "Open"}, "flex", "second"),
@@ -415,7 +446,6 @@ def test_banner_shows_the_first_matching_rule_and_hides_with_none() -> None:
         full = {"Notes": "", **row}
         assert _ev(_style(banner, "display"), full) == shown, full
         assert _ev(text, full) == said, full
-    assert _kids(banner)[1]["txtContent"] == "Next:"
     assert _attr(_kids(banner)[0], "iconName") == "Lightbulb"
 
 
@@ -427,7 +457,7 @@ def test_braces_percent_and_double_quotes_render_as_written() -> None:
     # a plain string; the evaluator only shows the expressions pass them through unchanged.
     odd = 'Is {raw} 100% "q"'
     tree = HeaderTree(
-        title=Title("Title", odd),
+        icon="Shield", title=Title("Title", odd),
         subtitle=(SubtitlePart(text=f"{odd} {{Case}}", columns=("Case",)),),
         chips=(LinkChip(odd, "ContactLink", url_column="Case", url_template="https://e/?q={value}&p=100%"),),
         rows=(Row((
@@ -435,20 +465,22 @@ def test_braces_percent_and_double_quotes_render_as_written() -> None:
                    tokens={odd: "severe", "default": "good"}),
             Badge(odd, "muted"),
         )),),
-        banner=Banner(odd, "Lightbulb", (BannerRule(Leaf("Risk", "eq", "x"), odd),)),
+        banner=Banner(icon="Lightbulb", rules=(BannerRule(Leaf("Risk", "eq", "x"), odd),)),
     )
-    title_block, chips, row, banner = _kids(_render(tree))
-    assert _ev(_kids(title_block)[0]["txtContent"], {"Title": ""}) == odd
-    assert _ev(_kids(title_block)[1]["txtContent"], {"Case": "7"}) == f"{odd} 7"
-    assert _kids(_kids(chips)[0])[1]["txtContent"] == odd
-    assert _ev(_attr(_kids(chips)[0], "href"), {"Case": "7"}) == "https://e/?q=7&p=100%"
+    top, row, banner = _kids(_render(tree))
+    identity, actions = _kids(top)
+    title, subtitle = _kids(_kids(identity)[-1])
+    assert _ev(title["txtContent"], {"Title": ""}) == odd
+    assert _ev(subtitle["txtContent"], {"Case": "7"}) == f"{odd} 7"
+    chip = _kids(actions)[0]
+    assert _kids(chip)[1]["txtContent"] == odd
+    assert _ev(_attr(chip, "href"), {"Case": "7"}) == "https://e/?q=7&p=100%"
     bubble, badge = _kids(row)
     assert _ev(_text(bubble), {"Risk": "v"}) == f"{odd}: {odd}v"
     assert _ev(_style(bubble, "display"), {"Risk": odd}) == "none"
     assert str(_ev(_attr(bubble, "class"), {"Risk": odd})).startswith(TOKENS["severe"].classes)
-    assert _kids(badge)[0]["txtContent"] == odd
-    assert _ev(_kids(banner)[2]["txtContent"], {"Risk": "x"}) == odd
-    assert _kids(banner)[1]["txtContent"] == odd
+    assert badge["txtContent"] == odd
+    assert _ev(_action(banner)["txtContent"], {"Risk": "x"}) == odd
 
 
 QUOTE_SITES: dict[str, Callable[[str], HeaderTree]] = {
@@ -462,7 +494,10 @@ QUOTE_SITES: dict[str, Callable[[str], HeaderTree]] = {
     "hide_values": lambda t: HeaderTree(rows=(Row((Bubble("Risk", hide_values=(t,)),)),)),
     "tokens": lambda t: HeaderTree(rows=(Row((Bubble("Risk", tokens={t: "good"}),)),)),
     "banner rule": lambda t: HeaderTree(banner=Banner(
-        "L", "Lightbulb", (BannerRule(Leaf("Risk", "eq", "x"), t),),
+        icon="Lightbulb", rules=(BannerRule(Leaf("Risk", "eq", "x"), t),),
+    )),
+    "banner next": lambda t: HeaderTree(banner=Banner(
+        icon="Lightbulb", rules=(BannerRule(OPEN, "ok", None, t),),
     )),
     "starts like a formula": lambda t: HeaderTree(chips=(LinkChip("=" + t, "Feedback", url="u"),)),
 }
@@ -487,9 +522,11 @@ WHEN_SITES: dict[str, HeaderTree] = {
     "badge when": HeaderTree(rows=(Row((Badge("a", "muted", when=QUOTED),)),)),
     "bubble when": HeaderTree(rows=(Row((Bubble("Risk", when=QUOTED),)),)),
     "banner when": HeaderTree(
-        banner=Banner("L", "Lightbulb", (BannerRule(OPEN, "t"),), when=QUOTED)
+        banner=Banner(icon="Lightbulb", rules=(BannerRule(OPEN, "t"),), when=QUOTED)
     ),
-    "banner rule when": HeaderTree(banner=Banner("L", "Lightbulb", (BannerRule(QUOTED, "t"),))),
+    "banner rule when": HeaderTree(
+        banner=Banner(icon="Lightbulb", rules=(BannerRule(QUOTED, "t"),)),
+    ),
 }
 
 
@@ -504,7 +541,7 @@ def test_a_single_quote_in_any_header_expression_is_refused_through_resolve(site
 
 
 def test_a_single_quote_in_plain_static_text_is_kept() -> None:
-    chip = _kids(_kids(_render(HeaderTree(chips=(LinkChip("It's", "Feedback", url="u"),))))[0])[0]
+    chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("It's", "Feedback", url="u"),))))[0]
     assert _kids(chip)[1]["txtContent"] == "It's"
 
 
@@ -514,7 +551,6 @@ def test_static_text_with_an_embedded_special_marker_is_refused(marker: str) -> 
         HeaderTree(chips=(LinkChip(marker, "Feedback", url="u"),)),
         HeaderTree(chips=(LinkChip("a", "Feedback", url=marker),)),
         HeaderTree(rows=(Row((Badge(marker, "muted"),)),)),
-        HeaderTree(banner=Banner(marker, "Lightbulb", (BannerRule(OPEN, "t"),))),
     )
     for tree in sites:
         with pytest.raises(HeaderRefusal) as found:
@@ -525,7 +561,7 @@ def test_static_text_with_an_embedded_special_marker_is_refused(marker: str) -> 
 def test_text_that_looks_like_a_special_value_is_quoted_not_evaluated() -> None:
     header = _render(HeaderTree(rows=(Row((Badge("=1+1", "muted"),)),)))
     badge = _kids(_kids(header)[0])[0]
-    assert _ev(_kids(badge)[0]["txtContent"], {}) == "=1+1"
+    assert _ev(badge["txtContent"], {}) == "=1+1"
 
 
 # --- size, refusals and resolution --------------------------------------------------------
@@ -542,7 +578,7 @@ def test_header_over_budget_is_refused_naming_the_column(monkeypatch: pytest.Mon
 def test_an_icon_outside_the_fleet_vocabulary_is_refused_through_resolve() -> None:
     for tree in (
         HeaderTree(chips=(LinkChip("Go", "Calendar", url="u"),)),
-        HeaderTree(banner=Banner("L", "Calendar", (BannerRule(OPEN, "t"),))),
+        HeaderTree(banner=Banner(icon="Calendar", rules=(BannerRule(OPEN, "t"),))),
     ):
         schema_, base = _bundle(tree)
         resolved, findings = resolve_form_headers(schema_, base, SITE)
@@ -626,19 +662,7 @@ def test_a_person_column_is_refused_by_name() -> None:
     assert re.search(r"Task\.Owner", found.value.finding.message)
 
 
-EXPECTED_ICON_HEADER = (
-    '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"display":"flex","flex-direction":"row","align-items":"center"},"children":[{"elmType":"div","attributes":{"class":"ms-bgColor-neutralLighter"},"style":{"flex":"none","width":"56px","height":"56px","border-radius":"8px","display":"flex","align-items":"center","justify-content":"center","margin-right":"12px"},"children":[{"elmType":"div","attributes":{"iconName":"Shield","aria-hidden":"true","class":"ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary"}}]},{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"},{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Plain."}]}]}]}'  # noqa: E501 -- byte-exact golden
-)
-
-
 # --- header icon tile and strapline ------------------------------------------------------------
-
-
-def test_the_header_icon_tile_sits_beside_the_title_block() -> None:
-    tree = HeaderTree(
-        icon="Shield", title=Title("Title", "New"), subtitle=(SubtitlePart(text="Plain."),),
-    )
-    assert json.dumps(_render(tree), separators=(",", ":")) == EXPECTED_ICON_HEADER
 
 
 def test_an_unknown_header_icon_is_refused_through_resolve() -> None:
@@ -656,75 +680,75 @@ def test_the_icon_header_still_obeys_the_size_budget(monkeypatch: pytest.MonkeyP
 
 
 def test_a_lone_static_subtitle_is_plain_text() -> None:
-    node = _kids(_render(HeaderTree(subtitle=(SubtitlePart(text="One sentence."),))))[0]
-    strap = _kids(node)[0]
+    strap = _parts(HeaderTree(subtitle=(SubtitlePart(text="One sentence."),)))[0]
     assert strap["txtContent"] == "One sentence."
 
 
 def test_a_static_subtitle_part_shows_beside_a_column_part() -> None:
     tree = HeaderTree(subtitle=(SubtitlePart(text="Static."), SubtitlePart(column="Case")))
-    strap = _kids(_kids(_render(tree))[0])[0]
+    strap = _parts(tree)[0]
     assert _ev(strap["txtContent"], {"Case": "C1"}) == "Static. · C1"
     assert _ev(strap["txtContent"], {"Case": ""}) == "Static."
 
 
 def test_a_subtitle_fallback_shows_while_a_column_is_empty() -> None:
     part = SubtitlePart(text="Case {Case}", columns=("Case",), fallback="No case yet")
-    strap = _kids(_kids(_render(HeaderTree(subtitle=(part,))))[0])[0]
+    strap = _parts(HeaderTree(subtitle=(part,)))[0]
     assert _ev(strap["txtContent"], {"Case": "C1"}) == "Case C1"
     assert _ev(strap["txtContent"], {"Case": ""}) == "No case yet"
     assert _ev(_style(strap, "display"), {"Case": ""}) == "block"
 
-EXPECTED_BAR = (
-    '{"elmType":"div","style":{"display":"flex","flex-direction":"row","justify-content":"space-between","align-items":"stretch"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","style":{"display":"block"},"attributes":{"class":"ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16"},"txtContent":"=if(toString([$Title]) == \'\', \'New\', [$Title])"}]},{"elmType":"div","style":{"display":"flex","flex-wrap":"wrap","margin":"4px 0","flex":"none","align-self":"@"},"children":[{"elmType":"a","style":{"display":"inline-flex","align-items":"center","padding":"2px 10px 2px 0"},"attributes":{"href":"u","target":"_blank","rel":"noopener noreferrer"},"children":[{"elmType":"span","style":{"padding":"0 4px"},"attributes":{"iconName":"ContactLink","aria-hidden":"true"}},{"elmType":"span","txtContent":"Go"}]}]}]}'  # noqa: E501
+REFERENCE = Path(__file__).parent / "fixtures" / "form_header"
+GUIDES_URL = "https://hub.fabrikam.net/sites/help/SitePages/"
+REFERENCE_RULES = (
+    BannerRule(
+        Leaf("Status", "eq", "Open"), "Start the work.", "start-work",
+        "You set the status to In progress.",
+    ),
+    BannerRule(
+        Leaf("Status", "eq", "Late"), "Chase the owner.", None, "The owner replies in the thread.",
+    ),
+    BannerRule(Leaf("Status", "eq", "Done"), "Wait for the approver."),
 )
-EXPECTED_FOOTER = (
-    '{"$schema":"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json","elmType":"div","attributes":{"class":"ms-borderColor-neutralTertiary"},"style":{"width":"99%","border-top-width":"0px","border-bottom-width":"1px","border-left-width":"0px","border-right-width":"0px","border-style":"solid","margin-bottom":"16px"},"children":[{"elmType":"div","style":{"box-sizing":"border-box","width":"100%","padding":"4px 8px"},"children":[{"elmType":"div","attributes":{"class":"ms-fontColor-neutralSecondary ms-fontSize-12"},"txtContent":"Static."}]},{"elmType":"div","style":{"display":"=if((([$Status] == \'Open\')), \'flex\', \'none\')","align-items":"center","padding":"6px 8px","margin":"8px 0 0 0"},"attributes":{"class":"ms-bgColor-themeLighter ms-fontColor-themePrimary"},"children":[{"elmType":"span","style":{"padding":"0 8px 0 0"},"attributes":{"iconName":"Lightbulb"}},{"elmType":"span","attributes":{"class":"ms-fontWeight-bold"},"style":{"padding":"0 8px 0 0"},"txtContent":"Notice"},{"elmType":"span","txtContent":"=if(([$Status] == \'Open\'), \'Open now\', \'\')"}]}]}'  # noqa: E501
+REFERENCE_HEADER = HeaderTree(
+    icon="WorkItem",
+    title=Title("Title", "Untitled"),
+    subtitle=(SubtitlePart(text="Action item"),),
+    chips=(
+        LinkChip("Meeting guide", "Lightbulb", url=GUIDES_URL + "Guide.aspx", emphasis="primary"),
+        LinkChip("See actions of this type", "ClipboardList", url=GUIDES_URL + "Actions.aspx"),
+    ),
+    rows=(Row((
+        Bubble("Status", tokens={"Open": "low", "Late": "blocked"}),
+        Badge("Item type: Action", "neutral"),
+    )),),
+    banner=Banner(rules=REFERENCE_RULES),
+)
+REFERENCE_FOOTER = HeaderTree(
+    subtitle=(SubtitlePart(text="Static."),),
+    banner=Banner(rules=(BannerRule(OPEN, "Open now"),), icon="Lightbulb"),
 )
 
 
-def _bar(tree: HeaderTree) -> dict[str, object]:
-    return _kids(_render(tree))[0]
+def _golden(name: str, tree: HeaderTree) -> None:
+    ctx = dataclasses.replace(_ctx(), help_guides={"start-work": GUIDES_URL + "Start.aspx"})
+    text = json.dumps(render_header(tree, ctx), indent=2) + "\n"
+    assert (REFERENCE / name).read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize(
-    ("align", "value"),
-    [("middle", "center"), ("top", "flex-start"), ("bottom", "flex-end")],
-)
-def test_chips_align_places_the_chip_group_in_the_bar(align: str, value: str) -> None:
-    tree = HeaderTree(
-        title=Title("Title", "New"), chips=(LinkChip("Go", "ContactLink", url="u"),),
-        chips_align=align,
-    )
-    bar = _bar(tree)
-    want = EXPECTED_BAR.replace('"align-self":"@"', f'"align-self":"{value}"')
-    assert json.dumps(bar, separators=(",", ":")) == want
-    assert _style(_kids(bar)[1], "align-self") == value
+def test_byte_exact_render_of_the_reference_header() -> None:
+    _golden("header.json", REFERENCE_HEADER)
 
 
-def test_chips_with_an_icon_default_to_the_middle_of_the_bar() -> None:
-    tree = HeaderTree(icon="Shield", chips=(LinkChip("Go", "ContactLink", url="u"),))
-    assert _style(_kids(_bar(tree))[1], "align-self") == "center"
-
-
-def test_chips_stack_below_the_title_without_icon_or_alignment() -> None:
-    tree = HeaderTree(title=Title("Title", "New"), chips=(LinkChip("Go", "ContactLink", url="u"),))
-    kids = _kids(_render(tree))
-    assert len(kids) == 2
-    assert "align-self" not in json.dumps(kids)
-
-
-def test_a_footer_renders_byte_exact_through_the_same_renderer() -> None:
-    tree = HeaderTree(subtitle=(SubtitlePart(text="Static."),), banner=Banner(
-        "Notice", "Lightbulb", (BannerRule(OPEN, "Open now"),)))
-    assert json.dumps(_render(tree), separators=(",", ":")) == EXPECTED_FOOTER
+def test_byte_exact_render_of_a_footer() -> None:
+    _golden("footer.json", REFERENCE_FOOTER)
 
 
 @pytest.mark.parametrize(
     ("tree", "code"),
     [
         (HeaderTree(rows=(Row((Bubble("Nope"),)),)), FindingCode.FORM_HEADER_COLUMN_UNKNOWN),
-        (HeaderTree(banner=Banner("L", "Calendar", (BannerRule(OPEN, "t"),))),
+        (HeaderTree(banner=Banner(icon="Calendar", rules=(BannerRule(OPEN, "t"),))),
          FindingCode.FORM_HEADER_ICON_UNKNOWN),
         (HeaderTree(rows=(Row((Bubble("Risk", due=True),)),)),
          FindingCode.FORM_HEADER_DUE_NEEDS_DATE),
@@ -751,7 +775,7 @@ def test_an_oversize_footer_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _chip_href(chip: LinkChip, ctx: RenderContext) -> object:
-    node = _kids(_kids(render_header(HeaderTree(chips=(chip,)), ctx))[0])[0]
+    node = _chip_nodes(render_header(HeaderTree(chips=(chip,)), ctx))[0]
     return _attr(node, "href")
 
 
@@ -831,7 +855,7 @@ def test_a_web_template_keeps_the_quote_refusal() -> None:
 
 def test_title_prefix_shows_only_with_a_value() -> None:
     tree = HeaderTree(title=Title("Title", "Untitled", prefix="Workspace: "))
-    title = _kids(_kids(_render(tree))[0])[0]
+    title = _parts(tree)[0]
     assert title["txtContent"] == (
         "=if(toString([$Title]) == '', 'Untitled', 'Workspace: ' + [$Title])"
     )
@@ -864,9 +888,8 @@ def test_a_required_number_with_a_default_shows_its_raw_value() -> None:
     bubble = _kids(_kids(render_header(tree, _numbers()))[0])[0]
     assert _text(bubble) == "='Points: ' + toString([$Points])"
     assert _shown(bubble, {"Points": 3})[2] == "Points: 3"
-    suffix = " ms-fontColor-neutralSecondary"
-    assert _shown(bubble, {"Points": 3})[1] == TOKENS["severe"].classes + suffix
-    assert _shown(bubble, {"Points": 4})[1] == TOKENS["neutral"].classes + suffix
+    assert _shown(bubble, {"Points": 3})[1] == form_header._pill("severe")[0]
+    assert _shown(bubble, {"Points": 4})[1] == NEUTRAL
 
 
 def test_a_number_that_can_be_blank_is_refused() -> None:
@@ -888,12 +911,14 @@ def test_resolve_marks_only_required_numbers_with_a_default_as_showable() -> Non
 
 
 def test_a_chip_tooltip_is_only_the_authors_and_its_icon_is_hidden() -> None:
-    chips = _kids(_kids(_render(HeaderTree(chips=(
+    chips = _chip_nodes(_render(HeaderTree(chips=(
         LinkChip("Open case", "Feedback", url="u"),
         LinkChip("Help", "Feedback", url="u", title="Help centre"),
-    ))))[0])
+    ))))
     assert _attr(chips[0], "href") == "u"
-    assert chips[0]["attributes"] == {"href": "u", "target": "_blank", "rel": "noopener noreferrer"}
+    assert {k: v for k, v in _attrs(chips[0]).items() if k != "class"} == {
+        "href": "u", "target": "_blank", "rel": "noopener noreferrer",
+    }
     assert _attr(chips[1], "title") == "Help centre"
     assert _attr(_kids(chips[0])[0], "aria-hidden") == "true"
     assert _attr(chips[0], "target") == "_blank"
@@ -902,9 +927,7 @@ def test_a_chip_tooltip_is_only_the_authors_and_its_icon_is_hidden() -> None:
 def test_a_bubble_blank_text_shows_alone_while_the_column_is_empty() -> None:
     bubble = _bubble(Bubble("Risk", label="Risk", blank="Not set", tokens={"High": "severe"}))
     assert _text(bubble) == "=if(toString([$Risk]) == '', 'Not set', 'Risk: ' + [$Risk])"
-    assert _shown(bubble, {"Risk": ""}) == (
-        "inline-flex", f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary", "Not set",
-    )
+    assert _shown(bubble, {"Risk": ""}) == ("inline-block", NEUTRAL, "Not set")
     assert _shown(bubble, {"Risk": "High"})[2] == "Risk: High"
     assert str(_shown(bubble, {"Risk": "High"})[1]).startswith(TOKENS["severe"].classes)
 
@@ -912,12 +935,12 @@ def test_a_bubble_blank_text_shows_alone_while_the_column_is_empty() -> None:
 def test_a_blank_text_keeps_hide_values_and_a_blank_due_date_is_not_overdue() -> None:
     hid = _bubble(Bubble("Risk", blank="Not set", hide_values=("None",)))
     assert _shown(hid, {"Risk": "None"})[0] == "none"
-    assert _shown(hid, {"Risk": ""})[0] == "inline-flex"
+    assert _shown(hid, {"Risk": ""})[0] == "inline-block"
     due = _bubble(Bubble("Due", blank="No date", due=True))
     empty = {"Due": date_field(None), "Due.displayValue": ""}
     shown = _shown(due, empty)
-    assert shown[0] == "inline-flex"
-    assert shown[1] == f"{TOKENS['neutral'].classes} ms-fontColor-neutralSecondary"
+    assert shown[0] == "inline-block"
+    assert shown[1] == NEUTRAL
     assert shown[2] == "No date"
 
 
@@ -943,48 +966,65 @@ def _help_ctx() -> RenderContext:
 
 
 def _help_banner(*rules: BannerRule, when: Leaf | None = None) -> dict[str, object]:
-    tree = HeaderTree(banner=Banner("N", "Lightbulb", rules, when=when))
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=rules, when=when))
     return _kids(render_header(tree, _help_ctx()))[0]
 
 
-def test_banner_help_link_follows_the_first_matching_rule() -> None:
-    link = _kids(_help_banner(*_MIXED))[3]
-    for row, href, shown in (
-        ({"Risk": "High", "Status": "Open"}, "https://h/a", "inline"),
-        ({"Risk": "Low", "Status": "Open"}, "", "none"),
-        ({"Risk": "x", "Status": "Open"}, "https://h/c", "inline"),
+def _style_keys(node: dict[str, object]) -> set[str]:
+    style = node["style"]
+    assert isinstance(style, dict)
+    return set(style)
+
+
+SUFFIX = ", opens the step guide in a new tab"
+HIGH, LOW, OPEN_ROW = (
+    {"Risk": "High", "Status": "Open"}, {"Risk": "Low", "Status": "Open"},
+    {"Risk": "x", "Status": "Open"},
+)
+
+
+def test_a_rule_with_help_shows_the_link_and_hides_the_plain_action() -> None:
+    label, link, plain = _now(_help_banner(*_MIXED))
+    assert link["elmType"] == "a"
+    for row, href, link_shown, plain_shown in (
+        (HIGH, "https://h/a", "inline", "none"),
+        (LOW, "", "none", "inline"),
+        (OPEN_ROW, "https://h/c", "inline", "none"),
     ):
         assert _ev(_attr(link, "href"), row) == href
-        assert _ev(_style(link, "display"), row) == shown
+        assert _ev(_style(link, "display"), row) == link_shown
+        assert _ev(_style(plain, "display"), row) == plain_shown
+    assert _ev(_kids(link)[0]["txtContent"], HIGH) == "a"
+    assert _ev(_kids(link)[0]["txtContent"], LOW) == "b"
+    assert _ev(plain["txtContent"], LOW) == "b"
+    assert label["txtContent"] == "To do now:"
 
 
-def test_a_rule_without_help_renders_exactly_as_before() -> None:
-    tree = HeaderTree(banner=Banner("N", "Lightbulb", (
-        BannerRule(Leaf("Risk", "eq", "High"), "a"),
-        BannerRule(Leaf("Status", "eq", "Open"), "b"),
-    )))
-    golden = {
-        "elmType": "div",
-        "style": {
-            "display": "=if((([$Risk] == 'High') || ([$Status] == 'Open')), 'flex', 'none')",
-            "align-items": "center", "padding": "6px 8px", "margin": "8px 0 0 0",
-        },
-        "attributes": {"class": "ms-bgColor-themeLighter ms-fontColor-themePrimary"},
-        "children": [
-            {"elmType": "span", "style": {"padding": "0 8px 0 0"},
-             "attributes": {"iconName": "Lightbulb"}},
-            {"elmType": "span", "attributes": {"class": "ms-fontWeight-bold"},
-             "style": {"padding": "0 8px 0 0"}, "txtContent": "N"},
-            {"elmType": "span",
-             "txtContent": "=if(([$Risk] == 'High'), 'a', if(([$Status] == 'Open'), 'b', ''))"},
-        ],
-    }
-    assert _kids(render_header(tree, _help_ctx()))[0] == golden
-    assert _kids(render_header(tree, _ctx()))[0] == golden
+def test_the_linked_action_has_a_visible_first_name_target_rel_and_glyph() -> None:
+    link = _now(_help_banner(*_MIXED))[1]
+    for key in ("aria-label", "title"):
+        assert _ev(_attr(link, key), HIGH) == "a" + SUFFIX
+        assert _ev(_attr(link, key), OPEN_ROW) == "c" + SUFFIX
+        assert str(_attr(link, key)).endswith(f"+ '{SUFFIX}'")
+    assert _attr(link, "target") == "_blank"
+    assert _attr(link, "rel") == "noopener noreferrer"
+    assert _style(link, "text-decoration") == "underline"
+    glyph = _kids(link)[1]
+    assert _attr(glyph, "iconName") == "OpenInNewWindow"
+    assert _attr(glyph, "aria-hidden") == "true"
+
+
+def test_a_rule_without_help_shows_plain_text_only() -> None:
+    banner = _help_banner(BannerRule(OPEN, "b"))
+    _label, plain = _now(banner)
+    assert plain["elmType"] == "span"
+    assert "style" not in plain
+    assert '"elmType": "a"' not in json.dumps(banner)
+    assert _ev(plain["txtContent"], {"Status": "Open"}) == "b"
 
 
 def test_mixed_rules_render_the_golden_href_and_display() -> None:
-    link = _kids(_help_banner(*_MIXED))[3]
+    _label, link, plain = _now(_help_banner(*_MIXED))
     a, b, c = "([$Risk] == 'High')", "([$Risk] == 'Low')", "([$Status] == 'Open')"
     assert _attr(link, "href") == (
         f"=if({a}, 'https://h/a', if({b}, '', if({c}, 'https://h/c', '')))"
@@ -992,26 +1032,51 @@ def test_mixed_rules_render_the_golden_href_and_display() -> None:
     assert _style(link, "display") == (
         f"=if({a}, 'inline', if({b}, 'none', if({c}, 'inline', 'none')))"
     )
+    assert _style(plain, "display") == (
+        f"=if({a}, 'none', if({b}, 'inline', if({c}, 'none', 'inline')))"
+    )
 
 
-def test_the_link_has_name_target_rel_and_no_wrap() -> None:
-    banner = _help_banner(*_MIXED)
-    link = _kids(banner)[3]
-    assert link["elmType"] == "a"
-    assert link["txtContent"] == "Help for this step"
-    name = "Help for this step, opens in a new tab"
-    assert _attr(link, "title") == name
-    assert _attr(link, "aria-label") == name
-    assert _attr(link, "target") == "_blank"
-    assert _attr(link, "rel") == "noopener noreferrer"
-    assert _style(link, "white-space") == "nowrap"
-    assert _style(link, "flex") == "none"
-    assert _style(link, "padding") == "0 0 0 12px"
-    assert _style(_kids(banner)[2], "min-width") == "0"
+def test_labels_are_fixed_copy() -> None:
+    banner = _help_banner(BannerRule(OPEN, "a", None, "n"))
+    assert _now(banner)[0]["txtContent"] == "To do now:"
+    after = _kids(_kids(banner)[1])[1]
+    assert _kids(after)[0]["txtContent"] == "After that:"
 
 
-def test_the_banner_container_does_not_wrap() -> None:
-    assert _style(_help_banner(*_MIXED), "flex-wrap") == "nowrap"
+def test_a_rule_without_next_hides_after_that() -> None:
+    rules = (BannerRule(OPEN, "a", None, "then b"), BannerRule(Leaf("Risk", "eq", "x"), "c"))
+    after = _kids(_kids(_help_banner(*rules))[1])[1]
+    follows = _kids(after)[1]["txtContent"]
+    assert _ev(_style(after, "display"), {"Status": "Open"}) == "inline"
+    assert _ev(follows, {"Status": "Open"}) == "then b"
+    assert _ev(_style(after, "display"), {"Status": "Late", "Risk": "x"}) == "none"
+    assert _ev(follows, {"Status": "Late", "Risk": "x"}) == ""
+    assert _ev(_style(after, "display"), {"Status": "Late"}) == "none"
+
+
+def test_no_rule_with_next_means_no_after_that_node() -> None:
+    assert len(_kids(_kids(_help_banner(BannerRule(OPEN, "a")))[1])) == 1
+
+
+def test_a_status_with_no_rule_hides_the_box() -> None:
+    box = _help_banner(*_MIXED)
+    assert _ev(_style(box, "display"), {"Risk": "x", "Status": "Done"}) == "none"
+    assert _ev(_style(box, "display"), OPEN_ROW) == "flex"
+
+
+def test_step_box_is_content_width() -> None:
+    box = _help_banner(*_MIXED)
+    assert _style(box, "align-self") == "flex-start"
+    assert _style(box, "max-width") == "100%"
+    assert "width" not in _style_keys(box)
+
+
+def test_the_banner_icon_defaults_to_forward() -> None:
+    tree = HeaderTree(banner=Banner(rules=(BannerRule(OPEN, "t"),)))
+    arrow = _kids(_kids(_render(tree))[0])[0]
+    assert _attr(arrow, "iconName") == "Forward"
+    assert _attr(arrow, "aria-hidden") == "true"
 
 
 def test_a_hidden_banner_hides_the_link() -> None:
@@ -1020,14 +1085,106 @@ def test_a_hidden_banner_hides_the_link() -> None:
     assert _ev(_style(banner, "display"), row) == "none"  # the link is a child of it
 
 
-def test_an_unmatched_status_has_an_empty_href_and_display_none() -> None:
-    link = _kids(_help_banner(BannerRule(OPEN, "c", "g-c")))[3]
-    assert _ev(_attr(link, "href"), {"Status": ""}) == ""
-    assert _ev(_style(link, "display"), {"Status": ""}) == "none"
+def test_a_hash_question_mark_or_ampersand_in_text_does_not_break_the_expression() -> None:
+    odd = "Open #3 now? a&b"
+    banner = _help_banner(BannerRule(OPEN, odd, "g-a", odd))
+    link = _now(banner)[1]
+    row = {"Status": "Open"}
+    assert _ev(_kids(link)[0]["txtContent"], row) == odd
+    assert _ev(_attr(link, "aria-label"), row) == odd + SUFFIX
+    assert _ev(_kids(_kids(_kids(banner)[1])[1])[1]["txtContent"], row) == odd
+
+
+# --- the redesigned tree ------------------------------------------------------------------------
+
+
+def _walk(node: object) -> list[dict[str, object]]:
+    assert isinstance(node, dict)
+    found = [node]
+    for kid in node.get("children", []):
+        found += _walk(kid)
+    return found
+
+
+def _full() -> dict[str, object]:
+    ctx = dataclasses.replace(_ctx(), help_guides={"start-work": GUIDES_URL + "Start.aspx"})
+    return render_header(REFERENCE_HEADER, ctx)
+
+
+def test_root_is_a_flex_column_with_the_separator() -> None:
+    root = _full()
+    assert _attr(root, "class") == "ms-borderColor-neutralLight"
+    assert _style(root, "display") == "flex"
+    assert _style(root, "flex-direction") == "column"
+    assert _style(root, "width") == "100%"
+    assert _style(root, "border-width") == "0 0 1px 0"
+    assert _style(root, "border-style") == "solid"
+
+
+def test_no_node_uses_the_border_shorthand() -> None:
+    for node in _walk(_full()):
+        style = node.get("style", {})
+        assert isinstance(style, dict)
+        assert "border" not in style
+
+
+def test_row_one_wraps_and_holds_tile_title_and_buttons() -> None:
+    top = _kids(_full())[0]
+    assert _style(top, "flex-wrap") == "wrap"
+    assert _style(top, "justify-content") == "space-between"
+    identity, actions = _kids(top)
+    tile, block = _kids(identity)
+    assert _attr(_kids(tile)[0], "iconName") == "WorkItem"
+    assert [_attr(k, "class") for k in _kids(block)] == [
+        "ms-fontColor-neutralPrimary ms-fontWeight-bold ms-fontSize-20",
+        "ms-fontColor-neutralSecondary ms-fontSize-12",
+    ]
+    assert [_kids(a)[1]["txtContent"] for a in _kids(actions)] == [
+        "Meeting guide", "See actions of this type",
+    ]
+
+
+def test_tile_is_40px_with_a_24px_icon_and_top_aligned() -> None:
+    tile = _kids(_kids(_kids(_full())[0])[0])[0]
+    assert (_style(tile, "width"), _style(tile, "height")) == ("40px", "40px")
+    assert _style(tile, "align-self") == "flex-start"
+    assert _attr(_kids(tile)[0], "class") == "ms-fontSize-24 ms-fontColor-themePrimary"
+
+
+def test_secondary_and_primary_buttons_carry_the_spec_classes() -> None:
+    primary, secondary = _kids(_kids(_kids(_full())[0])[1])
+    assert _attr(primary, "class") == (
+        "ms-bgColor-themePrimary ms-fontColor-white ms-fontSize-12 ms-fontWeight-semibold"
+    )
+    assert _style(primary, "border-color") == "transparent"
+    assert _attr(secondary, "class") == (
+        "ms-bgColor-neutralLighter ms-borderColor-neutralLight ms-fontColor-neutralPrimary "
+        "ms-fontSize-12 ms-fontWeight-semibold"
+    )
+    assert "border-color" not in _style_keys(secondary)
+    assert _style(secondary, "white-space") == "normal"
+
+
+def test_low_status_pill_is_outlined_and_severity_pills_have_fixed_dark_text() -> None:
+    pill, badge = _kids(_kids(_full())[1])
+    low, late, other = {"Status": "Open"}, {"Status": "Late"}, {"Status": "Done"}
+    assert "ms-borderColor-neutralTertiary" in str(_ev(_attr(pill, "class"), low))
+    assert "ms-borderColor-neutralTertiary" not in str(_ev(_attr(pill, "class"), late))
+    assert _ev(_style(pill, "color"), low) == "#323130"
+    assert _ev(_style(pill, "color"), late) == "#323130"
+    assert _ev(_style(pill, "color"), other) == ""
+    assert "ms-fontColor-neutralPrimary" in str(_ev(_attr(pill, "class"), other))
+    assert _attr(badge, "class") == NEUTRAL
+    assert "color" not in _style_keys(badge)
+    assert _ev(_style(pill, "display"), low) == "inline-block"
+
+
+def test_secondary_is_the_default_emphasis() -> None:
+    assert LinkChip("a", "Feedback", url="u").emphasis == "secondary"
 
 
 def test_an_unmapped_key_is_refused_naming_key_entity_and_rule() -> None:
-    tree = HeaderTree(banner=Banner("N", "Lightbulb", (
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(
         BannerRule(OPEN, "a", "g-a"), BannerRule(Leaf("Risk", "eq", "x"), "b", "nope"),
     )))
     with pytest.raises(HeaderRefusal) as found:
@@ -1039,7 +1196,7 @@ def test_an_unmapped_key_is_refused_naming_key_entity_and_rule() -> None:
 
 
 def test_help_off_renders_no_link_and_reports_one_warning() -> None:
-    tree = HeaderTree(banner=Banner("N", "Lightbulb", _MIXED))
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=_MIXED))
     schema_, base = _bundle(tree)
     resolved, findings = resolve_form_headers(schema_, base, SITE)
     assert [f.code for f in findings] == [FindingCode.FORM_HELP_OFF]
@@ -1050,12 +1207,26 @@ def test_help_off_renders_no_link_and_reports_one_warning() -> None:
 
 
 def test_help_off_without_any_help_key_reports_nothing() -> None:
-    schema_, base = _bundle(HeaderTree(banner=Banner("N", "Lightbulb", (BannerRule(OPEN, "t"),))))
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(BannerRule(OPEN, "t"),)))
+    schema_, base = _bundle(tree)
     assert resolve_form_headers(schema_, base, SITE)[1] == []
 
 
 def test_help_on_through_resolve_renders_the_url() -> None:
-    schema_, base = _bundle(HeaderTree(banner=Banner("N", "Lightbulb", _MIXED)))
+    schema_, base = _bundle(HeaderTree(banner=Banner(icon="Lightbulb", rules=_MIXED)))
     resolved, findings = resolve_form_headers(schema_, base, SITE, HelpGuides(GUIDES))
     assert findings == []
     assert "https://h/a" in json.dumps(resolved.mapping.form_formatting["Task"].header)
+
+
+def test_a_neutral_branch_has_no_fixed_text_colour_ahead_of_a_severity_default() -> None:
+    bubble = _bubble(Bubble("Risk", tokens={"Done": "neutral", "default": "warning"}))
+    assert _ev(_style(bubble, "color"), {"Risk": "Done"}) == ""
+    assert _ev(_style(bubble, "color"), {"Risk": "Other"}) == "#323130"
+    assert "ms-fontColor-neutralPrimary" in str(_ev(_attr(bubble, "class"), {"Risk": "Done"}))
+
+
+def test_the_header_wraps_with_the_documented_property() -> None:
+    text = json.dumps(_full())
+    assert "overflow-wrap" not in text
+    assert '"word-wrap": "break-word"' in text

@@ -5,6 +5,7 @@ reads the style vocabulary, which imports the mapping types.
 """
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from dbml_sharepoint.model.conditions import Condition
 
@@ -35,6 +36,7 @@ class LinkChip:
     url_template: str | None = None
     title: str | None = None  # the tooltip, only when the author writes one
     when: Condition | None = None
+    emphasis: Literal["primary", "secondary"] = "secondary"  # primary is the filled button
 
 
 @dataclass(frozen=True)
@@ -69,13 +71,13 @@ class BannerRule:
     when: Condition
     text: str
     help: str | None = None  # a guide key; the env's guides file resolves it to a URL
+    next: str | None = None  # who acts or what follows, shown after "After that:"
 
 
 @dataclass(frozen=True)
 class Banner:
-    label: str
-    icon: str
     rules: tuple[BannerRule, ...]
+    icon: str = "Forward"
     when: Condition | None = None
 
 
@@ -85,6 +87,5 @@ class HeaderTree:
     title: Title | None = None
     subtitle: tuple[SubtitlePart, ...] = ()
     chips: tuple[LinkChip, ...] = ()
-    chips_align: str | None = None  # top, middle or bottom, against the header bar
     rows: tuple[Row, ...] = ()
     banner: Banner | None = None

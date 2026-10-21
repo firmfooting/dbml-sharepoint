@@ -17,7 +17,6 @@ Task:
           - badge: { text: "Done", token: good, when: { field: Status, op: eq, value: Done } }
   footer:
     banner:
-      label: "Notice"
       icon: Warning
       rules:
         - { when: { field: Impact, op: eq, value: Critical }, text: "Critical impact" }

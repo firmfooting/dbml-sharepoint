@@ -62,7 +62,7 @@ def test_build_with_the_env_keys_renders_the_absolute_url_in_the_header_json(
     text = "\n".join(_texts(_formatter(tmp_path / "out")["footerJSONFormatter"]))
     assert BASE + "Review%20a%20critical%20risk.aspx" in text
     assert BASE + "Low-impact.aspx" in text
-    assert "Help for this step" in text
+    assert "opens the step guide in a new tab" in text
 
 
 def test_build_without_the_env_keys_succeeds_with_the_off_warning_and_no_url(
@@ -73,7 +73,7 @@ def test_build_without_the_env_keys_succeeds_with_the_off_warning_and_no_url(
     captured = capsys.readouterr()
     assert "form_help_off" in captured.out + captured.err
     text = "\n".join(_texts(_formatter(tmp_path / "out")["footerJSONFormatter"]))
-    assert "Help for this step" not in text
+    assert "opens the step guide" not in text
     assert "hub.fabrikam.net" not in text
 
 

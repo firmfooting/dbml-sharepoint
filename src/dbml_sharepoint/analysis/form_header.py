@@ -20,6 +20,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Final
 from urllib.parse import quote
 
 from dbml_sharepoint.analysis.column_projection import system_column_types_for
@@ -64,9 +65,8 @@ _CALCULATED_KIND: dict[str, ColumnKind] = {
     for t in CALCULATED_TYPES
 }
 _CALCULATED_AS = {t: {"text": "nvarchar"}.get(k, k) for t, k in _CALCULATED_KIND.items()}
-_ALIGN = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}
 _SECONDARY = "ms-fontColor-neutralSecondary"
-_HELP_LINK_NAME = "Help for this step, opens in a new tab"
+_HELP_SUFFIX: Final = ", opens the step guide in a new tab"
 Json = dict[str, object]
 
 
@@ -345,49 +345,65 @@ class _Render:
     # --- components -----------------------------------------------------------------------
     def tree(self, tree: HeaderTree) -> Json:
         self.known_columns(tree)
-        children: list[Json] = []
-        block = self.title_block(tree)
-        left = self.icon_tile(tree.icon, block) if tree.icon is not None else block
-        group = {"display": "flex", "flex-wrap": "wrap", "margin": "4px 0"}
-        beside = bool(tree.icon or tree.chips_align)
-        if beside:  # chips sit in the bar beside the title only when asked for, else stack below
-            group |= {"flex": "none", "align-self": _ALIGN[tree.chips_align or "middle"]}
+        identity = self.identity(tree)
         chips: Json | None = None
         if tree.chips:
-            kids = [self.chip(c) for c in tree.chips]
-            chips = {"elmType": "div", "style": group, "children": kids}
-        if chips is not None and left is not None and beside:
+            chips = {
+                "elmType": "div",
+                "style": {
+                    "display": "flex", "flex-wrap": "wrap", "align-items": "center",
+                    "margin-left": "-8px", "max-width": "100%",
+                },
+                "children": [self.chip(c) for c in tree.chips],
+            }
+        top = [part for part in (identity, chips) if part is not None]
+        children: list[Json] = []
+        if top:
             children.append({
                 "elmType": "div",
                 "style": {
-                    "display": "flex", "flex-direction": "row",
-                    "justify-content": "space-between", "align-items": "stretch",
+                    "display": "flex", "flex-direction": "row", "flex-wrap": "wrap",
+                    "justify-content": "space-between", "align-items": "flex-start",
+                    "width": "100%", "box-sizing": "border-box",
                 },
-                "children": [left, chips],
+                "children": top,
             })
-        else:
-            children += [left] if left is not None else []
-            children += [chips] if chips is not None else []
         children += [self.row(r) for r in tree.rows]
         if tree.banner is not None:
             children.append(self.banner(tree.banner))
         header: Json = {
             "$schema": _SCHEMA,
             "elmType": "div",
-            "attributes": {"class": "ms-borderColor-neutralTertiary"},
+            "attributes": {"class": "ms-borderColor-neutralLight"},
             "style": {
-                "width": "99%",
-                "border-top-width": "0px",
-                "border-bottom-width": "1px",
-                "border-left-width": "0px",
-                "border-right-width": "0px",
+                "display": "flex",
+                "flex-direction": "column",
+                "width": "100%",
+                "box-sizing": "border-box",
+                "border-width": "0 0 1px 0",
                 "border-style": "solid",
+                "padding-bottom": "10px",
                 "margin-bottom": "16px",
             },
             "children": children,
         }
         self.size(header)
         return header
+
+    def identity(self, tree: HeaderTree) -> Json | None:
+        block = self.title_block(tree)
+        tile = self.icon_tile(tree.icon) if tree.icon is not None else None
+        kids = [part for part in (tile, block) if part is not None]
+        if not kids:
+            return None
+        return {
+            "elmType": "div",
+            "style": {
+                "display": "flex", "align-items": "flex-start", "min-width": "0",
+                "margin-bottom": "6px",
+            },
+            "children": kids,
+        }
 
     def known_columns(self, tree: HeaderTree) -> None:
         named: list[str] = []
@@ -425,28 +441,23 @@ class _Render:
             FindingCode.FORM_HEADER_TOO_LARGE, column, f"the header {too_large(len(text)).detail}."
         )
 
-    def icon_tile(self, icon: str, block: Json | None) -> Json:
-        tile: Json = {
+    def icon_tile(self, icon: str) -> Json:
+        return {
             "elmType": "div",
             "attributes": {"class": TOKENS["neutral"].classes},
             "style": {
-                "flex": "none", "width": "56px", "height": "56px", "border-radius": "8px",
                 "display": "flex", "align-items": "center", "justify-content": "center",
-                "margin-right": "12px",
+                "width": "40px", "height": "40px", "border-radius": "8px", "flex": "none",
+                "margin-right": "10px", "align-self": "flex-start",
             },
             "children": [{
                 "elmType": "div",
                 "attributes": {
                     "iconName": icon,
                     "aria-hidden": "true",
-                    "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+                    "class": "ms-fontSize-24 ms-fontColor-themePrimary",
                 },
             }],
-        }
-        return {
-            "elmType": "div",
-            "style": {"display": "flex", "flex-direction": "row", "align-items": "center"},
-            "children": [tile] if block is None else [tile, block],
         }
 
     def title_block(self, tree: HeaderTree) -> Json | None:
@@ -461,8 +472,13 @@ class _Render:
             shown = f"=if({v.blank}, {blank}, {lead}{v.code})"
             kids.append({
                 "elmType": "div",
-                "style": {"display": _display("block", when=self.when(title.when))},
-                "attributes": {"class": f"{_SECONDARY} ms-fontWeight-bold ms-fontSize-16"},
+                "style": {
+                    "display": _display("block", when=self.when(title.when)),
+                    "line-height": "24px",
+                },
+                "attributes": {
+                    "class": "ms-fontColor-neutralPrimary ms-fontWeight-bold ms-fontSize-20",
+                },
                 "txtContent": shown,
             })
         if tree.subtitle:
@@ -471,7 +487,7 @@ class _Render:
             return None
         return {
             "elmType": "div",
-            "style": {"box-sizing": "border-box", "width": "100%", "padding": "4px 8px"},
+            "style": {"display": "flex", "flex-direction": "column", "min-width": "0"},
             "children": kids,
         }
 
@@ -487,6 +503,7 @@ class _Render:
             text = self.plain(only.text, "subtitle")
             return {
                 "elmType": "div",
+                "style": {"line-height": "16px"},
                 "attributes": {"class": f"{_SECONDARY} ms-fontSize-12"},
                 "txtContent": text,
             }
@@ -518,7 +535,9 @@ class _Render:
             shown.append(visible)
         return {
             "elmType": "div",
-            "style": {"display": f"=if({_any(shown)}, 'block', 'none')"},
+            "style": {
+                "display": f"=if({_any(shown)}, 'block', 'none')", "line-height": "16px",
+            },
             "attributes": {"class": f"{_SECONDARY} ms-fontSize-12"},
             "txtContent": "=" + " + ".join(terms),
         }
@@ -534,18 +553,28 @@ class _Render:
         attributes = {"href": href, "target": "_blank", "rel": "noopener noreferrer"}
         if chip.title is not None:  # a tooltip is a visible word, so only the author's own
             attributes["title"] = self.plain(chip.title, "chip title")
+        primary = chip.emphasis == "primary"
         return {
             "elmType": "a",
             "style": {
                 "display": _display("inline-flex", when=self.when(chip.when), hidden=hidden),
                 "align-items": "center",
-                "padding": "2px 10px 2px 0",
+                "padding": "4px 10px",
+                "border-radius": "4px",
+                "border-width": "1px",
+                "border-style": "solid",
+                **({"border-color": "transparent"} if primary else {}),
+                "text-decoration": "none",
+                "box-sizing": "border-box",
+                "margin": "0 0 4px 8px",
+                "white-space": "normal",
+                "text-align": "left",
             },
-            "attributes": attributes,
+            "attributes": {"class": _PRIMARY if primary else _SECONDARY_BUTTON, **attributes},
             "children": [
                 {
                     "elmType": "span",
-                    "style": {"padding": "0 4px"},
+                    "style": {"margin-right": "6px"},
                     "attributes": {"iconName": chip.icon, "aria-hidden": "true"},
                 },
                 {"elmType": "span", "txtContent": self.plain(chip.text, "chip")},
@@ -559,7 +588,7 @@ class _Render:
                 "display": _display("flex", when=self.when(row.when)),
                 "flex-wrap": "wrap",
                 "align-items": "center",
-                "margin": "4px 0",
+                "width": "100%",
             },
             "children": [
                 self.badge(i) if isinstance(i, Badge) else self.bubble(i) for i in row.items
@@ -567,14 +596,16 @@ class _Render:
         }
 
     def badge(self, badge: Badge) -> Json:
+        classes, colour = _pill(badge.token)
         return {
-            "elmType": "div",
+            "elmType": "span",
             "style": {
-                "display": _display("inline-flex", when=self.when(badge.when)),
+                "display": _display("inline-block", when=self.when(badge.when)),
                 **_PILL,
+                **({"color": colour} if colour else {}),
             },
-            "attributes": {"class": f"{TOKENS[badge.token].classes} {_SECONDARY}"},
-            "children": [{"elmType": "span", "txtContent": self.plain(badge.text, "badge")}],
+            "attributes": {"class": classes},
+            "txtContent": self.plain(badge.text, "badge"),
         }
 
     def bubble(self, bubble: Bubble) -> Json:
@@ -595,16 +626,16 @@ class _Render:
             *(f"{v.code} == {self.lit(h, 'hide_values', column)}" for h in bubble.hide_values),
         ]
         pairs = [
-            (f"{v.code} == {self.lit(k, 'tokens', column)}", TOKENS[t].classes)
+            (f"{v.code} == {self.lit(k, 'tokens', column)}", t)
             for k, t in bubble.tokens.items()
             if k != "default"
         ]
-        fallback = TOKENS[bubble.tokens.get("default", "neutral")].classes
+        fallback = bubble.tokens.get("default", "neutral")
         if bubble.due:
             overdue, guard = self.overdue(column)
             # With a blank text a blank date stays visible, so it must not count as overdue.
             hidden += [f"({v.filled} && {g})" for g in guard] if bubble.blank else guard
-            pairs.insert(0, (overdue, TOKENS["blocked"].classes))
+            pairs.insert(0, (overdue, "blocked"))
         if bubble.blank is not None:
             hidden = hidden[1:]  # the blank test no longer hides the bubble
             pairs.insert(0, (v.blank, fallback))
@@ -615,23 +646,30 @@ class _Render:
         if bubble.blank is not None:
             shown = self.lit(bubble.blank, "blank", column)
             pieces = [f"if({v.blank}, {shown}, {' + '.join(pieces)})"]
-        css = (
-            f"={_chain(pairs, fallback)} + {quoted(' ' + _SECONDARY)}"
-            if pairs
-            else f"{fallback} {_SECONDARY}"
-        )
+        classes = {t: _pill(t) for t in {fallback, *(t for _, t in pairs)}}
+        style: Json = {
+            "display": _display(
+                "inline-block",
+                when=self.when(bubble.when),
+                hidden=_any(hidden) if hidden else None,
+            ),
+            **_PILL,
+        }
+        if not pairs:
+            css, colour = classes[fallback]
+            if colour:
+                style["color"] = colour
+        else:
+            css = "=" + _chain([(c, classes[t][0]) for c, t in pairs], classes[fallback][0])
+            # Same branches and order as the class chain, so a neutral branch wins with no colour.
+            inks = [(c, classes[t][1]) for c, t in pairs]
+            if any(ink for _, ink in inks) or classes[fallback][1]:
+                style["color"] = "=" + _chain(inks, classes[fallback][1])
         return {
-            "elmType": "div",
-            "style": {
-                "display": _display(
-                    "inline-flex",
-                    when=self.when(bubble.when),
-                    hidden=_any(hidden) if hidden else None,
-                ),
-                **_PILL,
-            },
+            "elmType": "span",
+            "style": style,
             "attributes": {"class": css},
-            "children": [{"elmType": "span", "txtContent": "=" + " + ".join(pieces)}],
+            "txtContent": "=" + " + ".join(pieces),
         }
 
     def overdue(self, column: str) -> tuple[str, list[str]]:
@@ -673,65 +711,144 @@ class _Render:
             (self.condition(r.when), self.lit(r.text, "banner rule")[1:-1])
             for r in banner.rules
         ]
-        links = [(c, url) for (c, _), url in zip(rules, self.help_urls(banner), strict=True)]
-        linked = any(url for _, url in links)
-        help_link: list[Json] = [{
-            "elmType": "a",
-            "style": {
-                "display": "=" + _chain([(c, "inline" if u else "none") for c, u in links], "none"),
-                "padding": "0 0 0 12px",
-                "white-space": "nowrap",
-                "flex": "none",
-            },
-            "attributes": {
-                "href": "=" + _chain(links, ""),
-                "target": "_blank",
-                "rel": "noopener noreferrer",
-                "title": _HELP_LINK_NAME,
-                "aria-label": _HELP_LINK_NAME,
-            },
-            "txtContent": "Help for this step",
-        }] if linked else []
+        urls = self.help_urls(banner)
+        links = [(c, url) for (c, _), url in zip(rules, urls, strict=True)]
+        linked = any(urls)
+        action = _chain(rules, "")
+        now: list[Json] = [{
+            "elmType": "span",
+            "style": {"margin-right": "4px"},
+            "attributes": {"class": "ms-fontWeight-bold ms-fontColor-neutralPrimary"},
+            "txtContent": "To do now:",
+        }]
+        if linked:
+            name = f"={action} + {quoted(_HELP_SUFFIX)}"
+            shown = _chain([(c, "inline" if u else "none") for c, u in links], "none")
+            now.append({
+                "elmType": "a",
+                "style": {"display": "=" + shown, "text-decoration": "underline"},
+                "attributes": {
+                    "class": "ms-fontColor-themeDarker ms-fontWeight-semibold",
+                    "href": "=" + _chain(links, ""),
+                    "target": "_blank",
+                    "rel": "noopener noreferrer",
+                    "aria-label": name,
+                    "title": name,
+                },
+                "children": [
+                    {"elmType": "span", "txtContent": "=" + action},
+                    {
+                        "elmType": "span",
+                        "style": {
+                            "margin-left": "4px", "display": "inline-block",
+                            "text-decoration": "none",
+                        },
+                        "attributes": {
+                            "iconName": "OpenInNewWindow", "aria-hidden": "true",
+                            "class": "ms-fontSize-12",
+                        },
+                    },
+                ],
+            })
+        plain: Json = {
+            "elmType": "span",
+            "attributes": {"class": "ms-fontWeight-semibold"},
+            "txtContent": "=" + action,
+        }
+        if linked:
+            hidden = _chain([(c, "none" if u else "inline") for c, u in links], "inline")
+            plain["style"] = {"display": "=" + hidden}
+        now.append(plain)
+        lines: list[Json] = [{"elmType": "span", "style": {"min-width": "0"}, "children": now}]
+        if any(r.next for r in banner.rules):
+            follows = [
+                (self.condition(r.when), self.lit(r.next or "", "banner rule next")[1:-1])
+                for r in banner.rules
+            ]
+            visible = _chain([(c, "inline" if t else "none") for c, t in follows], "none")
+            lines.append({
+                "elmType": "span",
+                "style": {"display": "=" + visible, "min-width": "0"},
+                "attributes": {"class": f"{_SECONDARY} ms-fontSize-12"},
+                "children": [
+                    {
+                        "elmType": "span",
+                        "style": {"margin-right": "4px"},
+                        "attributes": {"class": "ms-fontWeight-semibold"},
+                        "txtContent": "After that:",
+                    },
+                    {"elmType": "span", "txtContent": "=" + _chain(follows, "")},
+                ],
+            })
         return {
             "elmType": "div",
             "style": {
                 "display": _display(
                     "flex", when=self.when(banner.when), shown=_any([c for c, _ in rules])
                 ),
-                "align-items": "center",
-                "padding": "6px 8px",
-                "margin": "8px 0 0 0",
-                **({"flex-wrap": "nowrap"} if linked else {}),
+                "flex-direction": "row",
+                "align-items": "flex-start",
+                "align-self": "flex-start",
+                "max-width": "100%",
+                "box-sizing": "border-box",
+                "margin-top": "4px",
+                "padding": "4px 10px",
+                "line-height": "20px",
+                "border-width": "1px",
+                "border-style": "solid",
+                "border-radius": "4px",
             },
-            "attributes": {"class": "ms-bgColor-themeLighter ms-fontColor-themePrimary"},
+            "attributes": {
+                "class": "ms-bgColor-themeLighterAlt ms-borderColor-themeLighter "
+                "ms-fontColor-themeDarker ms-fontSize-14",
+            },
             "children": [
                 {
                     "elmType": "span",
-                    "style": {"padding": "0 8px 0 0"},
-                    "attributes": {"iconName": banner.icon},
+                    "style": {"flex": "none", "align-self": "flex-start", "margin": "3px 8px 0 0"},
+                    "attributes": {
+                        "iconName": banner.icon, "aria-hidden": "true", "class": "ms-fontSize-14",
+                    },
                 },
                 {
-                    "elmType": "span",
-                    "attributes": {"class": "ms-fontWeight-bold"},
-                    "style": {"padding": "0 8px 0 0"},
-                    "txtContent": self.plain(banner.label, "banner label"),
+                    "elmType": "div",
+                    "style": {
+                        "display": "flex", "flex-direction": "row", "flex-wrap": "wrap",
+                        "align-items": "baseline", "column-gap": "16px", "min-width": "0",
+                        "word-wrap": "break-word",
+                    },
+                    "children": lines,
                 },
-                {
-                    "elmType": "span",
-                    **({"style": {"min-width": "0"}} if linked else {}),
-                    "txtContent": "=" + _chain(rules, ""),
-                },
-                *help_link,
             ],
         }
 
 
-_PILL = {
-    "padding": "2px 10px",
+_PILL: Json = {
     "border-radius": "12px",
-    "margin": "1px 4px 1px 0",
-    "font-weight": "600",
+    "padding": "1px 8px",
+    "line-height": "18px",
+    "border-width": "1px",
+    "border-style": "solid",
+    "margin": "0 6px 4px 0",
+    "box-sizing": "border-box",
 }
+_DARK = "#323130"  # fixed dark text on the fixed light severity fills, so a dark theme holds
+_SEVERITY = frozenset({"good", "low", "warning", "severe", "blocked"})
+_TYPE = "ms-fontSize-12 ms-fontWeight-semibold"
+_PRIMARY = "ms-bgColor-themePrimary ms-fontColor-white " + _TYPE
+_SECONDARY_BUTTON = (
+    "ms-bgColor-neutralLighter ms-borderColor-neutralLight ms-fontColor-neutralPrimary " + _TYPE
+)
+
+
+def _pill(name: str) -> tuple[str, str]:
+    """A pill's classes and its fixed text colour ('' for a theme-coloured neutral pill)."""
+    classes = TOKENS[name].classes
+    if name not in _SEVERITY:
+        return f"{classes} ms-borderColor-neutralLighter ms-fontColor-neutralPrimary {_TYPE}", ""
+    # A white low fill needs a visible edge to read as a pill.
+    edge = "neutralTertiary" if name == "low" else "neutralLighter"
+    return f"{classes} ms-borderColor-{edge} {_TYPE}", _DARK
 
 
 def render_header(tree: HeaderTree, ctx: RenderContext) -> Json:
