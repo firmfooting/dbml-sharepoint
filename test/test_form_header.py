@@ -1430,3 +1430,4 @@ def test_a_formatter_token_or_column_reference_in_a_chip_url_is_still_refused(ur
     with pytest.raises(HeaderRefusal) as found:
         _chip_href(LinkChip("Chat", "Feedback", url=url), _ctx())
     assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+

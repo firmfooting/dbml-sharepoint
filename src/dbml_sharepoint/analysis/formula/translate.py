@@ -110,6 +110,7 @@ class _Tr:
     moment: bool = False
     instant: str = ""
     truth: bool | None = None  # the value of a condition built from constants alone
+    nullable: bool = False  # a date that is blank on some branch; only an IF may carry it up
 
     @property
     def whole(self) -> bool:
@@ -308,16 +309,22 @@ class _Translator:
             case Ref(name=name):
                 return self.ref(name, stack)
             case Neg(operand=operand):
-                inner = self.go(operand, stack)
+                inner = self.operand(operand, stack)
                 values = _mapped(inner, lambda v: -v)
                 return _Tr(f"(0 - {_num(inner, 'a minus sign')})", "number", values, inner.whole)
             case Percent(operand=operand):
-                return _Tr(f"({_num(self.go(operand, stack), '%')} / 100)", "number")
+                return _Tr(f"({_num(self.operand(operand, stack), '%')} / 100)", "number")
             case Binary(op=op, left=left, right=right):
                 return self.binary(op, left, right, stack)
             case Call(name=name, args=args):
                 return self.call(name, args, stack)
         raise AssertionError(node)
+
+    def operand(self, node: Expr, stack: tuple[str, ...]) -> _Tr:
+        tr = self.go(node, stack)
+        if tr.nullable:
+            _unsupported("a date that can be blank", "used as an operand, which is not measured")
+        return tr
 
     def stored_kind(self, name: str) -> str:
         return _KIND.get(self.ctx.kinds.get(name, ""), "")
@@ -367,7 +374,7 @@ class _Translator:
         )
 
     def binary(self, op: str, left: Expr, right: Expr, stack: tuple[str, ...]) -> _Tr:
-        a, b = self.go(left, stack), self.go(right, stack)
+        a, b = self.operand(left, stack), self.operand(right, stack)
         if op in ("+", "-") and "date" in {a.kind, b.kind}:
             return self.date_sum(op, a, b)
         if op == "&":
@@ -452,7 +459,7 @@ class _Translator:
             return self.isblank(args[0])
         if name in ("IF", "CHOOSE"):
             return self.table(Call(name, args)) or self.branch(name, args, stack)
-        vals = [self.go(arg, stack) for arg in args]
+        vals = [self.operand(arg, stack) for arg in args]
         return self.apply(name, args, vals)
 
     def table(self, node: Expr) -> _Tr | None:
@@ -502,9 +509,7 @@ class _Translator:
                 code = f"if({_cond(vals[0])}, 0 == 1, 0 == 0)"
                 return _Tr(code, "bool", truth=None if vals[0].truth is None else not vals[0].truth)
             case "MIN" | "MAX":
-                parts = [_num(v, name) for v in vals]
-                values = self.extremes(name, vals)
-                return _Tr(self.extreme(name, parts), "number", values, all(v.whole for v in vals))
+                return self.minmax(name, vals)
             case "ABS" | "INT":
                 fn = "abs" if name == "ABS" else "floor"  # Learn: abs, floor
                 shape = abs if name == "ABS" else math.floor
@@ -545,6 +550,15 @@ class _Translator:
             {"YEAR": year, "MONTH": month, "DAY": day}[name], "number", values, integral=True
         )
 
+    def minmax(self, name: str, vals: list[_Tr]) -> _Tr:
+        if all(v.kind == "date" for v in vals):
+            self.no_time_of_day(name, *vals)  # compared as day numbers, like <
+            code = self.extreme(name, [v.code for v in vals])
+            return _Tr(code, "date", self.extremes(name, vals), moment=any(v.moment for v in vals))
+        parts = [_num(v, name) for v in vals]
+        values = self.extremes(name, vals)
+        return _Tr(self.extreme(name, parts), "number", values, all(v.whole for v in vals))
+
     def date_of(self, vals: list[_Tr]) -> _Tr:
         if not all(v.kind == "number" and v.whole for v in vals):
             _unsupported("DATE", "with an argument not known to be a whole number")
@@ -577,7 +591,7 @@ class _Translator:
             self.fails, self.filled = outer, outer_filled
 
     def branch(self, name: str, args: tuple[Expr, ...], stack: tuple[str, ...]) -> _Tr:
-        first = self.go(args[0], stack)
+        first = self.operand(args[0], stack)
         if name == "IF":
             return self.if_branch(args, first, stack)
         return self.choose_branch(args, first, stack)
@@ -590,15 +604,10 @@ class _Translator:
             self.scoped(args[1], stack, self.filled | if_true),
             self.scoped(args[2], stack, self.filled | if_false),
         )
-        # A "" beside a date is the blank of a nullable date: the date, failing (blank) there.
-        for blank, other, i in ((yes, no, 1), (no, yes, 2)):
-            if other.kind == "date" and blank.kind == "text" and _is_empty(args[i]):
-                gap = dataclasses.replace(other)
-                if i == 1:
-                    yes, yes_fail = gap, ALWAYS
-                else:
-                    no, no_fail = gap, ALWAYS
-                break
+        (yes, yes_fail), (no, no_fail) = (
+            self.blank_gap(args[1], yes, no, yes_fail),
+            self.blank_gap(args[2], no, yes, no_fail),
+        )
         self.same_kind("IF", [yes, no])
         cond = _cond(first)
         if first.truth is not None:  # both branches were still checked above
@@ -611,11 +620,20 @@ class _Translator:
             self.fails.append(f"if({cond}, {yes_fail or NEVER}, {no_fail or NEVER})")
         return self.joined(f"if({cond}, {self.value(yes)}, {self.value(no)})", [yes, no])
 
+    @staticmethod
+    def blank_gap(arg: Expr, mine: _Tr, other: _Tr, fail: str) -> tuple[_Tr, str]:
+        """A "" beside a date is the blank of a nullable date: the date, failing (blank) there."""
+        if _is_empty(arg) and other.kind == "date":
+            return dataclasses.replace(other, nullable=True), ALWAYS
+        return mine, fail
+
     def choose_branch(self, args: tuple[Expr, ...], first: _Tr, stack: tuple[str, ...]) -> _Tr:
         name = "CHOOSE"
         index = _num(first, name)
         scoped = [self.scoped(arg, stack, self.filled) for arg in args[1:]]
         options = [tr for tr, _ in scoped]
+        if any(tr.nullable for tr in options):
+            _unsupported(name, "with a date that can be blank as an option, which is not measured")
         self.same_kind(name, options)
         reach = _whole_values(args[0])
         if reach is None or not reach <= set(range(1, len(options) + 1)):
@@ -645,6 +663,7 @@ class _Translator:
             _union(*options),
             integral=all(o.whole for o in options),
             moment=any(o.moment for o in options),
+            nullable=any(o.nullable for o in options),
             instant=next((o.instant for o in options if o.instant), ""),
         )
 

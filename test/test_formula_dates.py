@@ -177,6 +177,12 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
         "date",
         {},
     ),
+    "earlier of two dates": (
+        'MIN(DATE(2026,IF([Status]="Open",3,9),1),DATE(2026,2,1))', "date", {},
+    ),
+    "later of three dates": (
+        'MAX(DATE(2026,5,1),DATE(2026,2,1),DATE(2026,IF([Status]="Open",7,1),1))', "date", {},
+    ),
     "date result chained": ("[Created]+[W]", "date", {"W": 'IF([Status]="Open",14,30)'}),
 }
 
@@ -327,7 +333,6 @@ REFUSED = [
     ('IF([Created]=[Created],"a","b")', "text", _FN, "="),
     ("[Created]", "date", _RESULT, "display"),
     ("ISBLANK([Created])", "number", _FN, "ISBLANK"),
-    ("MIN(DATE(2026,1,1),DATE(2026,2,1))", "number", _FN, "MIN"),
     ("MAX([Created]+0,DATE(2026,2,1))", "number", _FN, "MAX"),
     ("DATE(2026,1,1)+DATE(2026,1,1)", "number", _FN, "+"),
     ("5-DATE(2026,1,1)", "number", _FN, "-"),
@@ -768,3 +773,48 @@ def test_a_cycle_through_the_blank_guard_is_refused_not_followed(
     refusal = _refusal(formula, "date", **more)
     assert refusal.code is FindingCode.FORM_FORMULA_UNPARSEABLE
     assert "refers back" in refusal.detail or "circular" in refusal.detail
+
+
+_CLAMPED = (
+    'IF(ISBLANK([Due]),"",MIN(DATE(YEAR([Due]),MONTH([Due])+IF([Status]="Open",6,3),DAY([Due])),'
+    'DATE(YEAR([Due]),MONTH([Due])+IF([Status]="Open",6,3)+1,1)-1))'
+)
+
+
+@node
+@pytest.mark.parametrize(
+    ("start", "status", "expected"),
+    [
+        (date(2025, 8, 31), "Open", date(2026, 2, 28)),  # a 31st into a short February
+        (date(2023, 8, 31), "Open", date(2024, 2, 29)),  # leap February
+        (date(2025, 8, 31), "Closed", date(2025, 11, 30)),  # a 31st into a 30-day month
+        (date(2025, 11, 30), "Closed", date(2026, 2, 28)),  # clamped across the year end
+        (date(2025, 10, 15), "Closed", date(2026, 1, 15)),  # the month passes 12, the year rolls
+        (date(2025, 12, 31), "Closed", date(2026, 3, 31)),
+    ],
+)
+def test_the_end_of_month_clamp_with_min_over_dates(
+    start: date, status: str, expected: date
+) -> None:
+    expression = _parity(_CLAMPED, "date")
+    row: dict[str, object] = {"Status": status, "Due": _day_ms(start)}
+    assert _run(expression, row) == (expected - date(1970, 1, 1)).days
+
+
+def test_min_of_a_date_and_a_number_is_refused() -> None:
+    refusal = _refusal("MIN(DATE(2026,1,1),1)", "date")
+    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        'YEAR(IF([Status]="Open","",DATE(2026,1,1)))',
+        'IF([Status]="Open","",DATE(2026,1,1))+1',
+        'MIN(IF([Status]="Open","",DATE(2026,1,1)),DATE(2026,2,1))',
+        'IF(IF([Status]="Open","",DATE(2026,1,1))=DATE(2026,1,1),DATE(2026,1,1),DATE(2026,2,1))',
+    ],
+)
+def test_a_date_that_can_be_blank_may_only_be_returned(formula: str) -> None:
+    refusal = _refusal(formula, "date" if "YEAR" not in formula else "number")
+    assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
