@@ -432,16 +432,12 @@ class _Translator:
         values = _combine(moment, count, lambda p, q: p + sign * q)
         # The day number drops the time of day, so a display is exact; a comparison is not.
         code = f"({moment.code} {op} {count.code})"
-        if moment.checked:  # moved off a checked date, so checked again here, not on the result
-            self.fails.append(_outside_days(code))
         built = None
         if op == "-" and count.values == frozenset({1}) and moment.built:
             kind, x, months, day, index = moment.built
             if kind == "DATE" and day == "1":
                 built = ("END", x, months, "", index)
-        return _Tr(
-            code, "date", values, instant=moment.instant, checked=moment.checked, built=built
-        )
+        return _Tr(code, "date", values, instant=moment.instant, built=built)
 
     @staticmethod
     def no_time_of_day(op: str, *dates: _Tr) -> None:
@@ -592,20 +588,23 @@ class _Translator:
         if all(v.kind == "date" for v in vals):
             self.no_time_of_day(name, *vals)  # compared as day numbers, like <
             code = self.extreme(name, [v.code for v in vals])
+            clamp = self.clamp(name, vals)
+            if clamp:  # the month's last day is checked here, where its parts are taken
+                self.fails.append(_outside_days(clamp[1]))
             return _Tr(
                 code,
                 "date",
                 self.extremes(name, vals),
                 moment=any(v.moment for v in vals),
-                checked=all(v.checked for v in vals),
-                parts=self.clamp(name, vals),
+                checked=bool(clamp) or all(v.checked for v in vals),
+                parts=clamp[0] if clamp else None,
             )
         parts = [_num(v, name) for v in vals]
         values = self.extremes(name, vals)
         return _Tr(self.extreme(name, parts), "number", values, all(v.whole for v in vals))
 
     @staticmethod
-    def clamp(name: str, vals: list[_Tr]) -> tuple[str, str, str] | None:
+    def clamp(name: str, vals: list[_Tr]) -> tuple[tuple[str, str, str], str] | None:
         """MIN(DATE(YEAR(x), MONTH(x) + n, DAY(x)), DATE(YEAR(x), MONTH(x) + n + 1, 1) - 1): the
         same day n months on, or that month's last day. Its parts come from the month index."""
         if name != "MIN" or len(vals) != 2:
@@ -615,7 +614,7 @@ class _Translator:
                 _, x, months, day, index = same.built
                 after = f"{months} + 1" if months else "1"
                 if day == "DAY" and (x, after) == (end.built[1], end.built[2]):
-                    return clamped_parts(index, parts_of(x)[2])
+                    return clamped_parts(index, parts_of(x)[2]), end.code
         return None
 
     @staticmethod

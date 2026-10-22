@@ -847,3 +847,23 @@ def test_min_of_a_date_and_a_number_is_refused() -> None:
 def test_a_date_that_can_be_blank_may_only_be_returned(formula: str) -> None:
     refusal = _refusal(formula, "date" if "YEAR" not in formula else "number")
     assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+
+
+_SAME = "DATE(YEAR([Due]),MONTH([Due]),DAY([Due]))"
+
+
+@node
+def test_whole_days_added_and_taken_back_are_exact_without_a_calendar_conversion() -> None:
+    formula = f"IF(ISBLANK([Due]),0,({_SAME}+30000)-{_SAME})"
+    expression = _translate(formula)
+    row = {"Due": _day_ms(date(2026, 3, 5))}
+    assert evaluate_rows(expression, [row], browser_tz="UTC", now=_NOW) == [30000]
+
+
+@node
+def test_a_date_moved_out_of_range_is_still_blank_where_it_is_shown() -> None:
+    expression = _translate(f'IF(ISBLANK([Due]),"",{_SAME}+30000)', "date")
+    rows = [{"Due": _day_ms(date(2026, 3, 5))}, {"Due": _day_ms(date(2026, 3, 5))}]
+    assert evaluate_rows(expression, rows[:1], browser_tz="UTC", now=_NOW) == [""]
+    near = _translate(f'IF(ISBLANK([Due]),"",{_SAME}+30)', "date")
+    assert evaluate_rows(near, rows[:1], browser_tz="UTC", now=_NOW) != [""]
