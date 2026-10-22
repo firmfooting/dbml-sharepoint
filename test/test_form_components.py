@@ -17,6 +17,7 @@ from dbml_sharepoint.model.form_tree import (
     Bubble,
     HeaderTree,
     LinkChip,
+    NewItemStep,
     Row,
     SubtitlePart,
     Title,
@@ -274,6 +275,39 @@ def test_next_without_text_is_refused_naming_the_rule() -> None:
 def test_a_blank_next_is_refused_naming_it(blank: object) -> None:
     with pytest.raises(MappingShapeError, match=r"rules\[0\]\.next"):
         _parse({"banner": {"rules": [{"when": _IS_OPEN, "text": "a", "next": blank}]}})
+
+
+def test_a_new_step_is_parsed_and_a_banner_may_hold_only_it() -> None:
+    tree = _parse({"banner": {"new": {"text": "Fill in.", "next": "Save it.", "help": "g-a"}}})
+    assert tree.banner is not None
+    assert tree.banner.rules == ()
+    assert tree.banner.new == NewItemStep("Fill in.", "g-a", "Save it.")
+    both = _parse({"banner": {"new": {"text": "Fill in."}, "rules": [
+        {"when": _IS_OPEN, "text": "a"},
+    ]}})
+    assert both.banner is not None
+    assert both.banner.new == NewItemStep("Fill in.")
+    assert len(both.banner.rules) == 1
+
+
+def test_a_banner_with_neither_rules_nor_new_is_refused() -> None:
+    with pytest.raises(MappingShapeError, match=r"banner\.rules"):
+        _parse({"banner": {"icon": "Info"}})
+
+
+@pytest.mark.parametrize("key", ["text", "next", "help"])
+@pytest.mark.parametrize("blank", ["", None])
+def test_a_blank_new_step_key_is_refused_naming_it(key: str, blank: object) -> None:
+    step = {"text": "a", key: blank}
+    with pytest.raises(MappingShapeError, match=rf"banner\.new\.{key}"):
+        _parse({"banner": {"new": step}})
+
+
+def test_a_new_step_needs_text_and_refuses_a_when_key() -> None:
+    with pytest.raises(MappingShapeError, match=r"banner\.new\.text"):
+        _parse({"banner": {"new": {"next": "x"}}})
+    with pytest.raises(UnknownMappingKeyError, match=r"banner\.new.*when"):
+        _parse({"banner": {"new": {"text": "a", "when": _IS_OPEN}}})
 
 
 def test_emphasis_defaults_to_secondary() -> None:

@@ -35,6 +35,7 @@ from dbml_sharepoint.model.form_tree import (
     Bubble,
     HeaderTree,
     LinkChip,
+    NewItemStep,
     Row,
     SubtitlePart,
     Title,
@@ -527,6 +528,12 @@ QUOTE_SITES: dict[str, Callable[[str], HeaderTree]] = {
     )),
     "banner next": lambda t: HeaderTree(banner=Banner(
         icon="Lightbulb", rules=(BannerRule(OPEN, "ok", None, t),),
+    )),
+    "banner new": lambda t: HeaderTree(banner=Banner(
+        icon="Lightbulb", rules=(), new=NewItemStep(t),
+    )),
+    "banner new next": lambda t: HeaderTree(banner=Banner(
+        icon="Lightbulb", rules=(), new=NewItemStep("ok", None, t),
     )),
     "starts like a formula": lambda t: HeaderTree(chips=(LinkChip("=" + t, "Feedback", url="u"),)),
 }
@@ -1290,3 +1297,80 @@ def test_the_header_wraps_with_the_documented_property() -> None:
     text = json.dumps(_full())
     assert "overflow-wrap" not in text
     assert '"word-wrap": "break-word"' in text
+
+
+# --- the step for a new item ---------------------------------------------------------------------
+
+NEW_ROW = {"ID": "", "Status": "Open", "Risk": "High"}
+SAVED_ROW = {"ID": "7", "Status": "Open", "Risk": "High"}
+
+
+def _new_banner(
+    new: NewItemStep, *rules: BannerRule, when: Leaf | None = None,
+) -> dict[str, object]:
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=rules, new=new, when=when))
+    return _kids(render_header(tree, _help_ctx()))[0]
+
+
+def test_a_new_item_shows_its_own_step_over_every_status_rule() -> None:
+    box = _new_banner(NewItemStep("Fill in and save.", None, "Authorise it."), *_MIXED)
+    plain = _now(box)[-1]
+    after = _kids(_kids(box)[1])[1]
+    assert _ev(plain["txtContent"], NEW_ROW) == "Fill in and save."
+    assert _ev(_kids(after)[1]["txtContent"], NEW_ROW) == "Authorise it."
+    assert _ev(_style(after, "display"), NEW_ROW) == "inline"
+    assert _ev(_style(box, "display"), NEW_ROW) == "flex"
+    assert _ev(plain["txtContent"], SAVED_ROW) == "a"
+    assert _ev(_style(after, "display"), SAVED_ROW) == "none"
+
+
+def test_a_banner_of_only_a_new_step_hides_on_a_saved_item() -> None:
+    box = _new_banner(NewItemStep("Fill in and save."))
+    assert _ev(_style(box, "display"), NEW_ROW) == "flex"
+    assert _ev(_style(box, "display"), SAVED_ROW) == "none"
+    assert len(_kids(_kids(box)[1])) == 1
+
+
+def test_the_new_step_expression_is_the_measured_blank_id_test() -> None:
+    box = _new_banner(NewItemStep("Fill in and save."))
+    assert _style(box, "display") == "=if((([$ID] == '')), 'flex', 'none')"
+
+
+def test_the_new_step_help_link_shows_only_on_a_new_item() -> None:
+    box = _new_banner(NewItemStep("Fill in.", "g-a"), BannerRule(OPEN, "b"))
+    _label, link, plain = _now(box)
+    assert _ev(_attr(link, "href"), NEW_ROW) == "https://h/a"
+    assert _ev(_style(link, "display"), NEW_ROW) == "inline"
+    assert _ev(_style(plain, "display"), NEW_ROW) == "none"
+    assert _ev(_style(link, "display"), SAVED_ROW) == "none"
+    assert _ev(_style(plain, "display"), SAVED_ROW) == "inline"
+    assert _ev(_attr(link, "aria-label"), NEW_ROW) == "Fill in" + SUFFIX
+
+
+def test_the_banner_when_still_gates_a_new_item_step() -> None:
+    box = _new_banner(NewItemStep("t"), when=Leaf("Notes", "is_null"))
+    assert _ev(_style(box, "display"), {**NEW_ROW, "Notes": ""}) == "flex"
+    assert _ev(_style(box, "display"), {**NEW_ROW, "Notes": "x"}) == "none"
+
+
+def test_an_unmapped_new_step_help_key_is_refused_naming_it() -> None:
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(), new=NewItemStep("a", "nope")))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(tree, _help_ctx())
+    assert found.value.finding.code is FindingCode.FORM_HELP_KEY_UNMAPPED
+    assert found.value.finding.message == (
+        "Task: banner new help key 'nope' is not in DBMLSP_HELP_GUIDES."
+    )
+
+
+def test_help_off_warns_for_a_new_step_help_key_too() -> None:
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(), new=NewItemStep("a", "g-a")))
+    schema_, base = _bundle(tree)
+    _resolved, findings = resolve_form_headers(schema_, base, SITE)
+    assert [f.code for f in findings] == [FindingCode.FORM_HELP_OFF]
+
+
+def test_a_new_step_text_with_a_quote_is_refused() -> None:
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(), new=NewItemStep("it's")))
+    with pytest.raises(HeaderRefusal):
+        render_header(tree, _help_ctx())

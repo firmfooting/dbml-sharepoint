@@ -17,6 +17,7 @@ from dbml_sharepoint.model.form_tree import (
     Bubble,
     HeaderTree,
     LinkChip,
+    NewItemStep,
     Row,
     SubtitlePart,
     Title,
@@ -204,10 +205,21 @@ def _row(raw: object, context: str) -> Row:
 
 
 def _banner(raw: object, context: str) -> Banner:
-    block = _known_keys(raw, {"icon", "when", "rules"}, context)
+    block = _known_keys(raw, {"icon", "when", "rules", "new"}, context)
+    new = None
+    if block.get("new") is not None:
+        entry = _known_keys(block["new"], {"text", "next", "help"}, f"{context}.new")
+        new = NewItemStep(
+            _nonblank(entry.get("text"), f"{context}.new.text"),
+            None if "help" not in entry else _nonblank(entry["help"], f"{context}.new.help"),
+            None if "next" not in entry else _nonblank(entry["next"], f"{context}.new.next"),
+        )
     rules: list[BannerRule] = []
+    # A banner may hold only its new-item step, so rules are optional beside one.
     for index, rule in enumerate(
-        _list(block.get("rules"), f"{context}.rules", empty="a banner needs at least one rule"),
+        [] if new is not None and block.get("rules") is None else _list(
+            block.get("rules"), f"{context}.rules", empty="a banner needs at least one rule",
+        ),
     ):
         where = f"{context}.rules[{index}]"
         entry = _known_keys(rule, {"when", "text", "next", "help"}, where)
@@ -224,6 +236,7 @@ def _banner(raw: object, context: str) -> Banner:
         tuple(rules),
         "Forward" if icon is None else _nonblank(icon, f"{context}.icon"),
         _when(block, context),
+        new,
     )
 
 

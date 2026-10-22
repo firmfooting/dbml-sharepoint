@@ -51,7 +51,16 @@ from dbml_sharepoint.analysis.typemap import (
 )
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
-from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
+from dbml_sharepoint.model.form_tree import (
+    Badge,
+    Banner,
+    BannerRule,
+    Bubble,
+    HeaderTree,
+    LinkChip,
+    NewItemStep,
+    Row,
+)
 from dbml_sharepoint.model.help_guides import HelpGuides
 from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
@@ -119,6 +128,10 @@ def _date_text(day: str, order: str) -> str:
     parts = {"d": date, "m": month, "y": year}
     # Parenthesised so no comparison built around the text depends on + against == precedence.
     return "(" + " + '/' + ".join(f"toString({parts[letter]})" for letter in order) + ")"
+
+
+# Measured: [$ID] is empty on the New form and the item's id on Display and Edit.
+_IS_NEW = "([$ID] == '')"
 
 
 def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
@@ -719,27 +732,34 @@ class _Render:
         ]
         return overdue, guard
 
-    def help_urls(self, banner: Banner) -> list[str]:
-        """One URL per rule, '' for a rule with no link, so the first matching rule decides."""
-        urls = []
+    def steps(self, banner: Banner) -> list[tuple[str, str, BannerRule | NewItemStep]]:
+        """Each step's label, its condition and the rule, the new-item step first."""
+        found: list[tuple[str, str, BannerRule | NewItemStep]] = []
+        if banner.new is not None:
+            found.append(("banner new", _IS_NEW, banner.new))
         for number, rule in enumerate(banner.rules, start=1):
-            if rule.help is None or self.ctx.help_guides is None:
+            found.append((f"banner rule {number}", self.condition(rule.when), rule))
+        return found
+
+    def help_urls(self, steps: list[tuple[str, str, BannerRule | NewItemStep]]) -> list[str]:
+        """One URL per step, '' for a step with no link, so the first matching step decides."""
+        urls = []
+        for label, _, step in steps:
+            if step.help is None or self.ctx.help_guides is None:
                 urls.append("")
-            elif rule.help not in self.ctx.help_guides:
+            elif step.help not in self.ctx.help_guides:
                 raise self.refusal(
                     FindingCode.FORM_HELP_KEY_UNMAPPED, None,
-                    f"banner rule {number} help key '{rule.help}' is not in DBMLSP_HELP_GUIDES.",
+                    f"{label} help key '{step.help}' is not in DBMLSP_HELP_GUIDES.",
                 )
             else:
-                urls.append(self.lit(self.ctx.help_guides[rule.help], "help url")[1:-1])
+                urls.append(self.lit(self.ctx.help_guides[step.help], "help url")[1:-1])
         return urls
 
     def banner(self, banner: Banner) -> Json:
-        rules = [
-            (self.condition(r.when), self.lit(r.text, "banner rule")[1:-1])
-            for r in banner.rules
-        ]
-        urls = self.help_urls(banner)
+        steps = self.steps(banner)
+        rules = [(c, self.lit(s.text, "banner rule")[1:-1]) for _, c, s in steps]
+        urls = self.help_urls(steps)
         links = [(c, url) for (c, _), url in zip(rules, urls, strict=True)]
         linked = any(urls)
         action = _chain(rules, "")
@@ -753,7 +773,7 @@ class _Render:
             # The link name reads "<text>, opens ...", so a closing stop would double up.
             spoken = _chain(
                 [(c, self.lit(_drop_stop(r.text), "banner rule")[1:-1])
-                 for (c, _), r in zip(rules, banner.rules, strict=True)],
+                 for (c, _), (_, _, r) in zip(rules, steps, strict=True)],
                 "",
             )
             name = f"={spoken} + {quoted(_HELP_SUFFIX)}"
@@ -794,10 +814,9 @@ class _Render:
             plain["style"] = {"display": "=" + hidden}
         now.append(plain)
         lines: list[Json] = [{"elmType": "span", "style": {"min-width": "0"}, "children": now}]
-        if any(r.next for r in banner.rules):
+        if any(r.next for _, _, r in steps):
             follows = [
-                (self.condition(r.when), self.lit(r.next or "", "banner rule next")[1:-1])
-                for r in banner.rules
+                (c, self.lit(r.next or "", "banner rule next")[1:-1]) for _, c, r in steps
             ]
             visible = _chain([(c, "inline" if t else "none") for c, t in follows], "none")
             lines.append({
@@ -956,7 +975,7 @@ def resolve_form_headers(
         for trees in bundle.form_trees.values()
         for tree in trees.values()
         if tree.banner is not None
-        for rule in tree.banner.rules
+        for rule in (*tree.banner.rules, *([tree.banner.new] if tree.banner.new else []))
     ):
         findings.append(Finding(
             FindingCode.FORM_HELP_OFF,
