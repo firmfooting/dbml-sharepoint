@@ -280,6 +280,12 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     assert _attr(_kids(chip[0])[0], "iconName") == "ContactLink"
 
 
+def test_the_chip_is_roomy() -> None:
+    chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("Help", "Feedback", url="u"),))))[0]
+    assert _style(chip, "padding") == "6px 12px"
+    assert _style(chip, "margin") == "0 0 6px 8px"
+
+
 def test_a_chip_when_hides_it() -> None:
     tree = HeaderTree(chips=(LinkChip("Help", "Feedback", url="u", when=OPEN),))
     chip = _chip_nodes(_render(tree))[0]
