@@ -75,10 +75,20 @@ class BannerRule:
 
 
 @dataclass(frozen=True)
+class NewItemStep:
+    """The step shown on a form that creates an item, ahead of every status rule."""
+
+    text: str
+    help: str | None = None
+    next: str | None = None
+
+
+@dataclass(frozen=True)
 class Banner:
     rules: tuple[BannerRule, ...]
     icon: str = "Forward"
     when: Condition | None = None
+    new: NewItemStep | None = None
 
 
 @dataclass(frozen=True)

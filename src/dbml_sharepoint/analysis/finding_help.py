@@ -1308,12 +1308,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "its pages is not a plain page name (text with no slash and no scheme)."
     ),
     FindingCode.FORM_HELP_KEY_UNMAPPED: (
-        "A banner rule's `help` key is not in the file named by "
+        "A banner rule's or new-item step's `help` key is not in the file named by "
         "`DBMLSP_HELP_GUIDES`, so its link would have no address. Add the key "
         "to that file, or correct the key in the mapping."
     ),
     FindingCode.FORM_HELP_OFF: (
-        "A banner rule has a `help` key but neither `DBMLSP_HELP_BASE_URL` nor "
+        "A banner rule or new-item step has a `help` key but neither `DBMLSP_HELP_BASE_URL` nor "
         "`DBMLSP_HELP_GUIDES` is set, so no help link is rendered. This is "
         "expected for a build that does not use help links."
     ),
