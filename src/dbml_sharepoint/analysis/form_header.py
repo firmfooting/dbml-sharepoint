@@ -88,6 +88,7 @@ class RenderContext:
     filled_numbers: frozenset[str] = frozenset()
     # lookup column -> whether it holds many values
     lookups: Mapping[str, bool] = dataclasses.field(default_factory=dict)
+    library: bool = False  # a document library: its header does not read .lookupValue
     # guide key -> URL; None means help links are off, empty means on with nothing mapped
     help_guides: Mapping[str, str] | None = None
 
@@ -244,6 +245,13 @@ class _Render:
 
     def value(self, column: str, order: str | None = None, *, url: bool = False) -> _Value:
         declared = self.ctx.types[column]
+        if url and column in self.ctx.lookups and self.ctx.library:
+            raise self.refusal(
+                FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
+                f"the chip url_column {column} is a lookup on a document library, whose form "
+                "header reads .lookupValue as empty (test/manual/library-header-token-probe.js): "
+                "use a lookup on a list.",
+            )
         if url and column in self.ctx.lookups:
             if self.ctx.lookups[column]:
                 raise self.refusal(
@@ -917,6 +925,7 @@ def _context(
     }
     return RenderContext(
         entity=entity,
+        library=entry.kind == "DocumentLibrary",
         lookups={
             c.name: is_multi_value(c.type) for c in table.columns
             if c.ref is not None and element_type(c.type) not in members

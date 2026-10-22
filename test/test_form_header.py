@@ -305,6 +305,15 @@ def test_a_multi_lookup_url_column_is_refused() -> None:
         render_header(tree, ctx)
 
 
+def test_a_lookup_url_column_on_a_library_is_refused_naming_the_probe() -> None:
+    ctx = dataclasses.replace(
+        _ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": False}, library=True,
+    )
+    chip = LinkChip("R", "ContactLink", url_column="Meeting", url_template="{value}")
+    with pytest.raises(HeaderRefusal, match="library-header-token-probe"):
+        render_header(HeaderTree(chips=(chip,)), ctx)
+
+
 def test_the_chip_is_roomy() -> None:
     chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("Help", "Feedback", url="u"),))))[0]
     assert _style(chip, "padding") == "6px 12px"
