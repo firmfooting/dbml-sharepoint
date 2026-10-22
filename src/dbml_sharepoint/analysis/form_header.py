@@ -120,6 +120,11 @@ def _chain(pairs: Sequence[tuple[str, str]], fallback: str) -> str:
     return code
 
 
+def _drop_stop(text: str) -> str:
+    text = text.rstrip()
+    return text.removesuffix(".").rstrip()
+
+
 def _any(conditions: Sequence[str]) -> str:
     return "(" + " || ".join(conditions) + ")"
 
@@ -722,7 +727,13 @@ class _Render:
             "txtContent": "To do now:",
         }]
         if linked:
-            name = f"={action} + {quoted(_HELP_SUFFIX)}"
+            # The link name reads "<text>, opens ...", so a closing stop would double up.
+            spoken = _chain(
+                [(c, self.lit(_drop_stop(r.text), "banner rule")[1:-1])
+                 for (c, _), r in zip(rules, banner.rules, strict=True)],
+                "",
+            )
+            name = f"={spoken} + {quoted(_HELP_SUFFIX)}"
             shown = _chain([(c, "inline" if u else "none") for c, u in links], "none")
             now.append({
                 "elmType": "a",

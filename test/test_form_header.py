@@ -1005,13 +1005,29 @@ def test_the_linked_action_has_a_visible_first_name_target_rel_and_glyph() -> No
     for key in ("aria-label", "title"):
         assert _ev(_attr(link, key), HIGH) == "a" + SUFFIX
         assert _ev(_attr(link, key), OPEN_ROW) == "c" + SUFFIX
-        assert str(_attr(link, key)).endswith(f"+ '{SUFFIX}'")
+        assert str(_attr(link, key)).endswith(f" + '{SUFFIX}'")
     assert _attr(link, "target") == "_blank"
     assert _attr(link, "rel") == "noopener noreferrer"
     assert _style(link, "text-decoration") == "underline"
     glyph = _kids(link)[1]
     assert _attr(glyph, "iconName") == "OpenInNewWindow"
     assert _attr(glyph, "aria-hidden") == "true"
+
+
+def test_the_link_name_drops_one_trailing_stop_but_the_visible_text_keeps_it() -> None:
+    rules = (
+        BannerRule(Leaf("Risk", "eq", "High"), "Confirm the rating. ", "g-a"),
+        BannerRule(OPEN, "Pick one", "g-c"),
+        BannerRule(Leaf("Risk", "eq", "z"), "Wait...", "g-c"),
+    )
+    link, _plain = _now(_help_banner(*rules))[1:]
+    visible = _kids(link)[0]["txtContent"]
+    for key in ("aria-label", "title"):
+        assert _ev(_attr(link, key), HIGH) == "Confirm the rating" + SUFFIX
+        assert _ev(_attr(link, key), {"Risk": "y", "Status": "Open"}) == "Pick one" + SUFFIX
+        assert _ev(_attr(link, key), {"Risk": "z"}) == "Wait.." + SUFFIX
+    assert _ev(visible, HIGH) == "Confirm the rating. "
+    assert _ev(visible, {"Risk": "z"}) == "Wait..."
 
 
 def test_a_rule_without_help_shows_plain_text_only() -> None:
