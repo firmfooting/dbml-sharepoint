@@ -42,7 +42,13 @@ from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.styles import TOKENS
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES, NUMBER_TYPES
+from dbml_sharepoint.analysis.typemap import (
+    CALCULATED_TYPES,
+    DATE_TYPES,
+    NUMBER_TYPES,
+    element_type,
+    is_multi_value,
+)
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.env_file import HELP_BASE_URL_KEY, HELP_GUIDES_KEY
 from dbml_sharepoint.model.form_tree import Badge, Banner, Bubble, HeaderTree, LinkChip, Row
@@ -80,6 +86,8 @@ class RenderContext:
     list_path: str | None = None  # the list's web-relative folder; None when a retitle may move it
     # stored number columns that are required and have a default, so are never blank
     filled_numbers: frozenset[str] = frozenset()
+    # lookup column -> whether it holds many values
+    lookups: Mapping[str, bool] = dataclasses.field(default_factory=dict)
     # guide key -> URL; None means help links are off, empty means on with nothing mapped
     help_guides: Mapping[str, str] | None = None
 
@@ -227,8 +235,18 @@ class _Render:
         filled = f"if({blank}, {NEVER}, {ALWAYS})" if blank else ALWAYS
         return _Value(_date_text(day, order), blank or NEVER, filled)
 
-    def value(self, column: str, order: str | None = None) -> _Value:
+    def value(self, column: str, order: str | None = None, *, url: bool = False) -> _Value:
         declared = self.ctx.types[column]
+        if url and column in self.ctx.lookups:
+            if self.ctx.lookups[column]:
+                raise self.refusal(
+                    FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
+                    f"the chip url_column {column} is a multi-value lookup: a link needs one "
+                    "value, so use a single-value lookup.",
+                )
+            # Learn: a lookup field object has lookupId and lookupValue.
+            text = f"[${column}.lookupValue]"
+            return _Value(text, f"{text} == ''", f"{text} != ''")
         if self.is_calculated_date(column):
             return self.date_value(column, order)
         if column in self.ctx.formulas:
@@ -550,7 +568,7 @@ class _Render:
     def chip(self, chip: LinkChip) -> Json:
         hidden = None
         if chip.url_column is not None:
-            v = self.value(chip.url_column)
+            v = self.value(chip.url_column, url=True)
             hidden = v.blank
             href = "=" + " + ".join(self.url_pieces(chip, v.code))
         else:
@@ -892,6 +910,10 @@ def _context(
     }
     return RenderContext(
         entity=entity,
+        lookups={
+            c.name: is_multi_value(c.type) for c in table.columns
+            if c.ref is not None and element_type(c.type) not in members
+        },
         types=types,
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),
         choices={c.name: members[c.type] for c in table.columns if c.type in members},

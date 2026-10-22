@@ -280,6 +280,27 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     assert _attr(_kids(chip[0])[0], "iconName") == "ContactLink"
 
 
+def test_a_lookup_url_column_uses_its_lookup_value_and_hides_when_blank() -> None:
+    ctx = dataclasses.replace(_ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": False})
+    tree = HeaderTree(chips=(
+        LinkChip("Records", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}"),
+    ))
+    chip = _chip_nodes(render_header(tree, ctx))[0]
+    row = {"Meeting.lookupValue": "Board, May"}
+    assert _ev(_style(chip, "display"), {"Meeting.lookupValue": ""}) == "none"
+    assert _ev(_style(chip, "display"), row) == "inline-flex"
+    assert _ev(_attr(chip, "href"), row) == "https://e/?v=Board, May"
+    assert "lookupValue" in json.dumps(chip)
+
+
+def test_a_multi_lookup_url_column_is_refused() -> None:
+    ctx = dataclasses.replace(_ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": True})
+    chip = LinkChip("R", "ContactLink", url_column="Meeting", url_template="{value}")
+    tree = HeaderTree(chips=(chip,))
+    with pytest.raises(HeaderRefusal, match="multi-value lookup"):
+        render_header(tree, ctx)
+
+
 def test_the_chip_is_roomy() -> None:
     chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("Help", "Feedback", url="u"),))))[0]
     assert _style(chip, "padding") == "6px 12px"
