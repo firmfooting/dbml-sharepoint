@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.34.0...v0.35.0) (2026-10-22)
+
+
+### Features
+
+* **form:** a step box for a new item ([#937](https://github.com/firmfooting/dbml-sharepoint/issues/937)) ([bbcc3f9](https://github.com/firmfooting/dbml-sharepoint/commit/bbcc3f97b9020bfb20e47bf0faa36226b45dd20b))
+
 ## [0.34.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.33.0...v0.34.0) (2026-10-22)
 
 
