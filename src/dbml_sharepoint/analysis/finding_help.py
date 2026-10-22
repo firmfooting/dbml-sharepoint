@@ -1232,7 +1232,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "its blank value is not documented, as are lookup, person and "
         "multi-value columns. A date column read where it can be blank is "
         "refused too. A header shows a stored number only when it is "
-        "required and has a default, so it can never be blank."
+        "required and has a default, so it can never be blank. A header "
+        "chip's url_column may be a single-value lookup, but not a "
+        "multi-value one."
     ),
     FindingCode.FORM_FORMULA_RESULT_UNSUPPORTED: (
         "A calculated column's result is not text, number or date, or the "

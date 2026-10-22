@@ -40,7 +40,7 @@ from dbml_sharepoint.model.form_tree import (
     Title,
 )
 from dbml_sharepoint.model.help_guides import HelpGuides
-from dbml_sharepoint.model.mapping_types import FormFormatting, MappingBundle
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, FormFormatting, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
@@ -278,6 +278,35 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     assert _style(chip[1], "display") == "inline-flex"
     assert _kids(chip[0])[1]["txtContent"] == "Open case"
     assert _attr(_kids(chip[0])[0], "iconName") == "ContactLink"
+
+
+def test_a_lookup_url_column_shows_the_text_after_the_raw_id_and_hides_when_blank() -> None:
+    ctx = dataclasses.replace(_ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": False})
+    link = LinkChip("Records", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}")
+    chip = _chip_nodes(render_header(HeaderTree(chips=(link,)), ctx))[0]
+    # Measured on a list form: the raw value is "<id>;#<text>", and exactly '' when blank.
+    assert _attr(chip, "href") == (
+        "='https://e/?v=' + substring(toString([$Meeting]), "
+        "indexOf(toString([$Meeting]), ';#') + 2, 300)"
+    )
+    assert _style(chip, "display") == "=if(toString([$Meeting]) == '', 'none', 'inline-flex')"
+    assert _ev(_style(chip, "display"), {"Meeting": ""}) == "none"
+    assert _ev(_style(chip, "display"), {"Meeting": "1;#Board, May"}) == "inline-flex"
+    assert _ev(_attr(chip, "href"), {"Meeting": "1;#Board, May"}) == "https://e/?v=Board, May"
+
+
+def test_a_multi_lookup_url_column_is_refused() -> None:
+    ctx = dataclasses.replace(_ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": True})
+    chip = LinkChip("R", "ContactLink", url_column="Meeting", url_template="{value}")
+    tree = HeaderTree(chips=(chip,))
+    with pytest.raises(HeaderRefusal, match="multi-value lookup"):
+        render_header(tree, ctx)
+
+
+def test_the_chip_is_roomy() -> None:
+    chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("Help", "Feedback", url="u"),))))[0]
+    assert _style(chip, "padding") == "6px 12px"
+    assert _style(chip, "margin") == "0 0 6px 8px"
 
 
 def test_a_chip_when_hides_it() -> None:
@@ -610,6 +639,21 @@ def _bundle(tree: HeaderTree, extra: list[Column] | None = None) -> tuple[Schema
     )
     base = dataclasses.replace(base, form_trees={"Task": {"header": tree}})
     return schema(task, enums=[enum("task_status", *STATUSES)]), base
+
+
+def test_a_cross_site_reference_url_column_is_not_read_as_a_lookup() -> None:
+    chip = LinkChip("Open", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}")
+    schema_, base = _bundle(HeaderTree(chips=(chip,)), [column("Meeting", "int", ref="Meeting.Id")])
+    mapping = dataclasses.replace(
+        base.mapping, cross_site_reference_columns=[CrossSiteRef("Task", "Meeting")],
+    )
+    resolved, findings = resolve_form_headers(
+        schema_, dataclasses.replace(base, mapping=mapping), SITE,
+    )
+    assert findings == []
+    header = json.dumps(resolved.mapping.form_formatting["Task"].header)
+    assert "[$Meeting]" in header
+    assert "substring" not in header
 
 
 def test_resolve_sets_the_header_and_leaves_the_rest() -> None:

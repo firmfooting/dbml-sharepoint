@@ -45,6 +45,7 @@ const asDate = (v) => {
   return v.ms === null ? new Date(0) : v;
 }; // Unary operators: Date()
 const toUpperCase = (s) => s.toUpperCase(); // Unary operators: toUpperCase
+const indexOf = (s, a) => s.indexOf(a); // Binary operators: indexOf
 const substring = (s, a, b) => s.substring(a, b); // Ternary operators: substring
 const choose = (condition, yes, no) => (condition ? yes : no); // Conditional operator: if
 """
