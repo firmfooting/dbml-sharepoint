@@ -116,7 +116,7 @@ def _row(
     start: date, result: str, likelihood: str | None, consequence: str | None
 ) -> dict[str, object]:
     return {
-        "Kind": "SAQ", "State": "Complete", "Superseded": date_field(None), "Done": _field(start),
+        "Kind": "Item", "State": "Complete", "Superseded": date_field(None), "Done": _field(start),
         "Result": result, "Likelihood": likelihood or "", "Consequence": consequence or "",
         "Done.displayValue": "x", "Superseded.displayValue": "",
     }
