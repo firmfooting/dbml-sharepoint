@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.33.0...v0.34.0) (2026-10-22)
+
+
+### Features
+
+* **form:** roomier header buttons and lookup-filtered record links ([#936](https://github.com/firmfooting/dbml-sharepoint/issues/936)) ([6f2eca7](https://github.com/firmfooting/dbml-sharepoint/commit/6f2eca720d4114b36b2be10b6215ad955f38057a))
+
+
+### Bug Fixes
+
+* **form:** step-guide link name without a doubled stop ([#934](https://github.com/firmfooting/dbml-sharepoint/issues/934)) ([3e21e67](https://github.com/firmfooting/dbml-sharepoint/commit/3e21e67e921f1714f101a1a0f98a64b765e75b4d))
+
 ## [0.33.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.32.0...v0.33.0) (2026-10-21)
 
 
