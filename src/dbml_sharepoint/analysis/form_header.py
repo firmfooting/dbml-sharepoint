@@ -72,6 +72,10 @@ _SEPARATOR = chr(0xB7)  # middle dot; formatter text, so not a console message
 _LITERAL = re.compile(r"('(?:[^']|'')*')")
 _REF = re.compile(r"\[\$([A-Za-z0-9_]+)\]")
 # A quoted literal is matched first so text inside one is left alone.
+_TOKEN = re.compile(
+    r"@(?:me|now|currentField|currentWeb|thumbnail|rowIndex|window|lcid|UIlcid|isSelected)\b",
+    re.IGNORECASE,
+)
 _DATE_BLANK = re.compile(r"'(?:[^']|'')*'|\[\$([A-Za-z0-9_]+)\] (==|!=) ''")
 _TEXT_TYPES = frozenset({"nvarchar", "longtext"})
 # A calculated type is "calculated_" plus the kind of its result; the vocabulary stays in typemap.
@@ -340,9 +344,13 @@ class _Render:
             )
         return quoted(text)
 
-    def plain(self, text: str, where: str, column: str | None = None) -> str:
-        """`text` as a plain txtContent or href, or as a literal when it starts like a formula."""
-        if "[$" in text or "@" in text:
+    def plain(
+        self, text: str, where: str, column: str | None = None, *, href: bool = False
+    ) -> str:
+        """`text` as a plain txtContent or href, or as a literal when it starts like a formula.
+
+        An href may hold an `@` that starts no formatter token (a mailbox address)."""
+        if "[$" in text or ("@" in text and not (href and not _TOKEN.search(text))):
             raise self.refusal(
                 FindingCode.FORM_HEADER_TEXT_UNSUPPORTED, column,
                 f"the {where} text {text!r} contains [$ or @, which the formatting reference "
@@ -590,7 +598,7 @@ class _Render:
             # {value} is not escaped: replaceAll in an href blanks the whole form header (measured).
             href = "=" + " + ".join(self.url_pieces(chip, v.code))
         else:
-            href = self.plain(chip.url or "", "chip url")
+            href = self.plain(chip.url or "", "chip url", href=True)
         attributes = {"href": href, "target": "_blank", "rel": "noopener noreferrer"}
         if chip.title is not None:  # a tooltip is a visible word, so only the author's own
             attributes["title"] = self.plain(chip.title, "chip title")

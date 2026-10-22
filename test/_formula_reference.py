@@ -237,7 +237,10 @@ def _call(name: str, args: tuple[Expr, ...], run: Callable[[Expr], Value], zone:
         case "ISBLANK":
             return first is None
         case "MIN" | "MAX":
-            return (min if name == "MIN" else max)(_numbers(name, values))
+            pick = min if name == "MIN" else max
+            if values and all(isinstance(v, date) for v in values):
+                return pick(v for v in values if isinstance(v, date))  # dates order by day
+            return pick(_numbers(name, values))
         case "ABS" | "INT":
             n = _numbers(name, values)[0]
             return abs(n) if name == "ABS" else math.floor(n)

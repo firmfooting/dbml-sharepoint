@@ -585,9 +585,10 @@ def test_a_single_quote_in_plain_static_text_is_kept() -> None:
 def test_static_text_with_an_embedded_special_marker_is_refused(marker: str) -> None:
     sites = (
         HeaderTree(chips=(LinkChip(marker, "Feedback", url="u"),)),
-        HeaderTree(chips=(LinkChip("a", "Feedback", url=marker),)),
         HeaderTree(rows=(Row((Badge(marker, "muted"),)),)),
     )
+    if marker != "a@b.example":  # a mailbox @ is allowed in a chip url only
+        sites += (HeaderTree(chips=(LinkChip("a", "Feedback", url=marker),)),)
     for tree in sites:
         with pytest.raises(HeaderRefusal) as found:
             _render(tree)
@@ -1392,3 +1393,41 @@ def test_a_rule_text_with_a_quote_is_refused_naming_its_number() -> None:
     with pytest.raises(HeaderRefusal) as found:
         render_header(HeaderTree(banner=Banner(icon="Lightbulb", rules=rules)), _help_ctx())
     assert "banner rule 2" in found.value.finding.message
+
+
+def test_a_calculated_date_that_is_blank_on_some_branches_hides_and_is_never_overdue() -> None:
+    formula = (
+        'IF(OR([Status]="Done",ISBLANK([Due])),"",IF([Status]="Open",[Due]+14,'
+        'IF([Status]="Late",[Due]+21,"")))'
+    )
+    ctx = dataclasses.replace(_ctx(), formulas={**FORMULAS, "Later": formula})
+    item = Bubble("Later", due=True, date_order="dmy", tokens={"default": "good"})
+    tree = HeaderTree(rows=(Row((item,)),))
+    bubble = _kids(_kids(render_header(tree, ctx))[0])[0]
+    past = date_field(_ms(_local(SITE, "2020-01-01", "00:00:00")))
+    ahead = date_field(_ms(_local(SITE, "2030-01-01", "00:00:00")))
+
+    def shown(status: str, due: object) -> tuple[object, object]:
+        row = {"Status": status, "Due": due, "Due.displayValue": "x"}
+        return _ev(_style(bubble, "display"), row), _ev(_attr(bubble, "class"), row)
+
+    for status, due in (("Done", ahead), ("Open", date_field(None)), ("Hold", ahead)):
+        assert shown(status, due)[0] == "none"
+    assert shown("Open", past)[1] == form_header._pill("blocked")[0]
+    assert shown("Late", ahead) == ("inline-block", form_header._pill("good")[0])
+
+
+def test_a_mailbox_at_sign_in_a_chip_url_renders_unchanged() -> None:
+    url = "https://teams.microsoft.com/l/chat/0/0?users=user@example.com"
+    assert _chip_href(LinkChip("Chat", "Feedback", url=url), _ctx()) == url
+
+
+_BAD_URLS = ["https://e/?u=@me", "https://e/?u=a@example.com&t=@now", "https://e/[$Case]"]
+
+
+@pytest.mark.parametrize("url", _BAD_URLS)
+def test_a_formatter_token_or_column_reference_in_a_chip_url_is_still_refused(url: str) -> None:
+    with pytest.raises(HeaderRefusal) as found:
+        _chip_href(LinkChip("Chat", "Feedback", url=url), _ctx())
+    assert found.value.finding.code is FindingCode.FORM_HEADER_TEXT_UNSUPPORTED
+
