@@ -98,6 +98,13 @@ class HeaderRefusal(Exception):  # noqa: N818 -- named for the finding it become
         self.finding = finding
 
 
+def _url_encoded(code: str) -> str:
+    """`code` with the characters that break a query value escaped, % first (Learn's replaceAll)."""
+    for char, escape in (("%", "%25"), ("&", "%26"), ("#", "%23"), ("+", "%2B"), ("?", "%3F")):
+        code = f"replaceAll({code}, '{char}', '{escape}')"
+    return code
+
+
 @dataclass(frozen=True, slots=True)
 class _Value:
     code: str  # the text to show
@@ -570,7 +577,7 @@ class _Render:
         if chip.url_column is not None:
             v = self.value(chip.url_column, url=True)
             hidden = v.blank
-            href = "=" + " + ".join(self.url_pieces(chip, v.code))
+            href = "=" + " + ".join(self.url_pieces(chip, _url_encoded(v.code)))
         else:
             href = self.plain(chip.url or "", "chip url")
         attributes = {"href": href, "target": "_blank", "rel": "noopener noreferrer"}

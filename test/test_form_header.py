@@ -68,6 +68,10 @@ TYPES = {
 }
 FORMULAS = {"Score": SCORE, "Count": "1+1", "Later": "DATE(2026,1,1)"}
 OPEN = Leaf("Status", "eq", "Open")
+CASE = (
+    "replaceAll(replaceAll(replaceAll(replaceAll(replaceAll([$Case], '%', '%25'), "
+    "'&', '%26'), '#', '%23'), '+', '%2B'), '?', '%3F')"
+)
 
 
 def _ctx(zone: str = SITE) -> RenderContext:
@@ -305,6 +309,13 @@ def test_the_chip_is_roomy() -> None:
     chip = _chip_nodes(_render(HeaderTree(chips=(LinkChip("Help", "Feedback", url="u"),))))[0]
     assert _style(chip, "padding") == "6px 12px"
     assert _style(chip, "margin") == "0 0 6px 8px"
+
+
+def test_a_chip_value_is_escaped_for_a_query_string() -> None:
+    link = LinkChip("Open", "ContactLink", url_column="Case", url_template="https://e/?q={value}")
+    chip = _chip_nodes(_render(HeaderTree(chips=(link,))))[0]
+    title = "R&D #1 100% a+b?"
+    assert _ev(_attr(chip, "href"), {"Case": title}) == "https://e/?q=R%26D %231 100%25 a%2Bb%3F"
 
 
 def test_a_chip_when_hides_it() -> None:
@@ -812,7 +823,7 @@ def test_a_web_template_starts_at_the_site_and_list_gives_the_list_path() -> Non
     ctx = dataclasses.replace(_ctx(), list_path="Lists/Tasks")
     href = _chip_href(chip, ctx)
     assert href == (
-        "=@currentWeb + '/Lists/Tasks/History.aspx?FilterField1=Case&FilterValue1=' + [$Case]"
+        "=@currentWeb + '/Lists/Tasks/History.aspx?FilterField1=Case&FilterValue1=' + " + CASE
     )
 
 
@@ -837,17 +848,17 @@ def _list_href(
 
 def test_a_list_token_with_an_internal_name_is_encoded_per_segment() -> None:
     assert _list_href(internal_name="Lists/Tasks #1") == (
-        "=@currentWeb + '/Lists/Tasks%20%231/x?' + [$Case]"
+        "=@currentWeb + '/Lists/Tasks%20%231/x?' + " + CASE
     )
 
 
 def test_a_list_token_without_an_internal_name_is_the_derived_list_path() -> None:
-    assert _list_href() == "=@currentWeb + '/Lists/APP_Task/x?' + [$Case]"
+    assert _list_href() == "=@currentWeb + '/Lists/APP_Task/x?' + " + CASE
 
 
 def test_a_list_token_without_an_internal_name_on_a_library_has_no_lists_prefix() -> None:
     assert _list_href(kind="DocumentLibrary") == (
-        "=@currentWeb + '/APP_Task/x?' + [$Case]"
+        "=@currentWeb + '/APP_Task/x?' + " + CASE
     )
 
 
@@ -869,7 +880,7 @@ def test_a_derived_list_token_is_refused_when_a_title_is_added() -> None:
 
 def test_a_declared_internal_name_survives_a_rename() -> None:
     assert _list_href(internal_name="Lists/Tasks", renamed_from=("Old",)) == (
-        "=@currentWeb + '/Lists/Tasks/x?' + [$Case]"
+        "=@currentWeb + '/Lists/Tasks/x?' + " + CASE
     )
 
 
@@ -974,7 +985,8 @@ def test_a_blank_text_keeps_hide_values_and_a_blank_due_date_is_not_overdue() ->
 def test_a_list_token_percent_encodes_each_segment_and_keeps_the_slashes() -> None:
     chip = LinkChip("H", "Feedback", url_column="Case", url_template="{web}/{list}/x?{value}")
     ctx = dataclasses.replace(_ctx(), list_path="Lists/Cost #Centre 50%")
-    assert _chip_href(chip, ctx) == "=@currentWeb + '/Lists/Cost%20%23Centre%2050%25/x?' + [$Case]"
+    expected = "=@currentWeb + '/Lists/Cost%20%23Centre%2050%25/x?' + " + CASE
+    assert _chip_href(chip, ctx) == expected
 
 
 # --- the help link ------------------------------------------------------------------------------
