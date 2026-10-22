@@ -280,17 +280,19 @@ def test_a_column_chip_is_hidden_while_its_column_is_blank() -> None:
     assert _attr(_kids(chip[0])[0], "iconName") == "ContactLink"
 
 
-def test_a_lookup_url_column_uses_its_lookup_value_and_hides_when_blank() -> None:
+def test_a_lookup_url_column_shows_the_text_after_the_raw_id_and_hides_when_blank() -> None:
     ctx = dataclasses.replace(_ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": False})
-    tree = HeaderTree(chips=(
-        LinkChip("Records", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}"),
-    ))
-    chip = _chip_nodes(render_header(tree, ctx))[0]
-    row = {"Meeting.lookupValue": "Board, May"}
-    assert _ev(_style(chip, "display"), {"Meeting.lookupValue": ""}) == "none"
-    assert _ev(_style(chip, "display"), row) == "inline-flex"
-    assert _ev(_attr(chip, "href"), row) == "https://e/?v=Board, May"
-    assert "lookupValue" in json.dumps(chip)
+    link = LinkChip("Records", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}")
+    chip = _chip_nodes(render_header(HeaderTree(chips=(link,)), ctx))[0]
+    # Measured on a list form: the raw value is "<id>;#<text>", and exactly '' when blank.
+    assert _attr(chip, "href") == (
+        "='https://e/?v=' + substring(toString([$Meeting]), "
+        "indexOf(toString([$Meeting]), ';#') + 2, 300)"
+    )
+    assert _style(chip, "display") == "=if(toString([$Meeting]) == '', 'none', 'inline-flex')"
+    assert _ev(_style(chip, "display"), {"Meeting": ""}) == "none"
+    assert _ev(_style(chip, "display"), {"Meeting": "1;#Board, May"}) == "inline-flex"
+    assert _ev(_attr(chip, "href"), {"Meeting": "1;#Board, May"}) == "https://e/?v=Board, May"
 
 
 def test_a_multi_lookup_url_column_is_refused() -> None:
@@ -299,15 +301,6 @@ def test_a_multi_lookup_url_column_is_refused() -> None:
     tree = HeaderTree(chips=(chip,))
     with pytest.raises(HeaderRefusal, match="multi-value lookup"):
         render_header(tree, ctx)
-
-
-def test_a_lookup_url_column_on_a_library_is_refused_naming_the_probe() -> None:
-    ctx = dataclasses.replace(
-        _ctx(), types={**TYPES, "Meeting": "int"}, lookups={"Meeting": False}, library=True,
-    )
-    chip = LinkChip("R", "ContactLink", url_column="Meeting", url_template="{value}")
-    with pytest.raises(HeaderRefusal, match="library-header-token-probe"):
-        render_header(HeaderTree(chips=(chip,)), ctx)
 
 
 def test_the_chip_is_roomy() -> None:

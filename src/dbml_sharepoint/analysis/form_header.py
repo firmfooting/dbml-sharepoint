@@ -88,7 +88,6 @@ class RenderContext:
     filled_numbers: frozenset[str] = frozenset()
     # lookup column -> whether it holds many values
     lookups: Mapping[str, bool] = dataclasses.field(default_factory=dict)
-    library: bool = False  # a document library: its header does not read .lookupValue
     # guide key -> URL; None means help links are off, empty means on with nothing mapped
     help_guides: Mapping[str, str] | None = None
 
@@ -237,22 +236,16 @@ class _Render:
         return _Value(_date_text(day, order), blank or NEVER, filled)
 
     def lookup_value(self, column: str) -> _Value:
-        if self.ctx.library:
-            raise self.refusal(
-                FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
-                f"the chip url_column {column} is a lookup on a document library, whose form "
-                "header reads .lookupValue as empty (test/manual/library-header-token-probe.js): "
-                "use a lookup on a list.",
-            )
         if self.ctx.lookups[column]:
             raise self.refusal(
                 FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
                 f"the chip url_column {column} is a multi-value lookup: a link needs one "
                 "value, so use a single-value lookup.",
             )
-        # Learn: a lookup field object has lookupId and lookupValue.
-        text = f"[${column}.lookupValue]"
-        return _Value(text, f"{text} == ''", f"{text} != ''")
+        # The raw value is "<id>;#<text>", and exactly '' when blank; .lookupValue is undefined.
+        raw = f"toString([${column}])"
+        text = f"substring({raw}, indexOf({raw}, ';#') + 2, 300)"
+        return _Value(text, f"{raw} == ''", f"{raw} != ''")
 
     def value(self, column: str, order: str | None = None, *, url: bool = False) -> _Value:
         declared = self.ctx.types[column]
@@ -581,6 +574,7 @@ class _Render:
         if chip.url_column is not None:
             v = self.value(chip.url_column, url=True)
             hidden = v.blank
+            # {value} is not escaped: replaceAll in an href blanks the whole form header (measured).
             href = "=" + " + ".join(self.url_pieces(chip, v.code))
         else:
             href = self.plain(chip.url or "", "chip url")
@@ -921,7 +915,6 @@ def _context(
     }
     return RenderContext(
         entity=entity,
-        library=entry.kind == "DocumentLibrary",
         lookups={
             c.name: is_multi_value(c.type) for c in table.columns
             if c.ref is not None and element_type(c.type) not in members
