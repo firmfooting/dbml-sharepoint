@@ -243,25 +243,28 @@ class _Render:
         filled = f"if({blank}, {NEVER}, {ALWAYS})" if blank else ALWAYS
         return _Value(_date_text(day, order), blank or NEVER, filled)
 
-    def value(self, column: str, order: str | None = None, *, url: bool = False) -> _Value:
-        declared = self.ctx.types[column]
-        if url and column in self.ctx.lookups and self.ctx.library:
+    def lookup_value(self, column: str) -> _Value:
+        if self.ctx.library:
             raise self.refusal(
                 FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
                 f"the chip url_column {column} is a lookup on a document library, whose form "
                 "header reads .lookupValue as empty (test/manual/library-header-token-probe.js): "
                 "use a lookup on a list.",
             )
+        if self.ctx.lookups[column]:
+            raise self.refusal(
+                FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
+                f"the chip url_column {column} is a multi-value lookup: a link needs one "
+                "value, so use a single-value lookup.",
+            )
+        # Learn: a lookup field object has lookupId and lookupValue.
+        text = f"[${column}.lookupValue]"
+        return _Value(text, f"{text} == ''", f"{text} != ''")
+
+    def value(self, column: str, order: str | None = None, *, url: bool = False) -> _Value:
+        declared = self.ctx.types[column]
         if url and column in self.ctx.lookups:
-            if self.ctx.lookups[column]:
-                raise self.refusal(
-                    FindingCode.FORM_FORMULA_COLUMN_UNSUPPORTED, column,
-                    f"the chip url_column {column} is a multi-value lookup: a link needs one "
-                    "value, so use a single-value lookup.",
-                )
-            # Learn: a lookup field object has lookupId and lookupValue.
-            text = f"[${column}.lookupValue]"
-            return _Value(text, f"{text} == ''", f"{text} != ''")
+            return self.lookup_value(column)
         if self.is_calculated_date(column):
             return self.date_value(column, order)
         if column in self.ctx.formulas:
