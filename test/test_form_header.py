@@ -1270,6 +1270,7 @@ def test_help_off_renders_no_link_and_reports_one_warning() -> None:
     assert findings[0].severity == "warning"
     assert "DBMLSP_HELP_BASE_URL" in findings[0].message
     assert "DBMLSP_HELP_GUIDES" in findings[0].message
+    assert "banner rules or the new-item step carry help keys" in findings[0].message
     assert "Help for this step" not in json.dumps(resolved.mapping.form_formatting["Task"].header)
 
 
@@ -1372,5 +1373,22 @@ def test_help_off_warns_for_a_new_step_help_key_too() -> None:
 
 def test_a_new_step_text_with_a_quote_is_refused() -> None:
     tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(), new=NewItemStep("it's")))
-    with pytest.raises(HeaderRefusal):
+    with pytest.raises(HeaderRefusal) as found:
         render_header(tree, _help_ctx())
+    assert "banner new" in found.value.finding.message
+    assert "banner rule" not in found.value.finding.message
+
+
+def test_a_new_step_next_with_a_quote_is_refused_naming_the_step() -> None:
+    step = NewItemStep("ok", None, "it's")
+    tree = HeaderTree(banner=Banner(icon="Lightbulb", rules=(), new=step))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(tree, _help_ctx())
+    assert "banner new next" in found.value.finding.message
+
+
+def test_a_rule_text_with_a_quote_is_refused_naming_its_number() -> None:
+    rules = (BannerRule(OPEN, "ok"), BannerRule(Leaf("Risk", "eq", "x"), "it's"))
+    with pytest.raises(HeaderRefusal) as found:
+        render_header(HeaderTree(banner=Banner(icon="Lightbulb", rules=rules)), _help_ctx())
+    assert "banner rule 2" in found.value.finding.message

@@ -758,7 +758,7 @@ class _Render:
 
     def banner(self, banner: Banner) -> Json:
         steps = self.steps(banner)
-        rules = [(c, self.lit(s.text, "banner rule")[1:-1]) for _, c, s in steps]
+        rules = [(c, self.lit(s.text, label)[1:-1]) for label, c, s in steps]
         urls = self.help_urls(steps)
         links = [(c, url) for (c, _), url in zip(rules, urls, strict=True)]
         linked = any(urls)
@@ -772,8 +772,8 @@ class _Render:
         if linked:
             # The link name reads "<text>, opens ...", so a closing stop would double up.
             spoken = _chain(
-                [(c, self.lit(_drop_stop(r.text), "banner rule")[1:-1])
-                 for (c, _), (_, _, r) in zip(rules, steps, strict=True)],
+                [(c, self.lit(_drop_stop(r.text), label)[1:-1])
+                 for (c, _), (label, _, r) in zip(rules, steps, strict=True)],
                 "",
             )
             name = f"={spoken} + {quoted(_HELP_SUFFIX)}"
@@ -816,7 +816,7 @@ class _Render:
         lines: list[Json] = [{"elmType": "span", "style": {"min-width": "0"}, "children": now}]
         if any(r.next for _, _, r in steps):
             follows = [
-                (c, self.lit(r.next or "", "banner rule next")[1:-1]) for _, c, r in steps
+                (c, self.lit(r.next or "", f"{label} next")[1:-1]) for label, c, r in steps
             ]
             visible = _chain([(c, "inline" if t else "none") for c, t in follows], "none")
             lines.append({
@@ -979,8 +979,8 @@ def resolve_form_headers(
     ):
         findings.append(Finding(
             FindingCode.FORM_HELP_OFF,
-            f"banner rules carry help keys, but help links are off: set {HELP_BASE_URL_KEY} "
-            f"and {HELP_GUIDES_KEY} in the env file to render them.",
+            "banner rules or the new-item step carry help keys, but help links are off: "
+            f"set {HELP_BASE_URL_KEY} and {HELP_GUIDES_KEY} in the env file to render them.",
             location=Location(Section.FORM_FORMATTING),
         ))
     formatting = dict(bundle.mapping.form_formatting)
