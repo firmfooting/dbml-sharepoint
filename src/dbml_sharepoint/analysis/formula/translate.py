@@ -13,7 +13,9 @@ its epoch milliseconds, `Number([$D])`, never through the browser-zone date part
 the like), so the day does not depend on the viewer's zone.
 """
 
+import dataclasses
 import math
+import operator
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -55,6 +57,7 @@ _SYSTEM_MOMENTS = frozenset({"Created", "Modified"})
 NEVER = "0 == 1"
 ALWAYS = "0 == 0"
 # Enumeration bound for the values a number or date can take, so a date's range can be proven.
+_ARITHMETIC = {"+": operator.add, "-": operator.sub, "*": operator.mul}
 _MAX_VALUES = 4096  # a work bound on enumeration, not a platform fact
 
 # Refused with the reason, not merely absent from SUPPORTED.
@@ -179,10 +182,19 @@ def _text_of(node: Expr, tr: _Tr, name: str) -> str:
     )
 
 
+def _is_empty(node: Expr) -> bool:
+    return isinstance(node, Text) and node.value == ""
+
+
 def _whole_values(node: Expr) -> set[float] | None:
-    """Every value of a whole-number literal or an IF over such; None for anything else."""
+    """Every value of a whole-number literal, or an IF or +, - and * over such; else None."""
     if isinstance(node, Num):
         return {node.value} if node.value == int(node.value) else None
+    if isinstance(node, Binary) and node.op in _ARITHMETIC:
+        left, right = _whole_values(node.left), _whole_values(node.right)
+        if left is None or right is None or len(left) * len(right) > _MAX_VALUES:
+            return None
+        return {_ARITHMETIC[node.op](x, y) for x in left for y in right}
     if isinstance(node, Call) and node.name == "IF" and len(node.args) == 3:
         branches = (_whole_values(node.args[1]), _whole_values(node.args[2]))
         if branches[0] is not None and branches[1] is not None:
@@ -578,6 +590,15 @@ class _Translator:
             self.scoped(args[1], stack, self.filled | if_true),
             self.scoped(args[2], stack, self.filled | if_false),
         )
+        # A "" beside a date is the blank of a nullable date: the date, failing (blank) there.
+        for blank, other, i in ((yes, no, 1), (no, yes, 2)):
+            if other.kind == "date" and blank.kind == "text" and _is_empty(args[i]):
+                gap = dataclasses.replace(other)
+                if i == 1:
+                    yes, yes_fail = gap, ALWAYS
+                else:
+                    no, no_fail = gap, ALWAYS
+                break
         self.same_kind("IF", [yes, no])
         cond = _cond(first)
         if first.truth is not None:  # both branches were still checked above

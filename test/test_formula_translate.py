@@ -155,6 +155,11 @@ def _refusal(formula: str, result: str = "number") -> tuple[FormulaRefusal, str]
 
 
 # formula, result type, expected code, the function, operator or column the detail must name
+_INDEX = (
+    '(IF([Status]="Open",1,IF([Risk]="Low",2,3))-1)*5+IF([Risk]="High",1,IF([Name]="x",2,3))'
+)
+_F = FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+_OPTIONS = ",".join(f'"o{i}"' for i in range(1, 6))
 REFUSED = [
     ("IF([Qty]>1,", "number", FindingCode.FORM_FORMULA_UNPARSEABLE, "position"),
     ('TRIM("  a   b  ")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "TRIM"),
@@ -195,6 +200,9 @@ REFUSED = [
         "CHOOSE",
     ),
     ('CHOOSE(3,"a","b")', "text", FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED, "CHOOSE"),
+    (f"CHOOSE({_INDEX}*6,{_OPTIONS})", "text", _F, "CHOOSE"),
+    (f"CHOOSE({_INDEX}/1,{_OPTIONS})", "text", _F, "CHOOSE"),
+    ('IF([Status]="Open","",1)', "number", FindingCode.FORM_FORMULA_UNPARSEABLE, "different"),
 ]
 
 
@@ -257,3 +265,13 @@ def test_a_many_argument_extreme_is_refused_as_too_large_before_it_grows(name: s
     # Each step repeats the running code twice, so the size is checked inside the loop.
     refusal, _ = _refusal(f"{name}({','.join(['[Qty]'] * 60)})")
     assert refusal.code is FindingCode.FORM_HEADER_TOO_LARGE
+
+
+def test_a_choose_index_that_is_arithmetic_over_known_values_is_accepted() -> None:
+    index = '(IF([Status]="Open",1,2)-1)*3+IF([Risk]="Low",1,IF([Risk]="High",2,3))'
+    options = ",".join(f'"o{i}"' for i in range(1, 7))
+    expression = _parity(f"CHOOSE({index},{options})", "text")
+    assert _run(expression, {"Status": "Closed", "Risk": "High"}) == "o5"
+    # A column that reads the CHOOSE column translates through it.
+    chained = _parity('"r:"&[Rating]', "text", Rating=f"CHOOSE({index},{options})")
+    assert _run(chained, {"Status": "Open", "Risk": "Low"}) == "r:o1"

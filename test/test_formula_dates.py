@@ -171,6 +171,12 @@ PARITY: dict[str, tuple[str, str, dict[str, str]]] = {
         "date",
         {},
     ),
+    "date result blank on a nested branch": (
+        ('IF(OR([Status]="Closed",ISBLANK([Due])),"",IF([Status]="Open",[Created]+14,'
+        'IF([Status]="Hold",[Created]+21,"")))'),
+        "date",
+        {},
+    ),
     "date result chained": ("[Created]+[W]", "date", {"W": 'IF([Status]="Open",14,30)'}),
 }
 
