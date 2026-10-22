@@ -305,8 +305,8 @@
                     "href": "=if(([$Status] == 'Open'), 'https://hub.fabrikam.net/sites/help/SitePages/Start.aspx', if(([$Status] == 'Late'), '', if(([$Status] == 'Done'), '', '')))",
                     "target": "_blank",
                     "rel": "noopener noreferrer",
-                    "aria-label": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', ''))) + ', opens the step guide in a new tab'",
-                    "title": "=if(([$Status] == 'Open'), 'Start the work.', if(([$Status] == 'Late'), 'Chase the owner.', if(([$Status] == 'Done'), 'Wait for the approver.', ''))) + ', opens the step guide in a new tab'"
+                    "aria-label": "=if(([$Status] == 'Open'), 'Start the work', if(([$Status] == 'Late'), 'Chase the owner', if(([$Status] == 'Done'), 'Wait for the approver', ''))) + ', opens the step guide in a new tab'",
+                    "title": "=if(([$Status] == 'Open'), 'Start the work', if(([$Status] == 'Late'), 'Chase the owner', if(([$Status] == 'Done'), 'Wait for the approver', ''))) + ', opens the step guide in a new tab'"
                   },
                   "children": [
                     {
