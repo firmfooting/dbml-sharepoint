@@ -913,11 +913,15 @@ def _context(
         **system_column_types_for(entry.kind),
         **{c.name: c.type for c in table.columns},
     }
+    # A cross-site reference is expanded into a Choice, not provisioned as a lookup.
+    expanded = {c for e, c in bundle.mapping.cross_site_keys() if e == entity}
+    types.update(dict.fromkeys(expanded, "nvarchar"))
     return RenderContext(
         entity=entity,
         lookups={
             c.name: is_multi_value(c.type) for c in table.columns
-            if c.ref is not None and element_type(c.type) not in members
+            if c.ref is not None and c.name not in expanded
+            and element_type(c.type) not in members
         },
         types=types,
         formulas=bundle.mapping.calculated_formulas.get(entity, {}),

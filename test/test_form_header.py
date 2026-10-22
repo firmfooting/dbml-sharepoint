@@ -40,7 +40,7 @@ from dbml_sharepoint.model.form_tree import (
     Title,
 )
 from dbml_sharepoint.model.help_guides import HelpGuides
-from dbml_sharepoint.model.mapping_types import FormFormatting, MappingBundle
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, FormFormatting, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
@@ -639,6 +639,21 @@ def _bundle(tree: HeaderTree, extra: list[Column] | None = None) -> tuple[Schema
     )
     base = dataclasses.replace(base, form_trees={"Task": {"header": tree}})
     return schema(task, enums=[enum("task_status", *STATUSES)]), base
+
+
+def test_a_cross_site_reference_url_column_is_not_read_as_a_lookup() -> None:
+    chip = LinkChip("Open", "ContactLink", url_column="Meeting", url_template="https://e/?v={value}")
+    schema_, base = _bundle(HeaderTree(chips=(chip,)), [column("Meeting", "int", ref="Meeting.Id")])
+    mapping = dataclasses.replace(
+        base.mapping, cross_site_reference_columns=[CrossSiteRef("Task", "Meeting")],
+    )
+    resolved, findings = resolve_form_headers(
+        schema_, dataclasses.replace(base, mapping=mapping), SITE,
+    )
+    assert findings == []
+    header = json.dumps(resolved.mapping.form_formatting["Task"].header)
+    assert "[$Meeting]" in header
+    assert "substring" not in header
 
 
 def test_resolve_sets_the_header_and_leaves_the_rest() -> None:
