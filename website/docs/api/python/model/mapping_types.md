@@ -91,13 +91,24 @@ Whether `value` is a file-scopes mode, so a caller can narrow a string to it.
 RETIRED_SUFFIX = ' (retired)'
 ```
 
+### `title_display_name`
+
+```python
+def title_display_name(internal_name: str) -> str
+```
+
+Title Case split of a PascalCase name, for names that keep Title Case (Power BI tables).
+
 ### `auto_display_name`
 
 ```python
 def auto_display_name(internal_name: str) -> str
 ```
 
-Human-readable display title derived from a PascalCase internal name.
+Sentence-case display title derived from a PascalCase internal name.
+
+Acronyms, digit words and lower-case words stay as written; `Id` and `Url`
+are upper-cased.
 
 ### `view_url_slug`
 
@@ -851,8 +862,8 @@ produced, which is how a lookup's picked column reaches a flag.
 def display_name_for(self, entity_name: str, column_name: str) -> str
 ```
 
-Display title for a rendered column: override, else auto-split
-PascalCase when mode is auto, else the internal name unchanged.
+Display title for a rendered column: override, else the sentence-case
+split of PascalCase when mode is auto, else the internal name unchanged.
 
 #### `Mapping.entity`
 

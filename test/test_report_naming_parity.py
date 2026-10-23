@@ -15,7 +15,7 @@ from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_n
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 
-PINNED = "39b62f76cbdde06158b9f5aad70a8b43f4db2ba97c0527c4687b4ae7d45c863e"
+PINNED = "57a14e8a283616bfbc3c03133c5c8e1fd45ed8b094a1dbb8cc75ab7dc006a2a5"
 
 
 def _digest() -> str:

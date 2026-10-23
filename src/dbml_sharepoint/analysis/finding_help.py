@@ -970,9 +970,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "wrong report -- it produces a refresh that fails, after the model "
         "has been published. `display_name_mode: auto` reaches it with no "
         "override written at all, because the auto-split turns `SiteUrl` "
-        "into `Site Url`, `SiteName` into `Site Name` and `ListTitle` into "
-        "`List Title`. Give the column a different display title, or rename "
-        "the schema column so the auto-split lands somewhere else."
+        "into `Site URL`, `SiteName` into `Site name` and `ListTitle` into "
+        "`List title`, and the comparison ignores case. Give the column a "
+        "different display title, or rename the schema column so the auto-split "
+        "lands somewhere else."
     ),
     FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS: (
         "A `groups:` entry sets `auto_accept_request_to_join_leave` while "

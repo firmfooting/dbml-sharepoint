@@ -102,7 +102,7 @@
   "field_links": [],
   "form_formatting": [
     {
-      "client_form_custom_formatter": "{\"bodyJSONFormatter\":{\"sections\":[{\"displayname\":\"Project\",\"fields\":[\"Title\",\"Status\",\"Sort Order\"]}]}}",
+      "client_form_custom_formatter": "{\"bodyJSONFormatter\":{\"sections\":[{\"displayname\":\"Project\",\"fields\":[\"Title\",\"Status\",\"Sort order\"]}]}}",
       "list": "APP_Project"
     }
   ],
@@ -183,7 +183,7 @@
           },
           "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
-          "display_title": "Sort Order",
+          "display_title": "Sort order",
           "seal": false,
           "title": "SortOrder",
           "validation_formula": "__dbmlsp_unmanaged__",
@@ -208,7 +208,7 @@
         }
       },
       "validation_described": "(NOT(Status eq \u0027Closed\u0027) OR SortOrder geq 0)",
-      "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort Order]\u003e=0)",
+      "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort order]\u003e=0)",
       "validation_hoisted": [],
       "validation_message": "A closed project needs a non-negative sort order."
     },
@@ -265,7 +265,7 @@
           },
           "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
-          "display_title": "Due Date",
+          "display_title": "Due date",
           "seal": false,
           "title": "DueDate",
           "validation_formula": "__dbmlsp_unmanaged__",

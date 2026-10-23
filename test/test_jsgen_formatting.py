@@ -73,9 +73,9 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
         if lst["title"] == "APP_Risk"
     )
     by_title = {f["title"]: f for f in risk["fields_phase1"]}
-    assert by_title["MatrixVersion"]["display_title"] == "Matrix Version"
+    assert by_title["MatrixVersion"]["display_title"] == "Matrix version"
     assert by_title["RegisterRef"]["display_title"] == "Register Reference"
-    assert by_title["RiskScore"]["display_title"] == "Risk Score"
+    assert by_title["RiskScore"]["display_title"] == "Risk score"
     # CREATE bodies keep the internal name so InternalName stays clean.
     assert by_title["MatrixVersion"]["body"]["Title"] == "MatrixVersion"
 
@@ -91,7 +91,7 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
 
 def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
     """SharePoint resolves formula [refs] against DISPLAY names at write
-    time, so once MatrixVersion displays as "Matrix Version" a formula
+    time, so once MatrixVersion displays as "Matrix version" a formula
     saying [MatrixVersion] fails to create. Authors keep internal names;
     the build rewrites refs to display names, outside string literals only
     (bracket text inside a quoted constant is data)."""
@@ -105,7 +105,7 @@ def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
     formula = next(
         f["body"]["Formula"] for f in risk["fields_phase1"] if f["title"] == "RiskScore"
     )
-    assert "[Matrix Version]" in formula
+    assert "[Matrix version]" in formula
     assert "[Register Reference]" in formula
     # The string literal "[MatrixVersion]" is data and stays verbatim.
     assert '"[MatrixVersion]"' in formula
@@ -475,7 +475,7 @@ def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     assert set(outer) == {"bodyJSONFormatter"}
     body = outer["bodyJSONFormatter"]
     assert isinstance(body, dict)                       # object, not string
-    assert body["sections"][0]["fields"] == ["Title", "Review Date"]
+    assert body["sections"][0]["fields"] == ["Title", "Review date"]
 
 
 def test_template_phase_3d_compare_is_encoding_agnostic(tmp_path: Path) -> None:
@@ -564,7 +564,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     # admits blanks, and internal names are rewritten to display names,
     # which is what SP resolves against.
     assert risk["validation_formula"] == (
-        '=OR([Status]<>"Closed",NOT(ISBLANK([Closure Note])))'
+        '=OR([Status]<>"Closed",NOT(ISBLANK([Closure note])))'
     )
     assert risk["validation_message"] == "Closing needs a closure note."
 

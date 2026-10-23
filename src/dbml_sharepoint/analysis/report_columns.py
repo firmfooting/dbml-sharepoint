@@ -12,8 +12,9 @@ runs `Table.RenameColumns` to give every schema column its display title.
 Renaming a column onto a name the table already carries is an error in M, so
 the collision does not produce a wrong report -- it produces a refresh that
 fails, after the operator has published the model. `display_name_mode: auto`
-reaches it with no override at all: `auto_display_name` splits `SiteUrl` to
-`Site Url`, `SiteName` to `Site Name` and `ListTitle` to `List Title`.
+reaches it with no override at all: `auto_display_name` turns `SiteUrl` into
+`Site URL`, which collides case-insensitively with `Site Url`, and `SiteName`
+and `ListTitle` into `Site name` and `List title`, which collide the same way.
 """
 
 from typing import assert_never
