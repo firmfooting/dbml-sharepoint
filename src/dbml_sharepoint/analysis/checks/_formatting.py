@@ -56,6 +56,37 @@ def _nested(spec: Mapping[str, object], path: tuple[str, ...]) -> dict[object, o
     return node if isinstance(node, dict) else None
 
 
+def _color_by_source_findings(
+    spec: Mapping[str, object], types_by_col: dict[str, str], ctx: str, at: Location,
+) -> list[Finding]:
+    """A data-bar color_by compares ANOTHER column's [$field] against quoted
+    keys. A Yes/No source never equals a quoted key, and a multi-value one is
+    an array that never equals one either."""
+    color_by = _nested(spec, ("color_by",))
+    source = color_by.get("field") if color_by is not None else None
+    if color_by is None or not isinstance(source, str) or color_by.get("calculated") is True:
+        return []
+    source_type = types_by_col.get(source, "")
+    if is_multi_value(source_type):
+        code, kind, advice = (
+            FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
+            "a multi-value column", "a scalar column",
+        )
+    elif is_boolean(source_type):
+        code, kind, advice = (
+            FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
+            "a Yes/No column", "a Choice column",
+        )
+    else:
+        return []
+    return [Finding(
+        code,
+        f"{ctx}: color_by.field {source!r} is {kind} that equals none of the quoted "
+        f"map keys, so every bar takes the fallback colour. Colour by {advice} instead.",
+        location=at,
+    )]
+
+
 def _keys_outside(block: Mapping[object, object], members: set[str]) -> list[object]:
     """The block's map keys that are not `members`, in a stable order.
 
@@ -333,6 +364,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at,
                     ))
                     refused = True
+            findings.extend(_color_by_source_findings(spec, types_by_col, ctx, at))
             # color_by's [$field] existence is already covered by the
             # formatter_field_refs check on the expanded output; here we
             # mirror the severity rule for the TRANSLATION map when the

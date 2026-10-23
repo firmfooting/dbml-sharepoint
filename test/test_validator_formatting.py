@@ -1157,3 +1157,47 @@ def test_implicit_docicon_is_readable_only_in_library_formatters(
         field = generated["lists"][0]["fields_phase1"][0]
         assert field["title"] == "Label"
         assert "DocIcon" in (field.get("custom_formatter") or "")
+
+
+@pytest.mark.parametrize(("source_type", "code"), [
+    ("boolean", FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING),
+    ("Rating[]", FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL),
+])
+def test_a_data_bar_color_by_source_that_matches_no_quoted_key_is_refused(
+    tmp_path: Path, source_type: str, code: FindingCode,
+) -> None:
+    """Through [$Field] from another column a Yes/No value equals no quoted key,
+    and neither does a multi-value value, even a single member."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=f"""
+            enum Rating {{
+              good
+              low
+            }}
+            Table Risk {{
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Score int
+              Source {source_type}
+            }}
+        """,
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Score:
+                  { style: data-bar, max: 25,
+                    color_by: { field: Source, map: { good: good } } }
+        """),
+    )
+    finding = only(validate_against_mapping(schema, bundle), code)
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Score",
+    )
+    kind = "a Yes/No column" if source_type == "boolean" else "a multi-value column"
+    advice = "a Choice column" if source_type == "boolean" else "a scalar column"
+    assert finding.message == (
+        f"column_formatting[Risk].Score: color_by.field 'Source' is {kind} that equals "
+        f"none of the quoted map keys, so every bar takes the fallback colour. "
+        f"Colour by {advice} instead."
+    )
