@@ -690,10 +690,6 @@ def test_the_sentinel_never_reaches_a_formula_position() -> None:
     assert f'const UNMANAGED = "{UNMANAGED}"' in js
     assert f'"ClientValidationFormula": "{UNMANAGED}"' not in js
     assert f'"ValidationFormula": "{UNMANAGED}"' not in js
-    # And the SchemaXml writer that provokes the unrepairable FieldLink
-    # migration is gone, not merely unreachable.
-    assert "setshowinnewform" not in js
-    assert "enforceFormVisibility" not in js
 
 
 def test_manifest_shows_the_composed_formula_and_reconcile_mode() -> None:

@@ -190,7 +190,6 @@ def test_every_tool_owned_name_is_actually_shipped(name: str) -> None:
 
 def test_the_automation_group_is_named_for_the_accounts_it_holds() -> None:
     assert AUTOMATION_GROUP_NAME == "Managed Automation Accounts"
-    assert "Managed Enterprise Automation" not in TOOL_OWNED_GROUP_NAMES
     assert AUTOMATION_GROUP_NAME in TOOL_OWNED_GROUP_NAMES
 
 

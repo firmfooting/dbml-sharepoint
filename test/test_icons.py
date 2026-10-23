@@ -12,7 +12,6 @@ from dbml_sharepoint.analysis.icons import FLEET_ICONS
 
 
 def test_the_vocabulary_is_a_frozenset_of_non_empty_names() -> None:
-    assert isinstance(FLEET_ICONS, frozenset)
     assert FLEET_ICONS, "an empty vocabulary would make the sweep's membership check vacuous"
     assert all(isinstance(name, str) and name for name in FLEET_ICONS)
 

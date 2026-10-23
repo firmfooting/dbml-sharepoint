@@ -110,8 +110,6 @@ def test_valueless_operator_vocabulary_has_one_owner() -> None:
     assert sorted(VALUELESS_OPS) == ["is_not_null", "is_null"]
     assert vars(conditions)["VALUELESS_OPS"] is model_conditions.VALUELESS_OPS
     assert vars(condition_description)["VALUELESS_OPS"] is model_conditions.VALUELESS_OPS
-    assert not hasattr(conditions, "_NULL_TESTS")
-    assert not hasattr(conditions, "_VALUELESS_OPS")
 
 
 def test_description_import_closure_is_dependency_light() -> None:

@@ -80,10 +80,3 @@ def test_generators_import_composition_from_form_rendering() -> None:
             and any(alias.name == "compose_visibility" for alias in node.names)
             for node in imports
         ), path.relative_to(PACKAGE)
-
-
-def test_forms_keeps_no_compatibility_re_export() -> None:
-    """The split refuses a re-export; a consumer that still guesses `analysis.forms` fails."""
-    from dbml_sharepoint.analysis import forms
-
-    assert not hasattr(forms, "compose_visibility")

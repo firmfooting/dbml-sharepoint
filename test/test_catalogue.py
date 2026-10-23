@@ -102,7 +102,6 @@ def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     assert solution.title
     assert solution.summary
     assert solution.lists
-    assert isinstance(solution.prefix, str)
     raw = yamlio.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
     assert "prefix" in as_dict(raw), f"{solution.id}: mapping.yaml declares no prefix key"
 

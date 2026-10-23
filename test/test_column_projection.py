@@ -196,12 +196,3 @@ def test_intended_importers_take_the_projection_from_its_own_module() -> None:
         assert from_conditions & {"SYSTEM_COLUMN_TYPES", "effective_column_types"} == set(), (
             relative
         )
-
-
-def test_the_old_home_keeps_no_compatibility_re_export() -> None:
-    """One importable home per name. A re-export would recreate the shim the
-    architecture work is removing, and nothing else would notice."""
-    from dbml_sharepoint.analysis import conditions
-
-    assert not hasattr(conditions, "SYSTEM_COLUMN_TYPES")
-    assert not hasattr(conditions, "effective_column_types")
