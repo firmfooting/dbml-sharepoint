@@ -1077,6 +1077,22 @@ def test_a_calculated_formula_comes_back_in_internal_names() -> None:
     assert decoded.calculated_formulas == {"OwnerUpper": "=UPPER([RiskOwner])"}
 
 
+
+def test_a_formula_reads_back_against_the_titles_the_site_holds() -> None:
+    """A site deployed under an older naming rule, or with an override,
+    stores the formula against the title it shows, not the one auto mode
+    would derive today."""
+    decoded = _decode(
+        field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
+        field_xml(
+            "Calculated",
+            "<Formula>=UPPER([Risk Owner])</Formula>"
+            '<FieldRefs><FieldRef Name="RiskOwner" /></FieldRefs>',
+            StaticName="OwnerUpper", DisplayName="Owner Upper", ResultType="Text",
+        ),
+    )
+    assert decoded.calculated_formulas == {"OwnerUpper": "=UPPER([RiskOwner])"}
+
 # --- Writing ---------------------------------------------------------------
 
 

@@ -243,6 +243,7 @@ def decode_list(
     # know a referenced column's type before they can rebuild a condition
     # that mentions it, and a condition may name a column declared later.
     targets = lookup_targets or {}
+    titles = {raw.internal_name: raw.display_name for raw in kept}
     for raw in kept:
         col_type = _column_type(raw, entity, enums, unrecovered, targets)
         if col_type is None:
@@ -258,7 +259,7 @@ def decode_list(
         ))
         if raw.indexed:
             decoded.indexes.append(raw.internal_name)
-        _recover_mapping(raw, decoded, types, entity, unrecovered)
+        _recover_mapping(raw, decoded, types, titles, entity, unrecovered)
 
     _recover_display_names(kept, decoded)
     _recover_renames(kept, decoded, unrecovered)
@@ -468,6 +469,7 @@ def _recover_mapping(
     raw: RawField,
     decoded: DecodedEntity,
     types: dict[str, str],
+    titles: dict[str, str],
     entity: str,
     unrecovered: list[Unrecovered],
 ) -> None:
@@ -475,7 +477,7 @@ def _recover_mapping(
     subject = f"{entity}.{raw.internal_name}"
 
     if raw.formula:
-        decoded.calculated_formulas[raw.internal_name] = _internal_formula(raw, types)
+        decoded.calculated_formulas[raw.internal_name] = _internal_formula(raw, types, titles)
 
     if raw.custom_formatter:
         spec, _ = invert_column_formatting(raw.custom_formatter, subject)
@@ -533,7 +535,7 @@ def _recover_mapping(
                 ))
 
 
-def _internal_formula(raw: RawField, types: dict[str, str]) -> str:
+def _internal_formula(raw: RawField, types: dict[str, str], titles: dict[str, str]) -> str:
     """A stored `<Formula>` with its references back in internal names.
 
     SharePoint resolves calculated-formula references against DISPLAY names
@@ -541,11 +543,11 @@ def _internal_formula(raw: RawField, types: dict[str, str]) -> str:
     why the build rewrites them on the way out. The mapping's
     `calculated_formulas` are authored in internal names, so the same
     `column_refs.rewrite_formula_refs` runs backwards here, using the
-    `<FieldRefs>` the element carries rather than a guess at how a title
-    was spelled.
+    `<FieldRefs>` the element carries and the live titles, rather than a
+    guess at how a title was spelled.
     """
     display_to_internal = {
-        auto_display_name(name): name for name in types if name in raw.field_refs
+        titles[name]: name for name in types if name in raw.field_refs
     }
     return rewrite_formula_refs(raw.formula or "", display_to_internal)
 

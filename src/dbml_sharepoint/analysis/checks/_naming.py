@@ -138,7 +138,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for col_name in sorted(
                 rendered_columns(table, xcols, vc.projected_columns(table.name)),
             ):
-                # Casefolded: SharePoint and Power BI compare names case-insensitively.
+                # Casefolded to fail closed: a title that differs only by case is no new name.
                 title = bundle.mapping.display_name_for(table.name, col_name)
                 resolved.setdefault(title.casefold(), (title, []))[1].append(col_name)
             for display_title, sources in resolved.values():
