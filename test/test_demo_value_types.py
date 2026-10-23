@@ -32,6 +32,7 @@ def _demo(**values: object) -> list[Finding]:
     ({"Active": "no"}, FindingCode.DEMO_BOOLEAN_VALUE_INVALID),
     ({"Qty": True}, FindingCode.DEMO_NUMBER_VALUE_INVALID),
     ({"Cost": "1.5"}, FindingCode.DEMO_NUMBER_VALUE_INVALID),
+    ({"Qty": 1.5}, FindingCode.DEMO_NUMBER_VALUE_INVALID),
     ({"Code": 800}, FindingCode.DEMO_TEXT_VALUE_INVALID),
 ])
 def test_a_wrongly_typed_demo_value_is_refused(
@@ -41,7 +42,7 @@ def test_a_wrongly_typed_demo_value_is_refused(
 
 
 def test_correctly_typed_demo_values_pass() -> None:
-    assert _demo(Active=False, Qty=3, Cost=1.5, Code="0800") == []
+    assert _demo(Active=False, Qty=3.0, Cost=1.5, Code="0800") == []
 
 
 def test_a_null_demo_value_still_loads() -> None:
