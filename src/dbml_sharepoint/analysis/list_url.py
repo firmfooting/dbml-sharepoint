@@ -21,11 +21,12 @@ def list_url_path(declared: str) -> str:
         raise MappingValueError(
             f"list URL {declared!r} holds a %XX escape; write the decoded form",
         )
+    # Checked before strip(), which would trim a stray leading or trailing \n or \t.
+    if any(category(c) == "Cc" for c in declared):
+        raise MappingValueError(f"list URL {declared!r} holds a control character")
     text = declared.strip().replace("\\", "/")
     if "|" in text:
         raise MappingValueError(f"list URL {declared!r} holds '|', which the key splits on")
-    if any(category(c) == "Cc" for c in text):
-        raise MappingValueError(f"list URL {declared!r} holds a control character")
     parts = [p for p in text.split("/") if p]
     if not parts:
         raise MappingValueError("a list URL is empty")
