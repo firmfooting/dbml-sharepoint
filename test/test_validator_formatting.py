@@ -1166,8 +1166,8 @@ def test_implicit_docicon_is_readable_only_in_library_formatters(
 def test_a_data_bar_color_by_source_that_matches_no_quoted_key_is_refused(
     tmp_path: Path, source_type: str, code: FindingCode,
 ) -> None:
-    """Measured: through [$Field] from another column a Yes/No value equals no
-    quoted key and a multi-value value, even a single member, equals none either."""
+    """Through [$Field] from another column a Yes/No value equals no quoted key,
+    and neither does a multi-value value, even a single member."""
     schema, bundle = pack(
         tmp_path,
         dbml=f"""
@@ -1194,4 +1194,10 @@ def test_a_data_bar_color_by_source_that_matches_no_quoted_key_is_refused(
     assert finding.location == Location(
         Section.COLUMN_FORMATTING, entity="Risk", column="Score",
     )
-    assert "color_by.field 'Source'" in finding.message
+    kind = "a Yes/No column" if source_type == "boolean" else "a multi-value column"
+    advice = "a Choice column" if source_type == "boolean" else "a scalar column"
+    assert finding.message == (
+        f"column_formatting[Risk].Score: color_by.field 'Source' is {kind} that equals "
+        f"none of the quoted map keys, so every bar takes the fallback colour. "
+        f"Colour by {advice} instead."
+    )
