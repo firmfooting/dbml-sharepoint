@@ -1140,7 +1140,7 @@
           ? `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`
           : `LIST_URL_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
       } else {
-        finding(2, key, 'PASS', `'${title}' has the declared immutable root '${actual}'.`);
+        finding(2, key, 'PASS', `'${title}' has the immutable root: declared '${expected}', live '${actual}'.`);
       }
     }
 
