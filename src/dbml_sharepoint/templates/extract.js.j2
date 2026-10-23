@@ -59,7 +59,7 @@
   // Resolved by path, then addressed by GUID for every subsequent read, so
   // one lookup settles which list this is and nothing after it can drift.
   // `id` is set for a site read, whose enumeration already named each list.
-  async function readList(path, id = null) {
+  async function readList(path, id) {
     const select = 'Id,Title,Description,BaseTemplate,ItemCount';
     const meta = await getOne(
       id ? `web/lists(guid'${sharePointGuid(id, 'list')}')?$select=${select}` : listByPathUrl(path, `&$select=${select}`),

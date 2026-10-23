@@ -598,7 +598,7 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.DEMO_NUMBER_VALUE_INVALID: (
         "A demo row's value for a number column is not an int or float "
-        "(a boolean does not count)."
+        "(a boolean does not count), or a fraction on an int column."
     ),
     FindingCode.DEMO_TEXT_VALUE_INVALID: (
         "A demo row's value for a text column is not a string. An "

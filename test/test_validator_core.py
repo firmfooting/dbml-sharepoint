@@ -318,6 +318,14 @@ def test_reserved_author_is_error() -> None:
         Section.SCHEMA, entity="PaperRegister", column="Author",
     )
 
+@pytest.mark.parametrize("name", [
+    "Version", "version", "_UIVersionString", "FileLeafRef", "ContentType",
+])
+def test_a_column_named_for_a_builtin_list_field_is_error(name: str) -> None:
+    schema = make_schema(make_table("PaperRegister", make_column(name, "nvarchar")))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
+    assert finding.severity == "error"
+
 @pytest.mark.parametrize(
     "column_type",
     [

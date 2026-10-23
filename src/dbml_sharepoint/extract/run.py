@@ -113,16 +113,14 @@ def entity_name_for(title: str) -> str:
 
     Singular is not attempted. "Risks" becomes `Risks`, because guessing at
     English plurals produces `Statu` from `Status` and a wrong name is
-    harder to notice than an ugly one. `--entity` overrides this.
+    harder to notice than an ugly one. `--entity` overrides this. A title that
+    leaves no name, or one starting with a digit, takes a `List` prefix so a
+    whole-site extract never stops on it; two titles landing on one name are
+    still refused by the caller.
     """
     words = re.split(r"[^A-Za-z0-9]+", title)
     name = "".join(word[:1].upper() + word[1:] for word in words if word)
-    if not name or not name[0].isalpha():
-        raise SourceError(
-            f"cannot derive a table name from the list title {title!r}. "
-            "Pass --entity to name it.",
-        )
-    return name
+    return name if name[:1].isalpha() else "List" + name
 
 
 def project_name_for(entities: list[str]) -> str:

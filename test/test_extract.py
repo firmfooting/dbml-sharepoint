@@ -98,6 +98,7 @@ from dbml_sharepoint.generators.extractgen import (
     download_name,
     generate_extract_js,
     site_download_name,
+    site_slug,
     slug_from_path,
 )
 from dbml_sharepoint.jsonvalue import JsonValue
@@ -1132,8 +1133,16 @@ def test_a_table_name_is_derived_without_guessing_at_plurals() -> None:
     assert entity_name_for("Risks") == "Risks"
     assert entity_name_for("PT_Project") == "PTProject"
     assert entity_name_for("Risk register") == "RiskRegister"
-    with pytest.raises(SourceError, match="cannot derive a table name"):
-        entity_name_for("2026")
+    assert entity_name_for("2026 Plans") == "List2026Plans"
+    assert entity_name_for("\u9805\u76ee") == "List"
+
+
+def test_an_empty_site_slug_downloads_into_the_fallback_folder() -> None:
+    """A tenant root web has no path segment, so the folder falls back."""
+    slug = site_slug("https://example.sharepoint.com")
+    assert folder_for(slug) == Path(FALLBACK_FOLDER)
+    source = Path(FALLBACK_FOLDER) / "sharepoint-extract.json"
+    assert folder_for_download(source, slug) == source.parent
 
 
 def test_the_project_name_comes_from_the_first_entity() -> None:
