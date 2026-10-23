@@ -8,6 +8,7 @@ from _model import RollbackArgs
 from _packs import pack
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.reporting.plan import build_plans
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import load_solution
@@ -17,6 +18,7 @@ from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.errors import MappingValueError
+from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.release import load_release
 from dbml_sharepoint.wizard import TemplateChoice, _read_facts
 
@@ -250,6 +252,45 @@ def test_explicit_root_cannot_collide_with_an_implicit_library(
         pack(tmp_path, dbml=schema, mapping=mapping)
 
 
+@pytest.mark.parametrize(("kind", "template", "first", "second", "clashes"), [
+    # Punctuation is dropped from a derived root and a space is kept.
+    ("List", 100, "Risk-Log", "RiskLog", True),
+    ("List", 100, "Risk Log", "RiskLog", False),
+    ("List", 100, "Risk.Log", "Risk&Log", True),
+    ("DocumentLibrary", 101, "Docs-A", "DocsA", True),
+    ("DocumentLibrary", 101, "Docs A", "DocsA", False),
+    # An accent is outside the allow-list, so no root is predicted for it.
+    ("List", 100, "Caf\u00e9", "Caf", False),
+])
+def test_implicit_title_derived_roots_are_compared(
+    tmp_path: Path, kind: str, template: int, first: str, second: str, clashes: bool,
+) -> None:
+    mapping = f"""
+        entities:
+          First: {{kind: {kind}, base_template: {template}, site_role: default, title: "{first}"}}
+          Second: {{kind: {kind}, base_template: {template}, site_role: default, title: "{second}"}}
+    """
+    schema = table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE)
+    if clashes:
+        with pytest.raises(MappingValueError, match="duplicate list or library root"):
+            pack(tmp_path, dbml=schema, mapping=mapping)
+    else:
+        pack(tmp_path, dbml=schema, mapping=mapping)
+
+
+def test_an_explicit_list_root_cannot_collide_with_an_implicit_one(tmp_path: Path) -> None:
+    mapping = """
+        entities:
+          First: {kind: List, base_template: 100, site_role: default, title: Risk-Log}
+          Second:
+            {kind: List, base_template: 100, site_role: default, title: Other,
+             internal_name: Lists/RiskLog}
+    """
+    with pytest.raises(MappingValueError, match="duplicate list or library root"):
+        pack(tmp_path, dbml=table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE),
+             mapping=mapping)
+
+
 def test_manifest_renders_rename_sources_that_carry_no_implicit_flag(tmp_path: Path) -> None:
     """The `implicit` key exists only on an implicit source; its absence must not fail the build."""
     schema, bundle = pack(
@@ -288,3 +329,21 @@ def test_manifest_renders_rename_sources_that_carry_no_implicit_flag(tmp_path: P
     assert len(rows) == 2
     noted = ["an implicit source" in x for x in rows]
     assert noted == [False, True]
+
+
+@pytest.mark.parametrize(("title", "is_library", "folder"), [
+    ("Risk-Log", False, "Lists/RiskLog"),
+    ("Risk Log", False, "Lists/Risk Log"),
+    ("Docs-A", True, "DocsA"),
+    ("Café", False, "Lists/Café"),
+])
+def test_list_folder_agrees_with_the_derived_root(
+    title: str, is_library: bool, folder: str,
+) -> None:
+    """The deploy sends a Title and no Url, so the folder is the derived root."""
+    entity = EntityMapping(
+        name="X",
+        kind="DocumentLibrary" if is_library else "List",
+        base_template=101 if is_library else 100, site_role="default",
+    )
+    assert list_folder(entity, title) == folder

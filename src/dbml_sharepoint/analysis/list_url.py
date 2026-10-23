@@ -46,14 +46,38 @@ def server_relative(site_path: str, declared: str) -> str:
     return "/" + "/".join(p for p in (site, list_url_path(declared)) if p)
 
 
+# Conservative allow-list (list-identity title-derived URL finding); other
+# characters predict no root.
+_KEPT_IN_DERIVED_ROOT = re.compile(r"[A-Za-z0-9_ ]")
+_DROPPED_FROM_DERIVED_ROOT = frozenset("-.&'()+,~!@$=;")
+
+
+def implicit_list_root(title: str, *, is_library: bool) -> str | None:
+    """The root SharePoint derives from a title when no `internal_name` is
+    declared, or None when the title holds a character outside that allow-list."""
+    kept = []
+    for char in title:
+        if _KEPT_IN_DERIVED_ROOT.fullmatch(char):
+            kept.append(char)
+        elif char not in _DROPPED_FROM_DERIVED_ROOT:
+            return None
+    name = "".join(kept)
+    if not name.strip():
+        return None
+    return name if is_library else f"Lists/{name}"
+
+
 def list_folder(entity: EntityMapping | None, list_title: str) -> str:
     """The web-relative folder a list or library lives in, decoded, no edge slashes.
 
-    The declared URL when there is one; else the title, behind ``Lists/`` for a
-    list and bare for a library. One home for deploy-side item links and form headers.
+    The declared URL when there is one; else the root SharePoint derives from the
+    title (the deploy sends a Title and no Url), or the raw title when that root
+    is not predictable. One home for deploy-side item links and form headers.
     """
     if entity is not None and entity.internal_name:
         return list_url_path(entity.internal_name)
-    if entity is not None and entity.is_library:
-        return list_title
-    return f"Lists/{list_title}"
+    is_library = entity is not None and entity.is_library
+    derived = implicit_list_root(list_title, is_library=is_library)
+    if derived is not None:
+        return derived
+    return list_title if is_library else f"Lists/{list_title}"

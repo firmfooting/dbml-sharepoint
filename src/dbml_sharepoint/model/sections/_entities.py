@@ -6,7 +6,11 @@ from collections.abc import Mapping
 
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
-from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
+from dbml_sharepoint.analysis.list_url import (
+    implicit_list_root,
+    list_url_key,
+    list_url_path,
+)
 from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -95,10 +99,7 @@ def read(sc: SectionContext) -> LoadedFields:
         if key in titles:
             raise MappingValueError(f"entities: duplicate deployed title {title!r}")
         titles.add(key)
-        # Simple title-derived roots are used by the shipped library fixtures.
-        root = entity.internal_name or (
-            title if entity.is_library and re.fullmatch(r"[A-Za-z0-9_]+", title) else None
-        )
+        root = entity.internal_name or implicit_list_root(title, is_library=entity.is_library)
         if root:
             key = (entity.site_role, list_url_key(root))
             if key in roots:
