@@ -519,7 +519,16 @@
       }
     }
 
-    for (const [title, internalName, baseTemplate, isLibrary] of (TARGETS.library_roots || [])) {
+    async function rootHolder(titles, expected) {
+      for (const old of titles) {
+        if (knownTitles && !knownTitles.has(String(old).toLowerCase())) continue;
+        const row = await probeGet(`web/lists/getbytitle('${odataName(old)}')/RootFolder?$select=ServerRelativeUrl`);
+        if (row.ok && typeof row.d.ServerRelativeUrl === 'string'
+            && row.d.ServerRelativeUrl.toLowerCase() === expected.toLowerCase()) return old;
+      }
+      return null;
+    }
+    for (const [title, internalName, baseTemplate, isLibrary, previousTitles] of (TARGETS.library_roots || [])) {
       const key = `library_root:${title}`;
       const shape = listShapes.get(title);
       const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
@@ -527,7 +536,12 @@
           (shape && !shape.ok && shape.status === 404)) {
         const occupants = await Promise.all(['Folder', 'File'].map(kind =>
           probeGet(`web/Get${kind}ByServerRelativeUrl('${odataName(expected)}')?$select=Exists,ServerRelativeUrl`)));
-        if (occupants.some(row => row.ok && row.d.Exists === true)) {
+        // A list still under a previous title holds the root and keeps it through the rename.
+        const holder = occupants.some(row => row.ok && row.d.Exists === true)
+          ? await rootHolder(previousTitles || [], expected) : null;
+        if (holder) {
+          finding(2, key, 'PASS', `'${expected}' is held by '${holder}', the previous title of '${title}', and stays with it through the rename.`);
+        } else if (occupants.some(row => row.ok && row.d.Exists === true)) {
           finding(2, key, 'BLOCKED', `LIBRARY_ROOT_OCCUPIED: '${expected}' already exists under another title or object.`);
         } else if (occupants.every(row => (!row.ok && row.status === 404) ||
             (row.ok && row.d.Exists === false))) {
