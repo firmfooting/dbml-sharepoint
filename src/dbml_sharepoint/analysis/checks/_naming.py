@@ -134,14 +134,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             if table.name not in bundle.mapping.entities:
                 continue
             xcols = cross_site_by_entity.get(table.name, set())
-            resolved: dict[str, list[str]] = {}
+            resolved: dict[str, tuple[str, list[str]]] = {}
             for col_name in sorted(
                 rendered_columns(table, xcols, vc.projected_columns(table.name)),
             ):
-                resolved.setdefault(
-                    bundle.mapping.display_name_for(table.name, col_name), [],
-                ).append(col_name)
-            for display_title, sources in resolved.items():
+                # Casefolded: SharePoint and Power BI compare names case-insensitively.
+                title = bundle.mapping.display_name_for(table.name, col_name)
+                resolved.setdefault(title.casefold(), (title, []))[1].append(col_name)
+            for display_title, sources in resolved.values():
                 if len(sources) > 1:
                     findings.append(Finding(
                         FindingCode.DUPLICATE_DISPLAY_TITLE,
@@ -149,15 +149,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{display_title!r} for columns {', '.join(sources)}.",
                         location=Location(Section.DISPLAY_NAMES, entity=table.name),
                     ))
-            # The rule above compares the schema's columns with each other and
-            # stops there, so it cannot see the columns the REPORTING PACK adds
-            # to the same table. Those arrive before `Table.RenameColumns`
-            # runs, and renaming a column onto a name the table already carries
-            # is an error in M: the model publishes and the refresh fails.
-            #
-            # `display_name_mode: auto` reaches this with no override at all --
-            # `auto_display_name` splits `SiteUrl` to `Site Url`, `SiteName` to
-            # `Site Name` and `ListTitle` to `List Title`.
+            # The rule above cannot see the columns the REPORTING PACK adds to the same
+            # table, and renaming onto an existing name fails the refresh in M. `auto` mode
+            # reaches this with no override: `SiteUrl` becomes `Site URL`, which the
+            # case-insensitive compare below matches to the reserved `Site Url`.
             reporting = bundle.mapping.reporting
             person_columns: tuple[str, ...] = ()
             if reporting.users_table:
@@ -177,17 +172,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                 person_columns=person_columns,
                 library=library_entity.is_library,
             ))
-            # `resolved` above is the SharePoint FIELD titles, which is what
-            # the duplicate rule needs and not what this one does. The query
-            # renames the columns it produced, and for a URL, a person or a
-            # lookup those are not the declared name: a `hyperlink` column
-            # `Site` reaches the report as `SiteUrl` and renames to `Site
-            # Url`, which this rule read as `Site` and let through, while the
-            # same column named `SiteUrl` reaches it as `SiteUrlUrl` and was
-            # refused for a collision the report does not have (#202).
-            #
-            # `report_output_names` is the derivation `reportgen` renames off,
-            # so the set compared here cannot drift from the set renamed there.
+            reserved_folded = {r.casefold() for r in reserved}
+            # `resolved` holds FIELD titles; this rule needs the titles the query renames to,
+            # and for a URL, person or lookup those are not the declared name: a `hyperlink`
+            # `Site` reaches the report as `SiteUrl`, `SiteUrl` as `SiteUrlUrl` (#202).
+            # `report_output_names` is what `reportgen` renames off, so the sets cannot drift.
             enum_names = set(vc.enum_by_name)
             for col in table.columns:
                 # A cross-site ref is expanded to a Choice + URL pair, so the
@@ -214,7 +203,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     display_title = bundle.mapping.display_name_for(
                         table.name, out_name,
                     )
-                    if display_title not in reserved:
+                    if display_title.casefold() not in reserved_folded:
                         continue
                     # Naming the declared column only when it differs, so the
                     # common case does not read 'Status, the report column

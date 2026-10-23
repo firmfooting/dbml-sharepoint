@@ -48,10 +48,8 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/analysis/checks/_naming.py": [
         "2917ad695e66",
-        "5a2bdebaac7b",
         "7009ffac6456",
         "732a2fe45c73",
-        "7ae4ebd7335d",
         "86fe0a611708",
         "a5a82cbfb162",
     ],

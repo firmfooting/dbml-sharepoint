@@ -825,7 +825,7 @@ def test_powerquery_renames_columns_to_display_titles() -> None:
     queries = generate_powerquery(schema, bundle, "default")
     project = queries["APP_Project.pq"]
     assert "RenamedForModel = Table.RenameColumns(" in project
-    assert '{"SortOrder", "Sort Order"}' in project
+    assert '{"SortOrder", "Sort order"}' in project
     assert '{"ItemURL", "Item URL"}' in project
     assert "MissingField.Ignore" in project
     assert project.rstrip().endswith("RenamedForModel")
@@ -1516,7 +1516,7 @@ def test_display_names_still_reach_a_multi_value_column() -> None:
     schema, bundle = _multi_value(display_names=True)
     q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
 
-    assert '{"AuditEvents", "Audit Events"}' in q
+    assert '{"AuditEvents", "Audit events"}' in q
 
 
 def test_reporting_md_states_the_multi_value_landing_contract() -> None:

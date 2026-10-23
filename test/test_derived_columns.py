@@ -654,7 +654,7 @@ def test_a_derived_column_takes_a_display_title_like_any_other() -> None:
         )],
         display_name_mode="auto",
     )
-    assert '{"IsOpen", "Is Open"}' in _risk_query(bundle)
+    assert '{"IsOpen", "Is open"}' in _risk_query(bundle)
 
 
 def test_the_derived_steps_run_after_the_keys_and_before_the_rename() -> None:

@@ -139,7 +139,7 @@
       [
         [
           "SortOrder",
-          "Sort Order"
+          "Sort order"
         ]
       ]
     ],
@@ -148,7 +148,7 @@
       [
         [
           "DueDate",
-          "Due Date"
+          "Due date"
         ]
       ]
     ]

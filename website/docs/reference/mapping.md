@@ -884,6 +884,13 @@ PascalCase names, with per-column overrides. Overrides earn their place
 where splitting PascalCase reads badly (`TripKm`, `WWCCExpiry`,
 `DocumentUrl`) rather than as a second naming scheme.
 
+Derived titles are in sentence case: `DueDate` becomes `Due date` and
+`RiskIDNumber` becomes `Risk ID number`. Acronyms and words with digits
+keep their case, `Id` and `Url` are upper-cased (`ListId` becomes
+`List ID`), and an override always wins. `title_display_name` in
+`dbml_sharepoint.model.mapping_types` gives the Title Case form for a
+caller that needs it.
+
 Settle titles before the first deploy. Renaming a deployed column is not
 harmful, but a title changed in the SharePoint UI instead of here is drift:
 the next re-paste detects it, reverts it and reports having done so.

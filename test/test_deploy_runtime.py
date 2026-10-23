@@ -4219,8 +4219,8 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
         ], f"the create parts and their renames did not interleave: {batch['ops']}"
         assert [Json.loads(op["body"].text)["Title"] for op in batch["ops"]] == [
             "Note",
-            "EscalationReason", "Escalation Reason",
-            "ResolvedOnSite", "Resolved On Site",
+            "EscalationReason", "Escalation reason",
+            "ResolvedOnSite", "Resolved on site",
         ], (
             "a create did not carry its internal name, or a rename its "
             f"display title: {batch['ops']}"
@@ -4322,7 +4322,7 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
         lambda c: c["method"] == "POST"
         and "getbyinternalnameortitle('EscalationReason')" in c["url"]
         and c["body"].value is not None
-        and Json.loads(c["body"].text).get("Title") == "Escalation Reason",
+        and Json.loads(c["body"].text).get("Title") == "Escalation reason",
     )
     assert renamed < created, (
         "the calculated column was created before the column its formula "
@@ -4330,7 +4330,7 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
     )
     # The reference is by DISPLAY name, which is what makes the rename above a
     # precondition rather than a tidy-up.
-    assert Json.loads(calls[created]["body"].text)["Formula"] == '=[Escalation Reason]&""'
+    assert Json.loads(calls[created]["body"].text)["Formula"] == '=[Escalation reason]&""'
 
     result = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))

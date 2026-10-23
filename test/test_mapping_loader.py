@@ -1194,19 +1194,36 @@ def test_display_names_unknown_mode_rejected(tmp_path: Path) -> None:
     _refuses(tmp_path / "m.yaml", MappingValueError, r"display_names\.mode")
 
 
-def test_auto_display_name_splits_pascal_case() -> None:
+def test_auto_display_name_is_sentence_case() -> None:
     from dbml_sharepoint.model.mapping_types import auto_display_name
 
     cases = {
-        "ResidualRiskRating": "Residual Risk Rating",
-        "ToleranceEndDate": "Tolerance End Date",
-        "RiskIDNumber": "Risk ID Number",   # acronym run keeps its last capital
-        "DueDate": "Due Date",
+        "ResidualRiskRating": "Residual risk rating",
+        "ToleranceEndDate": "Tolerance end date",
+        "RiskIDNumber": "Risk ID number",   # acronym run keeps its last capital
+        "DueDate": "Due date",
+        "RaisedAtTier": "Raised at tier",
+        "SSASubmittedDate": "SSA submitted date",
         "Status": "Status",                 # single word unchanged
-        "Take5Assessment": "Take5 Assessment",  # digit→upper boundary
+        "Title": "Title",
+        "Take5Assessment": "Take5 assessment",  # digit word stays as written
+        "SourceRef": "Source ref",          # no acronym list beyond Id and Url
+        "ListId": "List ID",
+        "MapUrl": "Map URL",
+        "IdNumber": "ID number",            # Id and Url are upper-cased in first place too
+        "SiteUrl": "Site URL",
+        "ItemId": "Item ID",
     }
     for internal, display in cases.items():
         assert auto_display_name(internal) == display, internal
+
+
+def test_title_display_name_keeps_title_case() -> None:
+    from dbml_sharepoint.model.mapping_types import title_display_name
+
+    assert title_display_name("RiskIDNumber") == "Risk ID Number"
+    assert title_display_name("DueDate") == "Due Date"
+    assert title_display_name("SiteUrl") == "Site Url"
 
 
 # --- Column formatting ------------------------------------------------------
@@ -2369,7 +2386,7 @@ def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> N
     assert "Route" not in section.columns
     # 3. The suffix composes with the auto name AND with an explicit override.
     assert mapping.display_name_for("Board", "OperationsStatus") == (
-        "Operations Status (retired)"
+        "Operations status (retired)"
     )
     assert mapping.display_name_for("Board", "OperationsNote") == (
         "Ops commentary (retired)"

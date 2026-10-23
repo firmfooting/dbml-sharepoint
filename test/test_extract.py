@@ -557,7 +557,7 @@ def test_an_unsupported_field_quotes_its_element() -> None:
     (field_xml("Number"), "number-precision"),
     (field_xml("Choice", choices("x"), FillInChoice="TRUE"), "fill-in-choice"),
     (field_xml("User", UserSelectionMode="1"), "user-selection-mode"),
-    (field_xml("Text", StaticName="Risk_x0020_Owner", DisplayName="Risk Owner"),
+    (field_xml("Text", StaticName="Risk_x0020_Owner", DisplayName="Risk owner"),
      "internal-name"),
     (field_xml("Calculated", ResultType="Text"), "calculated-formula-missing"),
 ])
@@ -594,7 +594,7 @@ def test_a_column_renamed_after_creation_reports_its_fossil_name(xml: str) -> No
     field_xml("Text", StaticName="Due_x002f_reviewdate",
               DisplayName="Due/review date"),
     field_xml("Text", StaticName="Status", DisplayName="Status "),
-    field_xml("Text", StaticName="Risk_x0020_Owner", DisplayName="Risk Owner"),
+    field_xml("Text", StaticName="Risk_x0020_Owner", DisplayName="Risk owner"),
 ])
 def test_a_current_internal_name_is_not_reported_as_renamed(xml: str) -> None:
     """Whitespace and case differences are SharePoint's own, not a rename."""
@@ -1027,7 +1027,7 @@ def test_a_description_with_a_newline_does_not_break_the_dbml(tmp_path: Path) ->
 
 
 def test_display_names_are_declared_only_when_a_title_differs() -> None:
-    """`mode: auto` re-derives "Risk Owner" from `RiskOwner`, so a list whose
+    """`mode: auto` re-derives "Risk owner" from `RiskOwner`, so a list whose
     titles all equal their internal names needs no section at all, and
     declaring one would have the deploy rewrite every title to the value it
     already holds.
@@ -1045,7 +1045,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     ))
 
     derived = _decode(
-        field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
+        field_xml("Text", StaticName="RiskOwner", DisplayName="Risk owner"),
     )
     assert derived.display_overrides == {}
     assert as_dict(yamlio.safe_load(
@@ -1066,12 +1066,12 @@ def test_a_calculated_formula_comes_back_in_internal_names() -> None:
     what it resolves them against when the field is created. The mapping is
     authored in internal names, so the rewrite runs backwards here."""
     decoded = _decode(
-        field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
+        field_xml("Text", StaticName="RiskOwner", DisplayName="Risk owner"),
         field_xml(
             "Calculated",
-            "<Formula>=UPPER([Risk Owner])</Formula>"
+            "<Formula>=UPPER([Risk owner])</Formula>"
             '<FieldRefs><FieldRef Name="RiskOwner" /></FieldRefs>',
-            StaticName="OwnerUpper", DisplayName="Owner Upper", ResultType="Text",
+            StaticName="OwnerUpper", DisplayName="Owner upper", ResultType="Text",
         ),
     )
     assert decoded.calculated_formulas == {"OwnerUpper": "=UPPER([RiskOwner])"}

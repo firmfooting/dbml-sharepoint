@@ -1263,15 +1263,31 @@ def test_display_names_must_be_unique_and_bounded() -> None:
         display_name_mode="auto",
         display_name_overrides={
             "Project": {
-                "Status": "Sort Order",   # collides with auto(SortOrder)
+                "Status": "Sort order",   # collides with auto(SortOrder)
                 "DueDate": "",            # empty
             },
         },
     )
     # The colliding title and the column that resolved to nothing: neither is
     # in the location, which is the whole entity.
-    assert "'Sort Order'" in only(errors, FindingCode.DUPLICATE_DISPLAY_TITLE).message
+    assert "'Sort order'" in only(errors, FindingCode.DUPLICATE_DISPLAY_TITLE).message
     assert "'DueDate'" in only(errors, FindingCode.EMPTY_DISPLAY_TITLE).message
+
+
+def test_display_titles_that_differ_only_in_case_are_duplicates() -> None:
+    errors = _project_errors(
+        display_name_mode="auto",
+        display_name_overrides={"Project": {"Status": "SORT ORDER"}},
+    )
+    only(errors, FindingCode.DUPLICATE_DISPLAY_TITLE)
+
+
+def test_a_reporting_column_title_is_matched_ignoring_case() -> None:
+    errors = _project_errors(
+        display_name_mode="auto",
+        display_name_overrides={"Project": {"Status": "site name"}},
+    )
+    only(errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN)
 
 
 def test_a_display_title_may_not_be_a_reporting_column() -> None:
@@ -1308,7 +1324,8 @@ def test_a_display_title_may_not_be_a_reporting_column() -> None:
 def test_the_auto_split_alone_reaches_a_reporting_column() -> None:
     """No override needed, which is why the rule cannot be documentation.
 
-    MEASURED: `auto_display_name` splits `SiteUrl` to `Site Url`. A schema
+    MEASURED: `auto_display_name` turns `SiteUrl` into `Site URL`, which the
+    case-insensitive check matches to the reserved `Site Url`. A schema
     that happens to name a column `SiteUrl`, under the auto mode this
     project recommends, produces the collision with nothing written in
     `display_names:` at all.
@@ -1325,7 +1342,7 @@ def test_the_auto_split_alone_reaches_a_reporting_column() -> None:
         f for f in validate_against_mapping(schema, bundle)
         if f.severity == "error"
     ]
-    assert "'Site Url'" in only(
+    assert "'Site URL'" in only(
         errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
     ).message
 
@@ -1529,7 +1546,7 @@ def test_a_projected_column_is_checked_for_a_report_collision() -> None:
         f for f in validate_against_mapping(schema, bundle)
         if f.severity == "error"
     ]
-    assert "'List Title'" in only(
+    assert "'List title'" in only(
         errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
     ).message
 

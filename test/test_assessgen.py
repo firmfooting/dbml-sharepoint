@@ -1067,13 +1067,13 @@ def test_assess_reports_a_column_renamed_on_the_site() -> None:
         declared,
         harness=_fields_harness([
             {"InternalName": "DueDate", "Title": "Renamed By Hand"},
-            {"InternalName": "SortOrder", "Title": "Sort Order"},
+            {"InternalName": "SortOrder", "Title": "Sort order"},
         ]),
     )
     drifted = _display_findings(summary)
     assert drifted, f"a renamed column drew no finding: {summary['findings']}"
     detail = " ".join(f["detail"].text for f in drifted)
-    assert "DueDate" in detail and "Renamed By Hand" in detail and '"Due Date"' in detail
+    assert "DueDate" in detail and "Renamed By Hand" in detail and '"Due date"' in detail
     # Named with BOTH values: a finding saying only that something differs
     # sends the reader back to the site to find out what.
     assert "SortOrder" not in detail, (
@@ -1092,8 +1092,8 @@ def test_assess_is_quiet_when_every_display_title_matches() -> None:
     summary = _run_assess(
         declared,
         harness=_fields_harness([
-            {"InternalName": "DueDate", "Title": "Due Date"},
-            {"InternalName": "SortOrder", "Title": "Sort Order"},
+            {"InternalName": "DueDate", "Title": "Due date"},
+            {"InternalName": "SortOrder", "Title": "Sort order"},
         ]),
     )
     assert _display_findings(summary) == []
@@ -1120,7 +1120,7 @@ def test_a_full_column_page_names_the_display_titles_it_could_not_compare(
     summary = _run_assess(
         _declared_descriptions(),
         harness=_fields_harness([
-            {"InternalName": "DueDate", "Title": "Due Date"},
+            {"InternalName": "DueDate", "Title": "Due date"},
             *_filler_columns(_COLUMN_PAGE_SIZE - 1),
         ]),
     )

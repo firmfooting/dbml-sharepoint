@@ -1252,7 +1252,7 @@ def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
 
     assert "## Retired columns" in md
     assert (
-        "| APP_Board | OperationsStatus | Operations Status (retired) | "
+        "| APP_Board | OperationsStatus | Operations status (retired) | "
         "2026-09-01 | SiteServicesStatus | Merged into Site Services |"
     ) in md
     assert "Never delete them from the DBML" in md

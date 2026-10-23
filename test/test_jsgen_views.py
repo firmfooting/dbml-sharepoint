@@ -232,7 +232,7 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     sized = next(view for view in schema_json["views"] if view["title"] == "Sized")
-    assert sized["widths"] == {"Title": 240, "Due Date": 150}
+    assert sized["widths"] == {"Title": 240, "Due date": 150}
 
 
 def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> None:
@@ -389,13 +389,13 @@ def test_retired_columns_leave_views_but_stay_deployed() -> None:
     # Present on the Edit and Display forms, absent from New: [$ID] is empty
     # only while the item is being created.
     assert ops["client_validation_formula"] == "=if([$ID] != '', 'true', 'false')"
-    assert ops["display_title"] == "Operations Status (retired)"
+    assert ops["display_title"] == "Operations status (retired)"
     live = next(
         f for f in board["fields_phase1"] if f["title"] == "SiteServicesStatus"
     )
     # `declared` reconcile: a live column of the same list is untouched.
     assert live["client_validation_formula"] == UNMANAGED
-    assert live["display_title"] == "Site Services Status"
+    assert live["display_title"] == "Site services status"
 
     view = next(v for v in schema_json["views"] if v["title"] == "Heat grid")
     assert view["view_fields"] == ["BoardDate", "SiteServicesStatus"]

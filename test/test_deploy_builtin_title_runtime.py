@@ -233,7 +233,7 @@ def _run_adopted(
     section = renames + textwrap.dedent(_FORMULA)
     js = _declared_deploy_js(tmp_path, section, extra_lines=("DueDate calculated_date",))
     if display_names:
-        assert '"display_title": "Due Date"' in js, "DueDate was not given a display title"
+        assert '"display_title": "Due date"' in js, "DueDate was not given a display title"
     script = harness + "\n" + js.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"

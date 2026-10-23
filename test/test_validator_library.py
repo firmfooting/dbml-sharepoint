@@ -538,7 +538,7 @@ def test_a_library_display_title_may_not_be_a_file_report_column() -> None:
         validate_against_mapping(schema, as_library),
         FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
     )
-    assert "'File Name'" in finding.message
+    assert "'File name'" in finding.message
     as_list = make_bundle(
         entities={"Docs": _docs("List", 100)}, display_name_mode="auto",
     )

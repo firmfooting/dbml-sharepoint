@@ -93,7 +93,7 @@ def test_a_named_library_is_deployed_and_navigated_under_its_own_title(tmp_path:
     reviewer = next(
         f for f in built["lists"][0]["fields_phase1"] if f["title"] == "ReviewBody"
     )
-    assert reviewer["display_title"] == "Review Body"
+    assert reviewer["display_title"] == "Review body"
     assert not reviewer["body"].get("Required", False)
     assert reviewer["body"]["FieldTypeKind"] == 6
     assert reviewer["body"]["Choices"]["results"] == ["Audit Committee", "Executive Committee"]

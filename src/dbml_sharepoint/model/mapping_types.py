@@ -94,9 +94,25 @@ _DISPLAY_WORD_BREAK = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z
 RETIRED_SUFFIX = " (retired)"
 
 
-def auto_display_name(internal_name: str) -> str:
-    """Human-readable display title derived from a PascalCase internal name."""
+_PLAIN_CAPITALISED = re.compile(r"[A-Z][a-z]+")
+_UPPER_WORDS = {"Id": "ID", "Url": "URL"}
+
+
+def title_display_name(internal_name: str) -> str:
+    """Title Case split of a PascalCase name, for names that keep Title Case (Power BI tables)."""
     return _DISPLAY_WORD_BREAK.sub(" ", internal_name)
+
+
+def auto_display_name(internal_name: str) -> str:
+    """Sentence-case display title derived from a PascalCase internal name.
+
+    Acronyms, digit words and lower-case words stay as written; `Id` and `Url`
+    are upper-cased."""
+    words = title_display_name(internal_name).split(" ")
+    return " ".join(
+        _UPPER_WORDS.get(w) or (w.lower() if i and _PLAIN_CAPITALISED.fullmatch(w) else w)
+        for i, w in enumerate(words)
+    )
 
 
 def view_url_slug(title: str) -> str:
@@ -968,8 +984,8 @@ class Mapping:
     item_security_overrides: dict[str, ItemSecurityOverride] = field(default_factory=dict)
 
     def display_name_for(self, entity_name: str, column_name: str) -> str:
-        """Display title for a rendered column: override, else auto-split
-        PascalCase when mode is auto, else the internal name unchanged."""
+        """Display title for a rendered column: override, else the sentence-case
+        split of PascalCase when mode is auto, else the internal name unchanged."""
         if self.display_name_mode != "auto":
             return column_name
         override = self.display_name_overrides.get(entity_name, {}).get(column_name)
