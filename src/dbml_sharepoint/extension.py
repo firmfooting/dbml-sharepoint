@@ -2,6 +2,7 @@
 """The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.
 Validation issues are reported with `analysis.findings.Finding`."""
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -25,7 +26,7 @@ class SiteContext:
     site_role: str
     release: Release | None
     output_dir: Path
-    extension_args: dict[str, JsonValue] = field(default_factory=dict)
+    extension_args: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass

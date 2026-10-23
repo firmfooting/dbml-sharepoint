@@ -1,5 +1,6 @@
 """The shape of decoded JSON and YAML, and guards that type it where it enters."""
 
+import math
 from typing import TypeGuard
 
 # Concrete containers only: a tuple, bytes, range or custom mapping is not decoded JSON.
@@ -19,7 +20,9 @@ def is_object_list(value: object) -> TypeGuard[list[object]]:
 
 def is_json_value(value: object) -> TypeGuard[JsonValue]:
     """Whether ``value`` is JSON all the way down, with string keys in every object."""
-    if value is None or isinstance(value, str | bool | int | float):
+    if isinstance(value, float):
+        return math.isfinite(value)  # NaN and the infinities have no JSON spelling
+    if value is None or isinstance(value, str | bool | int):
         return True
     if is_object_list(value):
         return all(is_json_value(item) for item in value)

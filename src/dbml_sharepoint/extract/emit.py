@@ -166,16 +166,15 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
 
     # Which sections wrap their columns in a `columns:` key and which do not
     # is read from `mapping_loader`, the thing that actually parses them.
-    entities_by_name = {entity.name: entity for entity in extraction.entities}
     for key, nest, declared_by_entity in (
         ("calculated_formulas", False,
-         {name: e.calculated_formulas for name, e in entities_by_name.items()}),
+         {e.name: e.calculated_formulas for e in extraction.entities}),
         ("column_formatting", False,
-         {name: e.column_formatting for name, e in entities_by_name.items()}),
+         {e.name: e.column_formatting for e in extraction.entities}),
         ("form_visibility", True,
-         {name: e.form_visibility for name, e in entities_by_name.items()}),
+         {e.name: e.form_visibility for e in extraction.entities}),
         ("column_validation", True,
-         {name: e.column_validation for name, e in entities_by_name.items()}),
+         {e.name: e.column_validation for e in extraction.entities}),
     ):
         section = _per_entity(declared_by_entity, nest=nest)
         if section:
