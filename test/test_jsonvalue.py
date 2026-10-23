@@ -23,7 +23,10 @@ def test_json_data_is_accepted_all_the_way_down(value: object) -> None:
 
 @pytest.mark.parametrize(
     "value",
-    [dt.date(2026, 1, 1), {1: "a"}, ["a", dt.date(2026, 1, 1)], {"a": {2: "b"}}, {"a"}, b"x"],
+    [
+        dt.date(2026, 1, 1), float("nan"), float("inf"), [float("-inf")], {"a": float("nan")},
+        {1: "a"}, ["a", dt.date(2026, 1, 1)], {"a": {2: "b"}}, {"a"}, b"x",
+    ],
 )
 def test_anything_else_is_refused_wherever_it_sits(value: object) -> None:
     assert not is_json_value(value)

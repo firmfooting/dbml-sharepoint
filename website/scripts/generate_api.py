@@ -102,6 +102,7 @@ MODULES: list[tuple[str, str]] = [
     ("cli", "Packaging: the command-line interface"),
     ("catalogue", "Packaging: the shipped solution templates, as data"),
     ("wizard", "Packaging: the interactive template wizard"),
+    ("jsonvalue", "the shape of decoded JSON and the guards that type it"),
 ]
 
 # Sub-package sidebar categories, in layout order.

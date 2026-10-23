@@ -20,7 +20,7 @@ class SiteContext:
     site_role: str
     release: dbml_sharepoint.model.release.Release | None
     output_dir: Path
-    extension_args: dict[str, dbml_sharepoint.jsonvalue.JsonValue] = field(default_factory=dict)
+    extension_args: collections.abc.Mapping[str, object] = field(default_factory=dict)
 ```
 
 Per-build inputs hooks need: site URL, site role, release
