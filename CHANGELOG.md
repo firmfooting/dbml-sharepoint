@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.35.0...v0.36.0) (2026-10-23)
+
+
+### Features
+
+* **forms:** header formulas accept a date-or-blank IF and an arithmetic CHOOSE index ([#940](https://github.com/firmfooting/dbml-sharepoint/issues/940)) ([2d7c753](https://github.com/firmfooting/dbml-sharepoint/commit/2d7c7533658bc8032ced1add9af8629c7565563e))
+
+
+### Performance Improvements
+
+* **forms:** smaller header translations for CHOOSE comparisons and small-set date offsets ([#941](https://github.com/firmfooting/dbml-sharepoint/issues/941)) ([830ef60](https://github.com/firmfooting/dbml-sharepoint/commit/830ef60c31deba802e86428ab64908b8f2ebf5f6))
+
 ## [0.35.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.34.0...v0.35.0) (2026-10-22)
 
 
