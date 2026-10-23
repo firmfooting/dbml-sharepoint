@@ -31,8 +31,10 @@ from dbml_sharepoint.analysis.formula import zone
 from dbml_sharepoint.analysis.formula.civil import (
     END_DAY,
     FIRST_DAY,
+    clamped_parts,
     days_of,
     from_day_number,
+    month_index_of,
     parts_of,
 )
 from dbml_sharepoint.analysis.formula.functions import function_names
@@ -280,6 +282,33 @@ def test_days_of_carries_month_and_day_overflow() -> None:
     got = evaluate_rows("=" + days_of("[$Y]", "[$M]", "[$D]"), rows, browser_tz="UTC", now=_NOW)
     for (y, m, d), value in zip(cases, got, strict=True):
         assert value == _calendar(y, m, d), (y, m, d)
+
+
+@node
+def test_every_day_of_the_range_has_its_month_index() -> None:
+    days = list(range(FIRST_DAY, END_DAY))
+    rows = [{"V": d} for d in days]
+    got = evaluate_rows("=" + month_index_of("[$V]"), rows, browser_tz="UTC", now=_NOW)
+    wrong = [d for d, g in zip(days, got, strict=True) if g != _month_index(from_day_number(d))]
+    assert not wrong, wrong[:3]
+
+
+def _month_index(day: date) -> int:
+    return 12 * day.year + day.month - 3
+
+
+@node
+def test_the_clamped_parts_are_the_day_or_the_months_last_day() -> None:
+    cases = [(i, d) for i in range(12 * 1904, 12 * 2100, 7) for d in (1, 28, 29, 30, 31)]
+    cases += [(12 * y - 1, d) for y in range(1905, 2100) for d in (28, 29, 30)]  # every February
+    rows = [{"I": i, "D": d} for i, d in cases]
+    parts = clamped_parts("[$I]", "[$D]")
+    columns = [evaluate_rows("=" + p, rows, browser_tz="UTC", now=_NOW) for p in parts]
+    got = list(zip(*columns, strict=True))
+    for (index, day), found in zip(cases, got, strict=True):
+        year, month = divmod(index + 2, 12)
+        last = calendar.monthrange(year, month + 1)[1]
+        assert found == (year, month + 1, min(day, last)), (index, day)
 
 
 def test_a_date_with_too_many_possible_arguments_is_refused_quickly() -> None:
@@ -818,3 +847,23 @@ def test_min_of_a_date_and_a_number_is_refused() -> None:
 def test_a_date_that_can_be_blank_may_only_be_returned(formula: str) -> None:
     refusal = _refusal(formula, "date" if "YEAR" not in formula else "number")
     assert refusal.code is FindingCode.FORM_FORMULA_FUNCTION_UNSUPPORTED
+
+
+_SAME = "DATE(YEAR([Due]),MONTH([Due]),DAY([Due]))"
+
+
+@node
+def test_whole_days_added_and_taken_back_are_exact_without_a_calendar_conversion() -> None:
+    formula = f"IF(ISBLANK([Due]),0,({_SAME}+30000)-{_SAME})"
+    expression = _translate(formula)
+    row = {"Due": _day_ms(date(2026, 3, 5))}
+    assert evaluate_rows(expression, [row], browser_tz="UTC", now=_NOW) == [30000]
+
+
+@node
+def test_a_date_moved_out_of_range_is_still_blank_where_it_is_shown() -> None:
+    expression = _translate(f'IF(ISBLANK([Due]),"",{_SAME}+30000)', "date")
+    rows = [{"Due": _day_ms(date(2026, 3, 5))}, {"Due": _day_ms(date(2026, 3, 5))}]
+    assert evaluate_rows(expression, rows[:1], browser_tz="UTC", now=_NOW) == [""]
+    near = _translate(f'IF(ISBLANK([Due]),"",{_SAME}+30)', "date")
+    assert evaluate_rows(near, rows[:1], browser_tz="UTC", now=_NOW) != [""]

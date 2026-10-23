@@ -28,8 +28,12 @@ from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.formula.civil import (
     END_DAY,
     FIRST_DAY,
-    days_of,
+    clamped_parts,
+    days_of_index,
     from_day_number,
+    month_index,
+    month_index_of,
+    outside_months,
     parts_of,
     to_day_number,
 )
@@ -81,6 +85,8 @@ class Translation:
     result: Literal["text", "number", "date"]
     day: str = ""
     blank: str = ""
+    # A date's year, month and day, when they are cheaper to write than from the day number.
+    parts: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +116,14 @@ class _Tr:
     moment: bool = False
     instant: str = ""
     truth: bool | None = None  # the value of a condition built from constants alone
+    # YEAR or MONTH of a day number (its code) plus the months added to it, when that is all it is.
+    civil: tuple[str, str, str] | None = None
+    # How a date was built, so a clamp to the month's end can name its parts: ("DATE", x, months,
+    # day, index) for DATE(YEAR(x), MONTH(x) + months, day) and ("END", x, months, "", index) for
+    # that date's month end, where day is "DAY" for DAY(x) and "1" for a literal 1.
+    built: tuple[str, str, str, str, str] | None = None
+    parts: tuple[str, str, str] | None = None  # year, month, day of a date made by a month clamp
+    checked: bool = False  # a date whose own range check is already among the failure conditions
     nullable: bool = False  # a date that is blank on some branch; only an IF may carry it up
 
     @property
@@ -394,8 +408,15 @@ class _Translator:
         }
         values = _combine(a, b, ops[op]) if op in ops else None
         whole = op in ops and a.whole and b.whole
+        civil = None
+        if op == "+" and a.civil and a.civil[0] == "MONTH" and b.civil is None:
+            civil = ("MONTH", a.civil[1], f"{a.civil[2]} + {y}" if a.civil[2] else y)
         return _Tr(
-            f"pow({x}, {y})" if op == "^" else f"({x} {op} {y})", "number", values, whole
+            f"pow({x}, {y})" if op == "^" else f"({x} {op} {y})",
+            "number",
+            values,
+            whole,
+            civil=civil,
         )
 
     def date_sum(self, op: str, a: _Tr, b: _Tr) -> _Tr:
@@ -410,7 +431,13 @@ class _Translator:
             _unsupported(op, "which a header reproduces only for a date and a whole number of days")
         values = _combine(moment, count, lambda p, q: p + sign * q)
         # The day number drops the time of day, so a display is exact; a comparison is not.
-        return _Tr(f"({moment.code} {op} {count.code})", "date", values, instant=moment.instant)
+        code = f"({moment.code} {op} {count.code})"
+        built = None
+        if op == "-" and count.values == frozenset({1}) and moment.built:
+            kind, x, months, day, index = moment.built
+            if kind == "DATE" and day == "1":
+                built = ("END", x, months, "", index)
+        return _Tr(code, "date", values, instant=moment.instant, built=built)
 
     @staticmethod
     def no_time_of_day(op: str, *dates: _Tr) -> None:
@@ -527,6 +554,8 @@ class _Translator:
 
     def civil(self, name: str, moment: _Tr) -> None:
         """Make sure the date is where the calendar arithmetic is exact, now or when it runs."""
+        if moment.checked:
+            return
         if moment.values is None:
             self.fails.append(_outside_days(moment.code))
         else:
@@ -546,29 +575,76 @@ class _Translator:
             "DAY": lambda x: x.day,
         }
         values = _mapped(moment, lambda v: pick[name](from_day_number(int(v))))
+        part = name
         return _Tr(
-            {"YEAR": year, "MONTH": month, "DAY": day}[name], "number", values, integral=True
+            {"YEAR": year, "MONTH": month, "DAY": day}[name],
+            "number",
+            values,
+            integral=True,
+            civil=(part, moment.code, "") if part else None,
         )
 
     def minmax(self, name: str, vals: list[_Tr]) -> _Tr:
         if all(v.kind == "date" for v in vals):
             self.no_time_of_day(name, *vals)  # compared as day numbers, like <
             code = self.extreme(name, [v.code for v in vals])
-            return _Tr(code, "date", self.extremes(name, vals), moment=any(v.moment for v in vals))
+            clamp = self.clamp(name, vals)
+            if clamp:  # the month's last day is checked here, where its parts are taken
+                self.fails.append(_outside_days(clamp[1]))
+            return _Tr(
+                code,
+                "date",
+                self.extremes(name, vals),
+                moment=any(v.moment for v in vals),
+                checked=bool(clamp) or all(v.checked for v in vals),
+                parts=clamp[0] if clamp else None,
+            )
         parts = [_num(v, name) for v in vals]
         values = self.extremes(name, vals)
         return _Tr(self.extreme(name, parts), "number", values, all(v.whole for v in vals))
+
+    @staticmethod
+    def clamp(name: str, vals: list[_Tr]) -> tuple[tuple[str, str, str], str] | None:
+        """MIN(DATE(YEAR(x), MONTH(x) + n, DAY(x)), DATE(YEAR(x), MONTH(x) + n + 1, 1) - 1): the
+        same day n months on, or that month's last day. Its parts come from the month index."""
+        if name != "MIN" or len(vals) != 2:
+            return None
+        for same, end in (vals, vals[::-1]):
+            if same.built and end.built and same.built[0] == "DATE" and end.built[0] == "END":
+                _, x, months, day, index = same.built
+                after = f"{months} + 1" if months else "1"
+                if day == "DAY" and (x, after) == (end.built[1], end.built[2]):
+                    return clamped_parts(index, parts_of(x)[2]), end.code
+        return None
+
+    @staticmethod
+    def one_date(y: _Tr, m: _Tr) -> str:
+        """The day number code when `y` is YEAR of it and `m` is MONTH of it, plus months."""
+        if y.civil and m.civil and (y.civil[0], m.civil[0]) == ("YEAR", "MONTH"):
+            return y.civil[1] if y.civil[1] == m.civil[1] else ""
+        return ""
+
+    def built(self, y: _Tr, m: _Tr, d: _Tr, index: str) -> tuple[str, str, str, str, str] | None:
+        x = self.one_date(y, m)
+        if not x or not m.civil:
+            return None
+        if d.civil == ("DAY", x, ""):
+            return ("DATE", x, m.civil[2], "DAY", index)
+        return ("DATE", x, m.civil[2], "1", index) if d.values == frozenset({1}) else None
 
     def date_of(self, vals: list[_Tr]) -> _Tr:
         if not all(v.kind == "number" and v.whole for v in vals):
             _unsupported("DATE", "with an argument not known to be a whole number")
         y, m, d = vals
-        code = days_of(y.code, m.code, d.code)
+        index = month_index(y.code, m.code)
+        if (x := self.one_date(y, m)) and m.civil:  # one date's year and month, months on
+            index = f"({month_index_of(x)} + {m.civil[2] or 0})"
+        code = days_of_index(index, d.code)
         if y.values is None or m.values is None or d.values is None:
             # The month's first day matters too: the leap count is exact only inside the range.
-            self.fails.append(_outside_days(days_of(y.code, m.code, "1")))
+            self.fails.append(outside_months(index))
             self.fails.append(_outside_days(code))
-            return _Tr(code, "date")
+            return _Tr(code, "date", checked=True, built=self.built(y, m, d, index))
         if len(y.values) * len(m.values) * len(d.values) > _MAX_VALUES:
             _unsupported("DATE", "with too many possible arguments to check its dates")
         found = [
@@ -663,6 +739,7 @@ class _Translator:
             _union(*options),
             integral=all(o.whole for o in options),
             moment=any(o.moment for o in options),
+            checked=all(o.checked for o in options),
             nullable=any(o.nullable for o in options),
             instant=next((o.instant for o in options if o.instant), ""),
         )
@@ -784,4 +861,4 @@ def _date_result(translator: _Translator, tr: _Tr) -> Translation:
     code = f"if({blank}, '', {tr.code})" if blank else tr.code
     if len(code) > FORM_HEADER_MAX_CHARS:
         raise too_large(len(code))
-    return Translation("=" + code, "date", tr.code, blank)
+    return Translation("=" + code, "date", tr.code, blank, tr.parts)

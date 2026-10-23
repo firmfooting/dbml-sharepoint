@@ -126,9 +126,9 @@ def inline_calculated(expression: str, translations: Mapping[str, str]) -> str:
     return "".join(parts)
 
 
-def _date_text(day: str, order: str) -> str:
+def _date_text(day: str, order: str, known: tuple[str, str, str] | None = None) -> str:
     """A day number written as `order` joined by '/', unpadded: toString(45) gives "45" (Learn)."""
-    year, month, date = parts_of(day)
+    year, month, date = known or parts_of(day)
     parts = {"d": date, "m": month, "y": year}
     # Parenthesised so no comparison built around the text depends on + against == precedence.
     return "(" + " + '/' + ".join(f"toString({parts[letter]})" for letter in order) + ")"
@@ -198,6 +198,7 @@ class _Render:
         )
         self.translated: dict[str, str] = {}
         self.days: dict[str, tuple[str, str]] = {}  # calculated date -> (day number, blank test)
+        self.parts: dict[str, tuple[str, str, str]] = {}  # calculated date -> year, month, day
         self.units: dict[str, str] = {}  # calculated column -> the text it adds, for sizing
         # The renderer refuses a calculated column; it is typed as its result and inlined after.
         self.condition_types = {
@@ -227,6 +228,8 @@ class _Render:
             self.units[column] = found.day or self.translated[column]
             if found.result == "date":
                 self.days[column] = (found.day, found.blank)
+                if found.parts:
+                    self.parts[column] = found.parts
         return self.translated[column]
 
     def inline(self, expression: str) -> str:
@@ -250,7 +253,8 @@ class _Render:
         day, blank = self.days[column]
         # A blank row is hidden by the bubble, so the text is not guarded again.
         filled = f"if({blank}, {NEVER}, {ALWAYS})" if blank else ALWAYS
-        return _Value(_date_text(day, order), blank or NEVER, filled)
+        text = _date_text(day, order, self.parts.get(column))
+        return _Value(text, blank or NEVER, filled)
 
     def lookup_value(self, column: str) -> _Value:
         if self.ctx.lookups[column]:

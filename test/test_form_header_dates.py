@@ -350,8 +350,9 @@ def test_no_rendered_header_reads_any_calculated_column(name: str) -> None:
     assert f"[${name}" not in text
 
 
-def test_two_review_bubbles_overflow_the_budget_naming_the_column() -> None:
-    both = (Bubble("Review", date_order="dmy"), Bubble("Review", date_order="mdy"))
+def test_many_review_bubbles_overflow_the_budget_naming_the_column() -> None:
+    orders = ("dmy", "mdy", "ymd") * 8
+    both = tuple(Bubble("Review", date_order=order) for order in orders)
     refusal = _refused(HeaderTree(rows=(Row(both),)))
     assert refusal.finding.code is FindingCode.FORM_HEADER_TOO_LARGE
     assert "Task.Review" in refusal.finding.message
