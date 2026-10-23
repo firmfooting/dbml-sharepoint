@@ -257,7 +257,7 @@ def test_explicit_root_cannot_collide_with_an_implicit_library(
     ("List", 100, "Risk.Log", "Risk&Log", True),
     ("DocumentLibrary", 101, "Docs-A", "DocsA", True),
     ("DocumentLibrary", 101, "Docs A", "DocsA", False),
-    # An accent is unmeasured, so no root is predicted for it.
+    # An accent is outside the allow-list, so no root is predicted for it.
     ("List", 100, "Caf\u00e9", "Caf", False),
 ])
 def test_implicit_title_derived_roots_are_compared(

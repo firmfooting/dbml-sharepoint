@@ -45,19 +45,15 @@ def server_relative(site_path: str, declared: str) -> str:
     return "/" + "/".join(p for p in (site, list_url_path(declared)) if p)
 
 
-# MEASURED (sandbox, ListCollection.Add with a Title and no Url): the created
-# root keeps ASCII letters, digits, `_` and spaces, and drops these. Any other
-# character (accents, `#`, `%`, brackets) was not established, so no root is
-# predicted for a title holding one. The create never fails on a clash: the
-# later list takes a numeric suffix, so two predicted-equal roots mean one list
-# lands somewhere other than its predicted address.
+# Conservative allow-list (list-identity title-derived URL finding); other
+# characters predict no root.
 _KEPT_IN_DERIVED_ROOT = re.compile(r"[A-Za-z0-9_ ]")
 _DROPPED_FROM_DERIVED_ROOT = frozenset("-.&'()+,~!@$=;")
 
 
 def implicit_list_root(title: str, *, is_library: bool) -> str | None:
     """The root SharePoint derives from a title when no `internal_name` is
-    declared, or None when the title holds a character whose handling is unmeasured."""
+    declared, or None when the title holds a character outside that allow-list."""
     kept = []
     for char in title:
         if _KEPT_IN_DERIVED_ROOT.fullmatch(char):
