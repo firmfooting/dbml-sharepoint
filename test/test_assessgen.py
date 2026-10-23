@@ -3210,6 +3210,8 @@ def test_assessment_checks_a_declared_list_root_against_its_own_template(
     assert expected == "PASS" or (
         "template 100" in finding["detail"] and "LIST_URL_MISMATCH" in finding["detail"]
     )
+    # The PASS echoes both roots, so a case-only difference is visible.
+    assert expected != "PASS" or f"live '{root}'" in finding["detail"]
 
 
 @pytest.mark.parametrize(("folder", "file", "expected"), [
