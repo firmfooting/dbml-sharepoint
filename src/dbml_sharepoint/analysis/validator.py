@@ -28,7 +28,14 @@ RESERVED_NAMES = frozenset({
     # else named Id was emitted as a Text field against a name every list
     # already has.
     "Id", "ID",
+    # Built-in internal names (Learn: SPBuiltInFieldId members). `Version` is the
+    # display title of the read-only `_UIVersionString`; a column of that
+    # title aborts column creation on a live list.
+    "_UIVersionString", "Version", "ContentType", "FileLeafRef", "LinkTitle", "Edit",
+    "DocIcon", "ItemChildCount", "FolderChildCount", "_ModerationStatus",
+    "AppAuthor", "AppEditor",
 })
+_RESERVED_FOLDED = frozenset(n.casefold() for n in RESERVED_NAMES)
 
 # The operand denylist and the declared-view operator set used to be spelled
 # here as well as in `conditions.py`. Both copies were dead, and both had
@@ -187,7 +194,7 @@ def _check_column(
             "increment, ref, not null or default); the deploy never writes the "
             "field, so they would be ignored.",
         ))
-    elif name in RESERVED_NAMES and not is_pk_id and not is_declared_builtin(col):
+    elif name.casefold() in _RESERVED_FOLDED and not is_pk_id and not is_declared_builtin(col):
         findings.append(_report(
             FindingCode.RESERVED_COLUMN_NAME, at, "reserved column name.",
         ))

@@ -12,7 +12,7 @@ Validation rules for the parsed schema.
 ### `RESERVED_NAMES`
 
 ```python
-RESERVED_NAMES = frozenset({'Attachments', 'Author', 'Created', 'Editor', 'ID', 'Id', 'Modified', '_UIVersion'})
+RESERVED_NAMES = frozenset({'AppAuthor', 'AppEditor', 'Attachments', 'Author', 'ContentType', 'Created', 'DocIcon', 'Edit', 'Editor', 'FileLeafRef', 'FolderChildCount', 'ID', 'Id', 'ItemChildCount', 'LinkTitle', 'Modi…
 ```
 
 ### `validate`
