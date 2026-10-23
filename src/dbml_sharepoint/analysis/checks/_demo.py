@@ -23,6 +23,7 @@ from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping
 from dbml_sharepoint.model.parser import Column
 
 _DEMO_NUMBER_TYPES = frozenset({"int", "number"})
+_DEMO_WHOLE_TYPES = frozenset({"int"})
 _DEMO_TEXT_TYPES = frozenset({"nvarchar", "longtext", "richtext"})
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -98,6 +99,12 @@ def _scalar_type_findings(
         isinstance(value, bool) or not isinstance(value, int | float)
     ):
         code, want = FindingCode.DEMO_NUMBER_VALUE_INVALID, "a number"
+    elif (
+        col_type in _DEMO_WHOLE_TYPES
+        and isinstance(value, float)
+        and not value.is_integer()
+    ):
+        code, want = FindingCode.DEMO_NUMBER_VALUE_INVALID, "a whole number"
     elif col_type in _DEMO_TEXT_TYPES and not isinstance(value, str):
         code, want = FindingCode.DEMO_TEXT_VALUE_INVALID, "a string (quote it)"
     else:

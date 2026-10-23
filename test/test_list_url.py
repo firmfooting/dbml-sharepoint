@@ -21,7 +21,9 @@ def test_path_keeps_the_declared_case() -> None:
     assert list_url_path("/Lists/MailLedger/") == "Lists/MailLedger"
 
 
-@pytest.mark.parametrize("bad", ["", "/", "Lists/a|b", "Lists/../x", "./x", "a\x00b"])
+@pytest.mark.parametrize("bad", [
+    "", "/", "Lists/a|b", "Lists/../x", "./x", "a\x00b", "\nLists/x", "Lists/x\t",
+])
 def test_unsafe_urls_are_refused(bad: str) -> None:
     with pytest.raises(MappingValueError):
         list_url_key(bad)

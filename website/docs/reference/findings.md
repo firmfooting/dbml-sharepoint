@@ -130,7 +130,7 @@ dbml-sharepoint explain unknown_column_type
 | `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
 | `demo_multi_value_duplicate_member` | error | A demo row repeats a member within one multi-value value. The write shape measured as M3 on 2026-08-17 is a collection of choices, and nothing has measured what a repeated member reads back as, so the row is refused rather than seeded into an unmeasured state. |
 | `demo_multi_value_not_a_list` | error | A demo row writes a multi-value column with a scalar. The write shape is a collection, so the value has to be authored as a list. An empty list is accepted and leaves the column unset. |
-| `demo_number_value_invalid` | error | A demo row's value for a number column is not an int or float (a boolean does not count). |
+| `demo_number_value_invalid` | error | A demo row's value for a number column is not an int or float (a boolean does not count), or a fraction on an int column. |
 | `demo_object_value_invalid` | error | A demo row's object value is not exactly `{demo_ref: <key>}`. |
 | `demo_person_value_unsupported` | error | A demo row writes a person column with something other than `"@me"`, the deploying operator. |
 | `demo_ref_forward_reference` | error | A self-referencing demo row's `demo_ref` names a row declared at or after it, so the target does not exist when the row is written. |
