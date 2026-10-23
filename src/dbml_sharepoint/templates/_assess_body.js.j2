@@ -519,12 +519,15 @@
       }
     }
 
-    async function rootHolder(titles, expected) {
-      for (const old of titles) {
+    async function rootHolder(previous, expected) {
+      for (const [old, marker] of previous) {
         if (knownTitles && !knownTitles.has(String(old).toLowerCase())) continue;
-        const row = await probeGet(`web/lists/getbytitle('${odataName(old)}')/RootFolder?$select=ServerRelativeUrl`);
-        if (row.ok && typeof row.d.ServerRelativeUrl === 'string'
-            && row.d.ServerRelativeUrl.toLowerCase() === expected.toLowerCase()) return old;
+        // Only a list carrying its own marker is a rename source, as in the deploy preflight.
+        const row = await probeGet(`web/lists/getbytitle('${odataName(old)}')?$select=Description`);
+        if (!row.ok || typeof row.d.Description !== 'string' || !row.d.Description.includes(marker)) continue;
+        const root = await probeGet(`web/lists/getbytitle('${odataName(old)}')/RootFolder?$select=ServerRelativeUrl`);
+        if (root.ok && typeof root.d.ServerRelativeUrl === 'string'
+            && root.d.ServerRelativeUrl.toLowerCase() === expected.toLowerCase()) return old;
       }
       return null;
     }
