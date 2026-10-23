@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.37.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.36.0...v0.37.0) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **naming:** derive display names in sentence case ([#955](https://github.com/firmfooting/dbml-sharepoint/issues/955))
+
+### Features
+
+* **naming:** derive display names in sentence case ([#955](https://github.com/firmfooting/dbml-sharepoint/issues/955)) ([e109819](https://github.com/firmfooting/dbml-sharepoint/commit/e109819cd2afc004bfbb0a43dc4247a7cc6d255d))
+
+
+### Bug Fixes
+
+* **assess:** a root held by a previous-title list is the rename source ([#945](https://github.com/firmfooting/dbml-sharepoint/issues/945)) ([065c8d8](https://github.com/firmfooting/dbml-sharepoint/commit/065c8d84e4a3301e16baa2da79008dfa4396f969))
+* **assess:** echo the live root in the immutable root PASS ([#944](https://github.com/firmfooting/dbml-sharepoint/issues/944)) ([a1124ca](https://github.com/firmfooting/dbml-sharepoint/commit/a1124cab2b1cda852cdee874c2bf9b98b4c71b95))
+* **demo:** refuse a fractional demo value on an int column ([#943](https://github.com/firmfooting/dbml-sharepoint/issues/943)) ([63d1182](https://github.com/firmfooting/dbml-sharepoint/commit/63d1182f7c5339b2a5fade6d552889bb25597215))
+* **extract:** name digit-led list titles and tidy the [#841](https://github.com/firmfooting/dbml-sharepoint/issues/841) and [#842](https://github.com/firmfooting/dbml-sharepoint/issues/842) follow-ups ([#947](https://github.com/firmfooting/dbml-sharepoint/issues/947)) ([c136cd4](https://github.com/firmfooting/dbml-sharepoint/commit/c136cd4031ab2421e41e720678cd2111ecd63c9e))
+* **list-url:** refuse a control character before trimming ([#949](https://github.com/firmfooting/dbml-sharepoint/issues/949)) ([5f6b098](https://github.com/firmfooting/dbml-sharepoint/commit/5f6b09883c9a47d45d62d26a7ec2e39ef1c2eded))
+* **mapping:** compare title-derived list and library roots in the duplicate-root check ([#953](https://github.com/firmfooting/dbml-sharepoint/issues/953)) ([1e49437](https://github.com/firmfooting/dbml-sharepoint/commit/1e494378943f29a2f61c362ca31bacd3f47e9699))
+* refuse non-finite floats as JSON values and document the JsonValue alias ([#951](https://github.com/firmfooting/dbml-sharepoint/issues/951)) ([ea8697e](https://github.com/firmfooting/dbml-sharepoint/commit/ea8697e6a6462588f342a500d5bffc0fa7061a62))
+* **validate:** refuse a column named for a built-in list field ([#946](https://github.com/firmfooting/dbml-sharepoint/issues/946)) ([7ead00e](https://github.com/firmfooting/dbml-sharepoint/commit/7ead00e9488af3aa3935ae0ca12b13720044bf0e))
+* **validator:** refuse a data-bar color_by source that is a Yes/No or multi-value column ([#948](https://github.com/firmfooting/dbml-sharepoint/issues/948)) ([9c815f5](https://github.com/firmfooting/dbml-sharepoint/commit/9c815f5813e25262d7f6731d2593ec7118abf7ff))
+
+
+### Performance Improvements
+
+* share template sources and bytecode across environments, speed up two slow tests ([#954](https://github.com/firmfooting/dbml-sharepoint/issues/954)) ([d19d21e](https://github.com/firmfooting/dbml-sharepoint/commit/d19d21e3e90aea0767b9990b585768fc4f588a13))
+
 ## [0.36.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.35.0...v0.36.0) (2026-10-23)
 
 
