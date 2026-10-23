@@ -10,11 +10,12 @@ in exactly one place.
 
 import re
 from collections import ChainMap
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from pathlib import Path
-from typing import override
+from typing import ClassVar, override
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2.bccache import Bucket, BytecodeCache
 
 import dbml_sharepoint
 from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME
@@ -69,6 +70,40 @@ def code_span(value: object) -> str:
     return f"{fence}{pad}{text}{pad}{fence}"
 
 
+class _ProcessLoader(FileSystemLoader):
+    """Reads each template once per process; every script_env() environment shares the text."""
+
+    _sources: ClassVar[dict[str, tuple[str, str, Callable[[], bool]]]] = {}
+
+    @override
+    def get_source(
+        self, environment: Environment, template: str,
+    ) -> tuple[str, str, Callable[[], bool]]:
+        if template not in self._sources:
+            source, filename, _ = super().get_source(environment, template)
+            self._sources[template] = (source, filename, lambda: True)
+        return self._sources[template]
+
+
+class _MemoryBytecodeCache(BytecodeCache):
+    """Compiled templates held for the process, so the partials compile once, not per generator."""
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, bytes] = {}
+
+    @override
+    def load_bytecode(self, bucket: Bucket) -> None:
+        if bucket.key in self._buckets:
+            bucket.bytecode_from_string(self._buckets[bucket.key])
+
+    @override
+    def dump_bytecode(self, bucket: Bucket) -> None:
+        self._buckets[bucket.key] = bucket.bytecode_to_string()
+
+
+_BYTECODE = _MemoryBytecodeCache()
+
+
 class ScriptEnvironment(Environment):
     """Jinja types `globals` by its defaults, which rejects data, so ours sit beside them."""
 
@@ -89,7 +124,8 @@ def script_env(application: str = APPLICATION_NAME) -> ScriptEnvironment:
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).
     env = ScriptEnvironment(
-        loader=FileSystemLoader(TEMPLATES_DIR),
+        loader=_ProcessLoader(TEMPLATES_DIR),
+        bytecode_cache=_BYTECODE,
         undefined=StrictUndefined,
         autoescape=False,
         trim_blocks=True,

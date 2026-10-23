@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import ModuleType
 from typing import cast
@@ -705,11 +706,16 @@ def test_rendered_probes_are_syntactically_valid() -> None:
     assert len(scripts) >= _MIN_SCRIPTS, (
         f"only {len(scripts)} probes parsed, so this pins nothing"
     )
-    for path in scripts:
-        result = subprocess.run(
+    def check(path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
             ["node", "--check", str(path)],
             capture_output=True, text=True, check=False,
         )
+
+    # One node process per script: they are independent, so the waits overlap.
+    with ThreadPoolExecutor() as pool:
+        results = list(pool.map(check, scripts))
+    for path, result in zip(scripts, results, strict=True):
         assert result.returncode == 0, f"{path.name} does not parse:\n{result.stderr}"
 
 
