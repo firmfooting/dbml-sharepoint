@@ -70,11 +70,14 @@ def implicit_list_root(title: str, *, is_library: bool) -> str | None:
 def list_folder(entity: EntityMapping | None, list_title: str) -> str:
     """The web-relative folder a list or library lives in, decoded, no edge slashes.
 
-    The declared URL when there is one; else the title, behind ``Lists/`` for a
-    list and bare for a library. One home for deploy-side item links and form headers.
+    The declared URL when there is one; else the root SharePoint derives from the
+    title (the deploy sends a Title and no Url), or the raw title when that root
+    is not predictable. One home for deploy-side item links and form headers.
     """
     if entity is not None and entity.internal_name:
         return list_url_path(entity.internal_name)
-    if entity is not None and entity.is_library:
-        return list_title
-    return f"Lists/{list_title}"
+    is_library = entity is not None and entity.is_library
+    derived = implicit_list_root(list_title, is_library=is_library)
+    if derived is not None:
+        return derived
+    return list_title if is_library else f"Lists/{list_title}"

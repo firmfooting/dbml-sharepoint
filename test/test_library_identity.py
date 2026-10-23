@@ -8,6 +8,7 @@ from _model import RollbackArgs
 from _packs import pack
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_url import list_folder
 from dbml_sharepoint.analysis.reporting.plan import build_plans
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import load_solution
@@ -17,6 +18,7 @@ from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.errors import MappingValueError
+from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.release import load_release
 from dbml_sharepoint.wizard import TemplateChoice, _read_facts
 
@@ -327,3 +329,21 @@ def test_manifest_renders_rename_sources_that_carry_no_implicit_flag(tmp_path: P
     assert len(rows) == 2
     noted = ["an implicit source" in x for x in rows]
     assert noted == [False, True]
+
+
+@pytest.mark.parametrize(("title", "is_library", "folder"), [
+    ("Risk-Log", False, "Lists/RiskLog"),
+    ("Risk Log", False, "Lists/Risk Log"),
+    ("Docs-A", True, "DocsA"),
+    ("Café", False, "Lists/Café"),
+])
+def test_list_folder_agrees_with_the_derived_root(
+    title: str, is_library: bool, folder: str,
+) -> None:
+    """The deploy sends a Title and no Url, so the folder is the derived root."""
+    entity = EntityMapping(
+        name="X",
+        kind="DocumentLibrary" if is_library else "List",
+        base_template=101 if is_library else 100, site_role="default",
+    )
+    assert list_folder(entity, title) == folder
