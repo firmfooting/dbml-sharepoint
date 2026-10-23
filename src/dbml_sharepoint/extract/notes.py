@@ -15,6 +15,7 @@ document nobody finishes reading.
 import textwrap
 from collections import defaultdict
 
+from dbml_sharepoint.analysis.lookups import DEFAULT_DISPLAY_COLUMN
 from dbml_sharepoint.extract.decode import Extraction, Unrecovered
 
 #: Hard wrap, matching the repository's own markdown. The notes land in an
@@ -95,8 +96,8 @@ _KINDS: dict[str, tuple[str, str]] = {
     ),
     "lookup-display-column": (
         "Lookup columns: displayed column",
-        """These lookups show a column other than Title. The deploy shows
-        the target list's `display_column`, one per list.""",
+        f"""These lookups show a column other than {DEFAULT_DISPLAY_COLUMN}. The deploy
+        shows the target list's `display_column`, one per list.""",
     ),
     "lookup-delete-behaviour": (
         "Lookup columns: delete behaviour",
