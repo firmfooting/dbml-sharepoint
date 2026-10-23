@@ -250,6 +250,45 @@ def test_explicit_root_cannot_collide_with_an_implicit_library(
         pack(tmp_path, dbml=schema, mapping=mapping)
 
 
+@pytest.mark.parametrize(("kind", "template", "first", "second", "clashes"), [
+    # Punctuation is dropped from a derived root and a space is kept.
+    ("List", 100, "Risk-Log", "RiskLog", True),
+    ("List", 100, "Risk Log", "RiskLog", False),
+    ("List", 100, "Risk.Log", "Risk&Log", True),
+    ("DocumentLibrary", 101, "Docs-A", "DocsA", True),
+    ("DocumentLibrary", 101, "Docs A", "DocsA", False),
+    # An accent is unmeasured, so no root is predicted for it.
+    ("List", 100, "Caf\u00e9", "Caf", False),
+])
+def test_implicit_title_derived_roots_are_compared(
+    tmp_path: Path, kind: str, template: int, first: str, second: str, clashes: bool,
+) -> None:
+    mapping = f"""
+        entities:
+          First: {{kind: {kind}, base_template: {template}, site_role: default, title: "{first}"}}
+          Second: {{kind: {kind}, base_template: {template}, site_role: default, title: "{second}"}}
+    """
+    schema = table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE)
+    if clashes:
+        with pytest.raises(MappingValueError, match="duplicate list or library root"):
+            pack(tmp_path, dbml=schema, mapping=mapping)
+    else:
+        pack(tmp_path, dbml=schema, mapping=mapping)
+
+
+def test_an_explicit_list_root_cannot_collide_with_an_implicit_one(tmp_path: Path) -> None:
+    mapping = """
+        entities:
+          First: {kind: List, base_template: 100, site_role: default, title: Risk-Log}
+          Second:
+            {kind: List, base_template: 100, site_role: default, title: Other,
+             internal_name: Lists/RiskLog}
+    """
+    with pytest.raises(MappingValueError, match="duplicate list or library root"):
+        pack(tmp_path, dbml=table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE),
+             mapping=mapping)
+
+
 def test_manifest_renders_rename_sources_that_carry_no_implicit_flag(tmp_path: Path) -> None:
     """The `implicit` key exists only on an implicit source; its absence must not fail the build."""
     schema, bundle = pack(
