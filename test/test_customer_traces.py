@@ -104,17 +104,22 @@ def _digest(text: str) -> str:
 def _finder(forbidden: dict[int, frozenset[str]]) -> Finder:
     """Look for any forbidden name in `line`, as a run of one to `_RUN` tokens."""
     lengths = frozenset(forbidden)
+    longest = max(lengths)
 
     @lru_cache(maxsize=1 << 16)
     def forbidden_run(joined: str) -> bool:
         return len(joined) in lengths and _digest(joined) in forbidden[len(joined)]
 
+    # Over half the lines in the tree repeat another line.
+    @lru_cache(maxsize=1 << 18)
     def find(line: str) -> tuple[int, int] | None:
         tokens = list(_TOKEN.finditer(line))
         for start, first in enumerate(tokens):
             joined = ""
             for last in tokens[start : start + _RUN]:
                 joined += last.group(0).lower()
+                if len(joined) > longest:
+                    break
                 if forbidden_run(joined):
                     return first.start(), last.end() - first.start()
         return None
