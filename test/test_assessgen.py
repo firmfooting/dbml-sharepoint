@@ -3244,6 +3244,37 @@ def test_absent_library_requires_an_available_root(
         assert summary["verdict"] == "BLOCKED"
 
 
+@pytest.mark.parametrize(("held_root", "marked", "expected"), [
+    ("/sites/test/APP_Task", True, "PASS"), ("/sites/test/Other", True, "BLOCKED"),
+    ("/sites/test/APP_Task", False, "BLOCKED"),
+])
+def test_a_root_held_by_the_previous_title_is_the_rename_source(
+    held_root: str, marked: bool, expected: str,
+) -> None:
+    schema, bundle = _library_pack()
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="APP_Task", title="APP_Job",
+    )
+    js = generate_assess_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z", resolved=resolve(
+            schema, bundle.mapping,
+        ),
+    )
+    harness = _ASSESS_HARNESS.replace("const body = (url) => {", "const body = (url) => {"
+        "\n  if (url.includes(\"getbytitle('APP_Task')/RootFolder?\")) "
+        "return { d: { ServerRelativeUrl: " + json.dumps(held_root) + " } };"
+        "\n  if (url.includes('GetFolderByServerRelativeUrl')) return { d: { Exists: true } };"
+        "\n  if (url.includes('GetFileByServerRelativeUrl')) return { d: { Exists: false } };")
+    held = _library_markers()
+    if not marked:
+        held["APP_Task"] = "somebody else"
+    summary = _run_assess(held, harness=harness, js=js)
+    finding = next(f for f in summary["findings"] if f["key"] == "library_root:APP_Job")
+    assert finding["level"] == expected, finding
+
+
 # --- Identities: assess reads membership and never writes (ruling A4) --------
 
 _WRITERS_BODY = """

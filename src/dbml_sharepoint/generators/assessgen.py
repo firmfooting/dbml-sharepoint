@@ -126,7 +126,7 @@ class _Collected:
     group_renames: list[tuple[str, list[tuple[str, str]]]]
     base_templates: list[int]
     library_folders: list[tuple[str, list[str]]]
-    library_roots: list[tuple[str, str, int, bool]]
+    library_roots: list[tuple[str, str, int, bool, list[list[str]]]]
     library_checkout: list[tuple[str, bool]]
     library_switches: list[tuple[str, str, str, bool | int]]
     library_folder_defaults: list[tuple[str, list[JsonValue]]]
@@ -195,7 +195,10 @@ def assess_targets(
         "group_renames": _named_pairs(t.group_renames),
         "base_templates": t.base_templates,
         "library_folders": [[title, list(folders)] for title, folders in t.library_folders],
-        "library_roots": [list(root) for root in t.library_roots],
+        "library_roots": [
+            [title, name, template, is_library, [list(p) for p in previous]]
+            for title, name, template, is_library, previous in t.library_roots
+        ],
         "library_checkout": [[title, required] for title, required in t.library_checkout],
         "library_switches": [list(switch) for switch in t.library_switches],
         "library_folder_defaults": [list(pair) for pair in t.library_folder_defaults],
@@ -268,8 +271,9 @@ def _collect(
     # folders: the assessment checks nothing stands where a folder will go.
     library_folders: list[tuple[str, list[str]]] = []
     # [[title, declared URL, the entity's BaseTemplate], ...] for every entity that
-    # declares a root; the template is what the live list must carry.
-    library_roots: list[tuple[str, str, int, bool]] = []
+    # declares a root; the template is what the live list must carry. The last
+    # item is every previous [title, marker], since a list awaiting rename still holds its root.
+    library_roots: list[tuple[str, str, int, bool, list[list[str]]]] = []
     # [[list title, [internal name, ...]], ...] in DECLARATION order, for
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
@@ -308,6 +312,8 @@ def _collect(
             library_roots.append((
                 bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
                 entity.is_library,
+                [[old, marker_for(family, name)]
+                 for old, name in bundle.mapping.previous_titles(table_name)],
             ))
         previous = bundle.mapping.declared_previous_titles(table_name)
         if previous:
@@ -462,7 +468,7 @@ def derive_requirements(
         )
         for title in t.list_titles
     )
-    for title, root, _template, is_library in t.library_roots:
+    for title, root, _template, is_library, _previous in t.library_roots:
         reqs.append(Requirement(
             f"library_root:{title}",
             f"Existing library '{title}' has the declared immutable URL name '{root}'"
