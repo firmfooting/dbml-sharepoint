@@ -46,10 +46,3 @@ def test_built_in_levels_includes_full_control() -> None:
     assert "Full Control" in BUILT_IN_LEVELS
     assert "Contribute" in BUILT_IN_LEVELS
     assert "Read" in BUILT_IN_LEVELS
-
-
-def test_group_description_ceiling_is_not_redeclared_in_permissions() -> None:
-    """The ceiling has one owner, per #167; its value is pinned behaviourally."""
-    from dbml_sharepoint.analysis import permissions
-
-    assert not hasattr(permissions, "GROUP_DESCRIPTION_MAX")

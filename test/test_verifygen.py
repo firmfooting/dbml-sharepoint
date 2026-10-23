@@ -26,7 +26,6 @@ from _paths import EXPECTED, FIXTURES, pin_deployer_version, write_golden
 
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.condition_rendering import to_validation
-from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_marker
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.generators import verifygen
@@ -110,8 +109,8 @@ def test_a_pack_without_a_clock_cell_has_nothing_to_verify() -> None:
 
 def test_the_scratch_list_is_named_and_marked_from_the_shared_spellers() -> None:
     targets = verify_targets(*_clock_pack(), "default")
-    assert targets["list_title"] == VERIFY_LIST_TITLE
-    assert targets["marker"] == verify_marker()
+    assert targets["list_title"] == "_dbml-verify"
+    assert targets["marker"] == "Provisioned by dbml-sharepoint for scratch _dbml-verify."
 
 
 def test_one_save_check_per_validation_cell_and_offset_with_the_cells_rendering() -> None:

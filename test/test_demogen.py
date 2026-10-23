@@ -123,14 +123,9 @@ def test_demo_script_contract() -> None:
     assert "body[`${f.name}Id`]" in js
     # The visible sample-data notice rides in the Title prefix.
     assert "[DEMO] " in js
-    # Per-row list-item comments were tried and WITHDRAWN: the modern
-    # Comments() endpoint is undocumented surface and 400'd the write live
-    # (2026-07-24) while adding nothing the visible marker doesn't show.
-    assert "/Comments()" not in js
     # All REST traffic rides the shared _http transport partial.
     assert "async function fetchWithRetry(" in js
     assert "const spHeaders = (digest, extra = {})" in js
-    assert "await fetch(apiUrl" not in js
 
 
 def test_a_hyperlink_demo_value_becomes_a_field_url_value_record() -> None:

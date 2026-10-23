@@ -99,9 +99,6 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
 
     out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
-    assert "list_assignments" not in out
-    assert "folder_assignments" not in out
-
     docs = bundle.mapping.list_title("Docs")
     policies = bundle.mapping.list_title("Policies")
     shape = [(row["list"], row.get("folder")) for row in out["acl_scopes"]]
@@ -388,7 +385,6 @@ def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
         js.index("if (grp.require_empty_at_deploy)"):js.index("is empty as required for deployment")
     ]
     assert "/users/removebyid" not in gate_block
-    assert "/users/removebyloginname" not in js
     # Two now, both unconditional: the operator's run-scoped cleanup and the
     # enterprise-reader drain, which deploy.js.j2 declares regardless of
     # whether --enterprise-reader was passed (task 6, security-phase

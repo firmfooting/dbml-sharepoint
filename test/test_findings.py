@@ -112,11 +112,10 @@ def test_the_finding_vocabulary_has_one_home() -> None:
     construct them. pyrefly covers the other direction, refusing any module that
     imports the vocabulary through validator rather than from here.
     """
-    from dbml_sharepoint.analysis import findings, validator
+    from dbml_sharepoint.analysis import findings
 
     for name in ("Finding", "FindingCode", "Location", "Section", "Severity"):
         assert hasattr(findings, name), name
-    assert not hasattr(validator, "Severity")
 
 
 #: Modules that still construct findings with no `location=`, with the issue

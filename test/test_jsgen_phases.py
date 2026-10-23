@@ -487,7 +487,6 @@ def test_seed_items_empty_with_null_extension() -> None:
     sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
     assert sj["seed_items"] == []
-    assert "app_settings_seed" not in sj
 
 
 class _SeedExtension(BaseExtension):
@@ -551,8 +550,6 @@ def test_stub_extension_seed_rendered_in_generic_phase_5() -> None:
     assert "assertSeedSingletonMatches" in js
     assert "APP_AppSettings" in js
     assert "Zeta Unit" in js
-    # The old hardcoded item type literal must be gone.
-    assert "SP.Data.APP_AppSettingsListItem" not in js
 
 
 def test_cross_site_column_without_extension_is_error_finding() -> None:

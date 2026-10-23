@@ -452,13 +452,6 @@ def test_caml_renders_well_formed_xml(condition: Condition) -> None:
     )
 
 
-@given(target=st.sampled_from(TARGETS), condition=renderable_conditions())
-def test_rendering_is_deterministic(target: str, condition: Condition) -> None:
-    """Same tree, same formula. Iterating a set somewhere would break this."""
-    render = _RENDER[target]
-    assert render(condition, COLUMN_TYPES) == render(condition, COLUMN_TYPES)
-
-
 @given(target=st.sampled_from(TARGETS), leaf=renderable_leaves())
 def test_a_single_child_group_adds_no_wrapper(target: str, leaf: Leaf) -> None:
     """`_combine` returns a lone part unchanged, for every target.

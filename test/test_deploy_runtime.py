@@ -13,8 +13,10 @@ Node is required; the test skips without it rather than failing, since it
 is not a dependency of the package.
 """
 
+import functools
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -6327,6 +6329,24 @@ _SECURITY_CLAIM = f"c:0t.c|tenant|{_GROUP_OID}"
 _MEMBERS_CLAIM = f"c:0o.c|federateddirectoryclaimprovider|{_GROUP_OID}"
 
 
+@functools.cache
+def _group_identity_mapping() -> str:
+    """The writers mapping plus an `intake` group-kind identity, enrolled in the writers group."""
+    text = (FIXTURES / "sharepoint-mapping-with-writers.yaml").read_text(encoding="utf-8")
+    text = text.replace("enroll: [automation]", "enroll: [automation, intake]")
+    text += (
+        "\nidentities:\n  intake:\n    description: \"Intake.\"\n"
+        "    kinds: [user, security_group, m365_group]\n"
+    )
+    root = Path(tempfile.mkdtemp(prefix="group-identity-"))
+    for sibling in ("topics.yaml", "retention-policies.yaml"):
+        shutil.copy(FIXTURES / sibling, root / sibling)
+    shutil.copytree(FIXTURES / "formatting", root / "formatting")
+    path = root / "mapping.yaml"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return str(path)
+
+
 def _group_principal(login: str, ident: int = 51, kind: int = 4) -> dict[str, object]:
     return {"Id": ident, "LoginName": login, "Title": "Intake", "Email": "", "PrincipalType": kind}
 
@@ -6338,7 +6358,7 @@ def _run_group_kind(
     return _run_identity_deploy(
         {"automation": "user:flows@example.com", "intake": f"{kind}:{_GROUP_OID}"},
         {"flows@example.com": _FLOWS, claim: ensured_group},
-        mapping="sharepoint-mapping-with-group-identity.yaml", **harness,
+        mapping=_group_identity_mapping(), **harness,
     )
 
 
@@ -6382,7 +6402,7 @@ def test_a_hand_edited_group_claim_that_is_tenant_wide_is_refused_before_any_wri
     summary, calls, _ = _run_identity_deploy(
         {"automation": "user:flows@example.com", "intake": f"security_group:{_GROUP_OID}"},
         {"flows@example.com": _FLOWS, wide: _group_principal(wide)},
-        mapping="sharepoint-mapping-with-group-identity.yaml",
+        mapping=_group_identity_mapping(),
         edit_js=lambda js: js.replace(_SECURITY_CLAIM, wide),
     )
     assert summary.get("aborted") == "identity-enrolment-errors", summary
@@ -9159,7 +9179,6 @@ def test_an_uncaught_phase_failure_returns_an_aborted_summary() -> None:
 def test_a_security_digest_failure_stops_the_decision_loop() -> None:
     js = _deploy_js()
     assert "failure.digestFailure = true;" in js
-    assert "let digestFailure" not in js
     assert "if (err && err.digestFailure) break;" in js
     assert js.index(f"summary.errors.push({{ phase: '{pn('security')}'") < js.index(
         "if (err && err.digestFailure) break;",
@@ -11074,7 +11093,8 @@ def test_the_title_rename_lands_before_any_calculated_column(
 # local part, the claims login and the resolved user id. The domain is not asserted:
 # the operator account in the stamps shares it.
 _PERSISTED_HIDDEN = ("flows@example.com", "flows", "i:0#.f|membership|flows", "user 41", "(41)")
-_GROUP_HIDDEN = (_GROUP_OID, _GROUP_OID.upper(), _SECURITY_CLAIM, _SECURITY_CLAIM.upper())
+# Both claims embed the OID, so the OID spellings cover them.
+_GROUP_HIDDEN = (_GROUP_OID, _GROUP_OID.upper())
 
 
 def _item_writes(calls: list[Json]) -> list[Json]:
@@ -11127,7 +11147,7 @@ def _run_logged_group(
             "flows@example.com": _FLOWS,
             _SECURITY_CLAIM: ensured or _group_principal(_SECURITY_CLAIM),
         },
-        mapping="sharepoint-mapping-with-group-identity.yaml", **logged,
+        mapping=_group_identity_mapping(), **logged,
     )
 
 

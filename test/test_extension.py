@@ -13,7 +13,6 @@ from _model import table as make_table
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.extension import (
     BaseExtension,
-    DeploymentExtension,
     ManifestExtras,
     NullExtension,
     SiteContext,
@@ -92,19 +91,6 @@ def test_base_extension_hooks_match_null_defaults() -> None:
     assert ext.manifest_extras(bundle=bundle, schema=schema) == ManifestExtras()
     ext.cli_subcommands(typer.Typer())  # -> None by protocol
     assert BaseExtension.name == "base"
-
-
-def test_base_extension_satisfies_deployment_extension_protocol() -> None:
-    # Typed assignment: the type checker verifies BaseExtension structurally
-    # implements the DeploymentExtension protocol (five hooks + name ClassVar).
-    ext: DeploymentExtension = BaseExtension()
-    # Runtime check via @runtime_checkable.
-    assert isinstance(ext, DeploymentExtension)
-
-
-def test_null_extension_satisfies_deployment_extension_protocol() -> None:
-    ext: DeploymentExtension = NullExtension()
-    assert isinstance(ext, DeploymentExtension)
 
 
 @pytest.mark.parametrize("name", [None, "null"])

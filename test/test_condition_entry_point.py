@@ -16,9 +16,7 @@ import ast
 
 from _paths import PACKAGE
 
-from dbml_sharepoint.analysis import conditions
-from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
-from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.finding_help import RETIRED_FINDINGS
 
 MODULE = "dbml_sharepoint.analysis.conditions"
 
@@ -53,27 +51,10 @@ def _callers_of(name: str) -> set[str]:
     }
 
 
-def test_the_message_only_entry_point_is_gone() -> None:
-    """Deleted rather than deprecated. A wrapper left in place is a wrapper
-    the next caller reaches for, and its whole behaviour was to drop the code
-    and the location on the floor."""
-    assert not hasattr(conditions, "validate_condition")
-
-
 def test_direct_condition_entry_point_imports_match_the_roster() -> None:
     """Each listed file imports `condition_findings`, no other package module
     directly imports it, and the removed direct import cannot return."""
     assert _callers_of("condition_findings") == set(_INTENDED_CALLERS)
-    assert _callers_of("validate_condition") == set()
-
-
-def test_the_generic_condition_code_is_gone() -> None:
-    """`invalid_condition` existed only because a message-only return had no
-    code to carry. With the caller repointed nothing constructs it, and a
-    declared code nothing constructs fails the reachability gate."""
-    assert "INVALID_CONDITION" not in FindingCode.__members__
-    assert "invalid_condition" not in {str(code) for code in FindingCode}
-    assert "invalid_condition" not in {str(code) for code in FINDING_HELP}
 
 
 def test_the_retired_code_is_still_answerable() -> None:

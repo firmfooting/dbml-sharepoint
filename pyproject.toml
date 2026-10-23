@@ -105,7 +105,6 @@ exclude-newer = "14 days"
 exclude-newer-package = { ruff = false, pyrefly = false }
 
 [tool.ruff]
-required-version = ">=0.17"
 line-length = 100
 target-version = "py315"
 

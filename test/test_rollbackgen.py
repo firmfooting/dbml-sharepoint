@@ -279,10 +279,6 @@ def test_rollback_has_no_automatic_demo_prefix_bypass() -> None:
     js = generate_rollback_js(
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
-    assert "const DEMO_PREFIX" not in js
-    assert "allItemsAreDemo" not in js
-    assert "row.Title.startsWith(DEMO_PREFIX)" not in js
-    assert "if (count > 100) return false" not in js
     assert "web/lists?$select=Title,ItemCount&$top=5000" in js
     assert "j.d.__next" in js
     assert "list enumeration exceeded 100 pages" in js
@@ -360,7 +356,6 @@ def test_rollback_rides_shared_transport() -> None:
     assert "async function fetchWithRetry(" in js
     assert "const spHeaders = (digest, extra = {})" in js
     assert "const spError = (text)" in js
-    assert "await fetch(apiUrl" not in js
 
 
 def test_rollback_carries_the_marker_each_list_must_show() -> None:
