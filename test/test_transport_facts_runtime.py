@@ -338,6 +338,21 @@ class TestDigestCache:
         assert result["status"] == 403
         assert write_digests(result) == ["d1"]
 
+    @pytest.mark.parametrize(("refresh", "detail"), [
+        (Stub(403, DENIED), "HTTP 403 Access denied."),
+        (Stub(200, {"d": {}}), NO_INFO),
+    ], ids=["refused", "no-digest"])
+    def test_a_failed_refresh_hands_back_the_original_403(
+        self, refresh: Stub, detail: str,
+    ) -> None:
+        result = _run_facts(WRITE, contextinfo("d1", **LIFETIME), Stub(403, SECURITY), refresh)
+        assert "error" not in result
+        assert result["status"] == 403
+        assert write_digests(result) == ["d1"]
+        assert messages(result) == [
+            f"Request digest refresh failed ({FAILED}{detail}); handing back the HTTP 403.",
+        ]
+
     def test_four_lanes_refused_together_share_one_refresh(self) -> None:
         body = """
   const d = await getDigest();

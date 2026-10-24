@@ -350,7 +350,14 @@
       cachedDigest = null;
       digestRefresh = getDigest().finally(() => { digestRefresh = null; });
     }
-    const fresh = await (digestRefresh || getDigest());
+    let fresh;
+    try {
+      fresh = await (digestRefresh || getDigest());
+    } catch (err) {
+      // The write's own 403 tells the caller more than the refresh failure does.
+      log('WARN', `Request digest refresh failed (${(err && err.message) || err}); handing back the HTTP 403.`);
+      return null;
+    }
     log('INFO', 'HTTP 403 security validation on a write; retrying once with a fresh request digest.');
     return { ...init, headers: { ...init.headers, 'X-RequestDigest': fresh } };
   };
