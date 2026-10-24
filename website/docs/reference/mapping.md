@@ -1669,8 +1669,8 @@ Each code is described in the [findings reference](./findings.md).
 
 Errors:
 
-- [`unknown_entity`](./findings.md): the file names an entity the mapping
-  does not declare.
+- [`unknown_entity`](./findings.md): the file names an entity that the
+  mapping or the DBML does not declare.
 - [`lists_form_on_document_library`](./findings.md): the entity is a
   document library.
 - [`lists_form_column_unknown`](./findings.md): a question names a column
@@ -1696,8 +1696,8 @@ Errors:
 - [`lists_form_link_markup`](./findings.md): `description` or `help` holds
   Markdown or HTML link markup. Write the bare `https://` URL.
 - [`lists_form_link_not_https`](./findings.md): `description` or `help`
-  holds a `mailto:` or `http://` address, or a `www.` address with no
-  scheme.
+  holds a `mailto:` or `http://` address, or a bare `www.` address with no
+  scheme, path or word before it. `https://www.example.com` is accepted.
 - [`lists_form_image_in_text`](./findings.md): any form text holds Markdown
   image or `<img>` markup.
 - [`lists_form_link_in_message`](./findings.md): `thank_you` or
