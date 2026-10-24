@@ -46,6 +46,8 @@ class Section(StrEnum):
     # `list_permissions.default...` and `list_permissions.overrides[...]`.
     LIST_PERMISSIONS = "list_permissions"
     LIST_VALIDATION = "list_validation"
+    # `lists-forms.yaml`, its own file beside the mapping.
+    LISTS_FORMS = "lists_forms"
     DERIVED_COLUMNS = "derived_columns"
     LOOKUP_PROJECTIONS = "lookup_projections"
     # The top-level switches no section above owns (`seal_columns`,
@@ -664,6 +666,27 @@ class FindingCode(StrEnum):
     WATCH_USE_NAME_INVALID = "watch_use_name_invalid", "error"
     WATCH_USE_REPEATED_WITHOUT_ID = "watch_use_repeated_without_id", "error"
     WATCH_USE_WHEN_REQUIRED = "watch_use_when_required", "error"
+
+    # --- checks/_lists_forms.py ---------------------------------------------
+    LISTS_FORM_ATTACHMENTS_OFF = "lists_form_attachments_off", "error"
+    LISTS_FORM_COLUMN_UNKNOWN = "lists_form_column_unknown", "error"
+    LISTS_FORM_IMAGE_IN_TEXT = "lists_form_image_in_text", "error"
+    LISTS_FORM_LINK_IN_MESSAGE = "lists_form_link_in_message", "error"
+    LISTS_FORM_LINK_MARKUP = "lists_form_link_markup", "error"
+    LISTS_FORM_LINK_NOT_HTTPS = "lists_form_link_not_https", "error"
+    LISTS_FORM_LIST_VALIDATION_IS_SILENT = "lists_form_list_validation_is_silent", "warning"
+    LISTS_FORM_LOOKUP_SOURCE_UNREADABLE = "lists_form_lookup_source_unreadable", "error"
+    LISTS_FORM_ON_DOCUMENT_LIBRARY = "lists_form_on_document_library", "error"
+    LISTS_FORM_QUESTION_HIDDEN_ON_LIST_FORM = "lists_form_question_hidden_on_list_form", "error"
+    LISTS_FORM_QUESTION_NOT_OFFERED = "lists_form_question_not_offered", "error"
+    LISTS_FORM_QUESTION_REPEATED = "lists_form_question_repeated", "error"
+    LISTS_FORM_QUESTION_SETS_COLUMN = "lists_form_question_sets_column", "error"
+    LISTS_FORM_REQUIRED_COLUMN_MISSING = "lists_form_required_column_missing", "error"
+    LISTS_FORM_RETIRED_AND_DECLARED = "lists_form_retired_and_declared", "error"
+    LISTS_FORM_RICH_TEXT_IS_PLAIN = "lists_form_rich_text_is_plain", "warning"
+    LISTS_FORM_SCHEDULE_INVALID = "lists_form_schedule_invalid", "error"
+    LISTS_FORM_TEXT_TOO_LONG = "lists_form_text_too_long", "error"
+    LISTS_FORM_TITLE_INVALID = "lists_form_title_invalid", "error"
 
     # --- schema-only rules, from validator.validate() ---
     AUTO_INCREMENT_PK_MUST_BE_ID = "auto_increment_pk_must_be_id", "error"
