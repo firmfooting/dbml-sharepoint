@@ -27,6 +27,12 @@ from dbml_sharepoint.templating import script_env
     ("const h = (a + b) / 2 / c;\n", "const h = (a + b) / 2 / c;\n"),
     ("const i = 'it\\'s // here';\n", "const i = 'it\\'s // here';\n"),
     ("\nconst j = 1;\n\n", "\nconst j = 1;\n\n"),
+    ("if (x) /\\/\\//.test(s) && go();\n", "if (x) /\\/\\//.test(s) && go();\n"),
+    ("a = n-- / 2 + `a/b`;\nconst u = `https://x/${p}`;\n",
+     "a = n-- / 2 + `a/b`;\nconst u = `https://x/${p}`;\n"),
+    ("i++ / 2; // half\n", "i++ / 2;\n"),
+    ("arr.of / 2; // c\n", "arr.of / 2;\n"),
+    ("f(x) / 2; // c\n", "f(x) / 2;\n"),
 ])
 def test_comments_go_and_literals_stay(source: str, expected: str) -> None:
     assert strip_js_comments(source) == expected

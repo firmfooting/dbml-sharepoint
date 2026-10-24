@@ -4,9 +4,11 @@ This module holds the comment stripper that shortens the emitted script without
 touching a string, template or regex literal.
 """
 
-# A `/` here starts a regex literal; after anything else it divides.
+# A `/` after one of these starts a regex literal; after anything else it divides.
+# shortcut: a `/` after a block `}` reads as a regex, so node --check; track blocks if one divides.
 _REGEX_AFTER_CHARS = frozenset("(,=:[!&|?{};+-*%<>~^")
 _REGEX_AFTER_WORDS = frozenset({"return", "typeof", "case", "do", "else", "in", "of", "void"})
+_CONTROL_WORDS = frozenset({"if", "while", "for", "with"})  # `if (x) /re/` holds a regex
 
 
 def strip_js_comments(text: str) -> str:
@@ -42,9 +44,12 @@ class _Scanner:
         self.out: list[str] = []
         # Open "`", "${" and "{" frames, each with the offset it opened at.
         self.frames: list[tuple[str, int]] = []
+        self.parens: list[bool] = []  # per open `(`, whether a control keyword led it
         self.prev = ""  # the last code character that is not whitespace
-        self.word = ""  # the identifier that ends at `prev`, if any
+        self.word = ""  # the last identifier, kept across whitespace
         self.in_word = False
+        self.dotted = False  # the word follows a `.`, so it is a property, not a keyword
+        self.regex_ok = True  # whether a `/` here starts a regex literal
 
     def unterminated(self, what: str, start: int) -> ValueError:
         return ValueError(f"unterminated {what} at line {self.text.count(chr(10), 0, start) + 1}")
@@ -62,7 +67,7 @@ class _Scanner:
             self._drop(end + 2, spans_lines="\n" in text[i:end])
         elif char in "'\"":
             self._literal(self._quoted_end(i))
-        elif char == "/" and self._regex_allowed():
+        elif char == "/" and self.regex_ok:
             self._literal(self._regex_end(i))
         elif char == "`":
             self.frames.append(("`", i))
@@ -83,28 +88,51 @@ class _Scanner:
                 self.frames.append(("${", j))
                 self.out.append(text[self.i:j + 2])
                 self.i, self.prev, self.word, self.in_word = j + 2, "{", "", False
+                self.regex_ok = True
                 return
             else:
                 j += 1
         raise self.unterminated("template literal", self.frames[-1][1])
 
     def _code_char(self, char: str) -> None:
-        if char == "{":
-            self.frames.append(("{", self.i))
-        elif char == "}" and self.frames:
-            self.frames.pop()  # closing a "${" hands the scan back to its template
-        self.out.append(char)
         self.i += 1
         if char.isspace():
+            self.out.append(char)
             self.in_word = False
             return
-        self.word = (self.word if self.in_word else "") + char if _is_ident(char) else ""
+        if _is_ident(char):
+            if not self.in_word:
+                self.word, self.dotted = "", self.prev == "."
+            self.word += char
+            self.regex_ok = self._keyword() in _REGEX_AFTER_WORDS
+        else:
+            self.regex_ok = self._punctuator(char)
+            self.word = ""
         self.in_word = _is_ident(char)
         self.prev = char
+        self.out.append(char)
+
+    def _keyword(self) -> str:
+        return "" if self.dotted else self.word
+
+    def _punctuator(self, char: str) -> bool:
+        """Track brackets, and say whether a `/` straight after `char` starts a regex."""
+        if char == "{":
+            self.frames.append(("{", self.i - 1))
+        elif char == "}" and self.frames:
+            self.frames.pop()  # closing a "${" hands the scan back to its template
+        elif char == "(":
+            self.parens.append(self._keyword() in _CONTROL_WORDS)
+        elif char == ")":
+            return bool(self.parens) and self.parens.pop()
+        elif char in "+-" and self.out and self.out[-1] == char:
+            return False  # `i++ / 2` divides
+        return char in _REGEX_AFTER_CHARS
 
     def _literal(self, end: int) -> None:
         self.out.append(self.text[self.i:end])
         self.prev, self.word, self.in_word = self.text[end - 1], "", False
+        self.regex_ok = False
         self.i = end
 
     def _quoted_end(self, start: int) -> int:
@@ -130,9 +158,6 @@ class _Scanner:
                 in_class = char == "["
             j += 1
         raise self.unterminated("regex literal", start)
-
-    def _regex_allowed(self) -> bool:
-        return not self.prev or self.prev in _REGEX_AFTER_CHARS or self.word in _REGEX_AFTER_WORDS
 
     def _drop(self, end: int, *, spans_lines: bool) -> None:
         """Skip the comment that ends at `end`, tidying the whitespace it leaves."""
