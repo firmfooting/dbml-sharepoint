@@ -3,6 +3,7 @@
 import datetime as dt
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 import typer
 
@@ -56,6 +57,7 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_list_js,
     generate_protection_js,
 )
+from dbml_sharepoint.jsrest import prelude, wrap
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
@@ -795,6 +797,51 @@ def identify_script(
         f"It prints what it found and downloads {DEFAULT_DOWNLOAD_NAME}. Keep "
         "one download per site to build a fleet view.",
     )
+
+
+@app.command("prelude")
+def prelude_command(
+    writes: bool = typer.Option(
+        False, "--writes", help="Add the write headers, the request digest and ensureUser.",
+    ),
+    batch: bool = typer.Option(
+        False, "--batch", help="Add BatchWriter. Needs --writes.",
+    ),
+    # Spelt out: typer cannot read a `type` alias such as jsrest.Site.
+    site: Literal["page-context", "pathname"] = typer.Option(
+        "page-context",
+        help="Read the page's site from _spPageContextInfo (page-context) or "
+        "from the page path (pathname).",
+    ),
+    expected_site: str | None = typer.Option(
+        None, help="Refuse to run on any other site, e.g. "
+        "https://contoso.sharepoint.com/sites/Risk.",
+    ),
+    wrap_file: Path | None = typer.Option(
+        None, "--wrap", help="A UTF-8 script body to print behind the prelude.",
+    ),
+) -> None:
+    """Print the shared SharePoint REST prelude, or a script body wrapped behind it.
+
+    With no options it prints the read flavour, which carries no write helper.
+    A wrapped body must not redeclare any name the prelude declares.
+    """
+    try:
+        if wrap_file is None:
+            text = prelude(writes=writes, batch=batch, site=site, expected_site=expected_site)
+        else:
+            text = wrap(
+                wrap_file.read_text(encoding="utf-8"),
+                writes=writes, batch=batch, site=site, expected_site=expected_site,
+            )
+    except UnicodeDecodeError as exc:
+        typer.echo(f"{wrap_file} is not UTF-8: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except (OSError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    # Bytes go to the binary stream, so a Windows text layer cannot turn LF into CRLF.
+    typer.echo(text.encode("utf-8"), nl=False)
 
 
 @app.command()
