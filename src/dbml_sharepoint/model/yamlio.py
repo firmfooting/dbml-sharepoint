@@ -567,6 +567,30 @@ def safe_load(stream: str | IO[str]) -> object:
     return _Reading().load(stream)
 
 
+def _key_lines(text: str, depth: int = 2) -> dict[tuple[str, ...], int]:
+    """The 1-based line of each text key in `text`'s nested mappings, by its path of keys.
+
+    Keys `depth` levels down and above are listed. A `<<` merge key, a key
+    that is not text, and anything inside a sequence are skipped. `text` is
+    one `safe_load` has accepted, so the refusals are not repeated here.
+    """
+    lines: dict[tuple[str, ...], int] = {}
+
+    def walk(node: Node | None, path: tuple[str, ...]) -> None:
+        if not isinstance(node, MappingNode) or len(path) == depth:
+            return
+        pairs: list[tuple[Node, Node]] = node.value
+        for key, value in pairs:
+            if key.tag != _STR:
+                continue
+            here = (*path, str(key.value))
+            lines[here] = key.start_mark.line + 1
+            walk(value, here)
+
+    walk(_Reading().compose(text), ())
+    return lines
+
+
 class _Representer(SafeRepresenter):
     """ruamel.yaml's safe representer, double-quoting a string that holds NEL (U+0085)."""
 
