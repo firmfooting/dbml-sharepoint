@@ -6,6 +6,8 @@ import pytest
 from _paths import FIXTURES
 
 import dbml_sharepoint
+from dbml_sharepoint import mapping_split
+from dbml_sharepoint.bundle import write_artifact
 from dbml_sharepoint.mapping_split import SplitRefusedError, plan_split, split_mapping
 from dbml_sharepoint.model import yamlio
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -27,6 +29,10 @@ def _edit(mapping: Path, old: str, new: str) -> None:
     text = mapping.read_text(encoding="utf-8")
     assert old in text
     mapping.write_bytes(text.replace(old, new, 1).encode())
+
+
+def _files(folder: Path) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in folder.rglob("*") if path.is_file()}
 
 
 def _nonblank(text: str) -> list[str]:
@@ -114,6 +120,45 @@ def test_a_key_line_the_pattern_misses_is_refused(tmp_path: Path) -> None:
     load_mapping(mapping)
     with pytest.raises(SplitRefusedError, match="does not read back as the same mapping"):
         plan_split(mapping)
+
+
+def test_a_missed_key_line_in_its_own_concern_is_still_reported(tmp_path: Path) -> None:
+    mapping = _pack(tmp_path)
+    # Quoted, views rides in field_sets' block, which is its own home.
+    _edit(mapping, "\nviews:", '\n"views":')
+    assert plan_split(mapping).moved["views.yaml"] == ("field_sets", "views")
+
+
+def test_a_value_the_cut_changes_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
+    mapping = _pack(tmp_path)
+    # Keep-chomped, the message holds the blank line that travels with the next block.
+    warranty = "    message: |+\n      An asset with a Warranty"
+    _edit(mapping, '    message: "An asset with a Warranty', warranty)
+    _edit(mapping, "cannot be calculated.\"\n", "cannot be calculated.\n")
+    load_mapping(mapping)
+    before = _files(mapping.parent)
+    match = r"^the split does not read back as the same mapping; nothing was written$"
+    with pytest.raises(SplitRefusedError, match=match):
+        split_mapping(mapping)
+    assert _files(mapping.parent) == before
+
+
+def test_a_failed_mapping_write_leaves_it_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mapping = _pack(tmp_path)
+    before = mapping.read_bytes()
+
+    def half_write(path: Path, text: str) -> None:
+        write_artifact(path, text[:10])
+        if path.suffix == ".split":
+            raise OSError("disk full")
+
+    monkeypatch.setattr(mapping_split, "write_artifact", half_write)
+    with pytest.raises(OSError, match="disk full"):
+        split_mapping(mapping)
+    assert mapping.read_bytes() == before
+    assert not (mapping.parent / ".mapping.yaml.split").exists()
 
 
 def test_a_mapping_with_another_name_is_refused(tmp_path: Path) -> None:

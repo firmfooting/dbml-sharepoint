@@ -3,8 +3,9 @@
 Each top-level block moves verbatim, with the comments above it, so comments
 and quoting survive and the operator reviews a move rather than a rewrite.
 The pieces are parsed back and compared with the mapping before anything is
-written, and the mapping itself is written last: a failed write leaves a
-section in two homes, which the loader refuses, never in none.
+written. The concern files are written first and the mapping is replaced
+last, in one rename: a failed write leaves a section in two homes, which the
+loader refuses, never in none.
 """
 
 import re
@@ -62,12 +63,13 @@ def _text(lines: list[str]) -> str:
     return "\n".join(lines[kept[0] : kept[-1] + 1]) + "\n" if kept else "\n"
 
 
-def _verify(source: str, texts: dict[str, str]) -> None:
-    """Refuse a split whose pieces do not each parse and together read as `source`."""
+def _verify(source: str, texts: dict[str, str]) -> dict[str, tuple[str, ...]]:
+    """Each piece's keys, refusing pieces that do not each parse and together read as `source`."""
     mismatch = SplitRefusedError(
         "the split does not read back as the same mapping; nothing was written",
     )
     union: dict[object, object] = {}
+    keys: dict[str, tuple[str, ...]] = {}
     for name, text in texts.items():
         try:
             data = safe_load(text)
@@ -83,8 +85,10 @@ def _verify(source: str, texts: dict[str, str]) -> None:
         if any(_HOMES.get(str(key), _MAPPING) != name for key in block):
             raise mismatch
         union.update(block)
+        keys[name] = tuple(str(key) for key in block)
     if union != safe_load(source):
         raise mismatch
+    return keys
 
 
 def plan_split(mapping_path: Path) -> SplitPlan:
@@ -115,9 +119,9 @@ def plan_split(mapping_path: Path) -> SplitPlan:
                 f"{found} already exists; move {', '.join(keys)} into it by hand",
             )
     texts = {name: _text(files[name]) for name in (_MAPPING, *CONCERN_FILES) if name in files}
-    _verify(source, texts)
-    in_order = {concern: tuple(moved[concern]) for concern in texts if concern in moved}
-    return SplitPlan(texts=texts, moved=in_order)
+    # From the parsed pieces, so a key line the pattern missed is still reported.
+    parsed = _verify(source, texts)
+    return SplitPlan(texts=texts, moved={name: parsed[name] for name in texts if name != _MAPPING})
 
 
 def split_mapping(mapping_path: Path) -> dict[str, tuple[str, ...]]:
@@ -126,5 +130,11 @@ def split_mapping(mapping_path: Path) -> dict[str, tuple[str, ...]]:
     if plan.moved:
         for name in plan.moved:
             write_artifact(mapping_path.parent / name, plan.texts[name])
-        write_artifact(mapping_path, plan.texts[_MAPPING])
+        # Replaced in one rename, so a failed write never truncates the sections that stay.
+        temp = mapping_path.with_name(f".{_MAPPING}.split")
+        try:
+            write_artifact(temp, plan.texts[_MAPPING])
+            temp.replace(mapping_path)
+        finally:
+            temp.unlink(missing_ok=True)
     return plan.moved
