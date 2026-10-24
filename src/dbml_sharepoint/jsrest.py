@@ -1,0 +1,156 @@
+"""The JavaScript runtime core shares with a downstream paste-in prelude.
+
+This module holds the comment stripper that shortens the emitted script without
+touching a string, template or regex literal.
+"""
+
+# A `/` here starts a regex literal; after anything else it divides.
+_REGEX_AFTER_CHARS = frozenset("(,=:[!&|?{};+-*%<>~^")
+_REGEX_AFTER_WORDS = frozenset({"return", "typeof", "case", "do", "else", "in", "of", "void"})
+
+
+def strip_js_comments(text: str) -> str:
+    """Remove `//` and `/* */` comments from JavaScript, leaving every literal as it was.
+
+    A line that held only a comment is dropped, and a block comment that spanned a
+    line break leaves one behind so automatic semicolon insertion reads the same.
+    An unterminated string, template, regex or block comment raises `ValueError`
+    naming the line it opened on.
+    """
+    scanner = _Scanner(text)
+    while scanner.i < len(text):
+        if scanner.frames and scanner.frames[-1][0] == "`":
+            scanner.template_text()
+        else:
+            scanner.code()
+    for kind, start in reversed(scanner.frames):
+        if kind == "`":
+            raise scanner.unterminated("template literal", start)
+    return "".join(scanner.out)
+
+
+def _is_ident(char: str) -> bool:
+    return char.isalnum() or char in "_$"
+
+
+class _Scanner:
+    """One pass over the source, in code or template-text mode."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.i = 0
+        self.out: list[str] = []
+        # Open "`", "${" and "{" frames, each with the offset it opened at.
+        self.frames: list[tuple[str, int]] = []
+        self.prev = ""  # the last code character that is not whitespace
+        self.word = ""  # the identifier that ends at `prev`, if any
+        self.in_word = False
+
+    def unterminated(self, what: str, start: int) -> ValueError:
+        return ValueError(f"unterminated {what} at line {self.text.count(chr(10), 0, start) + 1}")
+
+    def code(self) -> None:
+        text, i = self.text, self.i
+        char = text[i]
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            self._drop(len(text) if end < 0 else end, spans_lines=False)
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            if end < 0:
+                raise self.unterminated("block comment", i)
+            self._drop(end + 2, spans_lines="\n" in text[i:end])
+        elif char in "'\"":
+            self._literal(self._quoted_end(i))
+        elif char == "/" and self._regex_allowed():
+            self._literal(self._regex_end(i))
+        elif char == "`":
+            self.frames.append(("`", i))
+            self._literal(i + 1)
+        else:
+            self._code_char(char)
+
+    def template_text(self) -> None:
+        text, j = self.text, self.i
+        while j < len(text):
+            if text[j] == "\\":
+                j += 2
+            elif text[j] == "`":
+                self.frames.pop()
+                self._literal(j + 1)
+                return
+            elif text.startswith("${", j):
+                self.frames.append(("${", j))
+                self.out.append(text[self.i:j + 2])
+                self.i, self.prev, self.word, self.in_word = j + 2, "{", "", False
+                return
+            else:
+                j += 1
+        raise self.unterminated("template literal", self.frames[-1][1])
+
+    def _code_char(self, char: str) -> None:
+        if char == "{":
+            self.frames.append(("{", self.i))
+        elif char == "}" and self.frames:
+            self.frames.pop()  # closing a "${" hands the scan back to its template
+        self.out.append(char)
+        self.i += 1
+        if char.isspace():
+            self.in_word = False
+            return
+        self.word = (self.word if self.in_word else "") + char if _is_ident(char) else ""
+        self.in_word = _is_ident(char)
+        self.prev = char
+
+    def _literal(self, end: int) -> None:
+        self.out.append(self.text[self.i:end])
+        self.prev, self.word, self.in_word = self.text[end - 1], "", False
+        self.i = end
+
+    def _quoted_end(self, start: int) -> int:
+        text, quote, j = self.text, self.text[start], start + 1
+        while j < len(text) and text[j] != "\n":
+            if text[j] == "\\":
+                j += 2
+            elif text[j] == quote:
+                return j + 1
+            else:
+                j += 1
+        raise self.unterminated("string literal", start)
+
+    def _regex_end(self, start: int) -> int:
+        text, j, in_class = self.text, start + 1, False
+        while j < len(text) and text[j] != "\n":
+            char = text[j]
+            if char == "\\":
+                j += 1
+            elif char == "/" and not in_class:
+                return j + 1
+            elif char in "[]":
+                in_class = char == "["
+            j += 1
+        raise self.unterminated("regex literal", start)
+
+    def _regex_allowed(self) -> bool:
+        return not self.prev or self.prev in _REGEX_AFTER_CHARS or self.word in _REGEX_AFTER_WORDS
+
+    def _drop(self, end: int, *, spans_lines: bool) -> None:
+        """Skip the comment that ends at `end`, tidying the whitespace it leaves."""
+        text, rest = self.text, end
+        while rest < len(text) and text[rest] in " \t":
+            rest += 1
+        self.i = end
+        if rest < len(text) and text[rest] != "\n":
+            if spans_lines:
+                self._trim()
+                if self.out and self.out[-1] != "\n":
+                    self.out.append("\n")  # a comment holding a line break still ends the line
+            elif rest == end and self.out and not self.out[-1][-1].isspace():
+                self.out.append(" ")  # keeps `return/**/x` two tokens
+            return
+        self._trim()
+        self.i = rest + 1 if not self.out or self.out[-1] == "\n" else rest
+
+    def _trim(self) -> None:
+        while self.out and self.out[-1] in {" ", "\t"}:
+            self.out.pop()
