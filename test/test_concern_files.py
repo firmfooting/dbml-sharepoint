@@ -121,6 +121,14 @@ def test_a_pointer_naming_a_yml_file_reads_it(tmp_path: Path) -> None:
     assert load_mapping(pack / "mapping.yaml").mapping.demo_items == original.demo_items
 
 
+def test_a_yml_named_by_another_concerns_pointer_is_not_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    original = load_mapping(pack / "mapping.yaml").mapping
+    _move(pack, "views.yml", "demo_items")
+    _write(pack / "mapping.yaml", {**_read(pack / "mapping.yaml"), "demo_source": "views.yml"})
+    assert load_mapping(pack / "mapping.yaml").mapping.demo_items == original.demo_items
+
+
 def test_concern_files_beside_another_name_are_not_read(tmp_path: Path) -> None:
     pack = _pack(tmp_path)
     _move(pack, "views.yaml", "views", mapping="other-mapping.yaml")

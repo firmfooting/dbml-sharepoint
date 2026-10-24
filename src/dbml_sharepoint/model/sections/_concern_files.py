@@ -77,13 +77,15 @@ def _pointer_skips(
     return names_file
 
 
-def _refuse_yml(path: Path, keys: tuple[str, ...], raw: Mapping[str, object]) -> None:
+def _refuse_yml(path: Path, raw: Mapping[str, object]) -> None:
     """Refuse `<stem>.yml`, which is never read and deploys nothing, unless a pointer names it."""
     yml = path.with_suffix(".yml")
-    pointer = raw.get(_POINTERS.get(keys, ""))
-    if yml.exists() and not (
-        isinstance(pointer, str) and (path.parent / pointer).resolve() == yml.resolve()
-    ):
+    if not yml.exists():
+        return
+    # Any family's pointer may name any file, so each one reading this file exempts it.
+    pointers = (raw.get(pointer) for pointer in _POINTERS.values())
+    named = {(path.parent / value).resolve() for value in pointers if isinstance(value, str)}
+    if yml.resolve() not in named:
         raise MappingShapeError(f"{yml.name}: concern files are named {path.name}")
 
 
@@ -155,7 +157,7 @@ def read_concern_files(mapping_path: Path, raw: Mapping[str, object]) -> dict[st
     for concern, keys in CONCERN_FILES.items():
         path = base_dir / concern
         folder = base_dir / f"{path.stem}.d"
-        _refuse_yml(path, keys, raw)
+        _refuse_yml(path, raw)
         if folder.exists() and not folder.is_dir():
             raise MappingShapeError(f"{folder.name} exists but is not a folder")
         if path.is_file() and folder.is_dir():
