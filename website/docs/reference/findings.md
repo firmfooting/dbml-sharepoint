@@ -273,6 +273,17 @@ dbml-sharepoint explain unknown_column_type
 | `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1023 characters once display names are substituted. |
 | `list_validation_message_too_long` | error | A `list_validation:` message is longer than 1024 characters. |
 | `list_validation_references_a_retired_column` | error | A list validation condition references a column that has been retired. |
+| `lists_form_attachments_off` | error | The list does not accept attachments. |
+| `lists_form_column_unknown` | error | A question names a column this entity does not have. A column removed from the list silently drops out of the form, so the build refuses it instead. |
+| `lists_form_list_validation_is_silent` | warning | When a list validation rule fails, a Lists form shows only "We're not accepting responses at the moment." and stores nothing. Column validation shows its message as usual. |
+| `lists_form_lookup_source_unreadable` | error | A respondent who cannot read the lookup's source list sees an empty option list and cannot pick a value. Declare `respondents_read_source: true` only when every respondent can read that list. |
+| `lists_form_on_document_library` | error | SharePoint stores a Lists form on a library but refuses its respondent link with "Cannot have submit role on a file", so nobody without library access can respond. Collect the answers in a list. |
+| `lists_form_question_hidden_on_list_form` | error | A Lists form shows and accepts a column the list's own form hides, and it ignores conditional visibility, so a respondent could write a column meant for flows or staff. Leave the column off the Lists form. |
+| `lists_form_question_not_offered` | error | A Lists form never shows a calculated column, the content type or a projected lookup field. Remove the question. |
+| `lists_form_question_repeated` | error | A column can appear once on a form. |
+| `lists_form_question_sets_column` | error | Required and "Include time" belong to the column, not the form. The form's own required flag is stored but not honoured. Declare `not null`, or `date` against `datetime`, in the DBML. |
+| `lists_form_required_column_missing` | error | The list requires this column and the form does not ask for it, so a respondent cannot complete a submission. Add the question or give the column a default. |
+| `lists_form_rich_text_is_plain` | warning | A Lists form asks for rich text in a plain box and may store plain text. |
 | `lookup_crosses_site_role` | error | A lookup's source and target entities map to different `site_role`s; a SharePoint lookup cannot span webs. |
 | `lookup_display_column_unknown` | error | A lookup target declares a `display_column` that is not one of its columns, so the deploy would emit an unresolvable `LookupField`. |
 | `lookup_would_render_blank` | error | A lookup target has no `Title` column and declares no `display_column`, so every lookup into it renders blank. |

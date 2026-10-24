@@ -1449,6 +1449,56 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A list validation condition references a column that has been "
         "retired."
     ),
+    FindingCode.LISTS_FORM_ATTACHMENTS_OFF: (
+        "The list does not accept attachments."
+    ),
+    FindingCode.LISTS_FORM_COLUMN_UNKNOWN: (
+        "A question names a column this entity does not have. A column removed "
+        "from the list silently drops out of the form, so the build refuses it "
+        "instead."
+    ),
+    FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT: (
+        "When a list validation rule fails, a Lists form shows only \"We're not "
+        "accepting responses at the moment.\" and stores nothing. Column "
+        "validation shows its message as usual."
+    ),
+    FindingCode.LISTS_FORM_LOOKUP_SOURCE_UNREADABLE: (
+        "A respondent who cannot read the lookup's source list sees an empty "
+        "option list and cannot pick a value. Declare "
+        "`respondents_read_source: true` only when every respondent can read "
+        "that list."
+    ),
+    FindingCode.LISTS_FORM_ON_DOCUMENT_LIBRARY: (
+        "SharePoint stores a Lists form on a library but refuses its respondent "
+        "link with \"Cannot have submit role on a file\", so nobody without "
+        "library access can respond. Collect the answers in a list."
+    ),
+    FindingCode.LISTS_FORM_QUESTION_HIDDEN_ON_LIST_FORM: (
+        "A Lists form shows and accepts a column the list's own form hides, and "
+        "it ignores conditional visibility, so a respondent could write a "
+        "column meant for flows or staff. Leave the column off the Lists form."
+    ),
+    FindingCode.LISTS_FORM_QUESTION_NOT_OFFERED: (
+        "A Lists form never shows a calculated column, the content type or a "
+        "projected lookup field. Remove the question."
+    ),
+    FindingCode.LISTS_FORM_QUESTION_REPEATED: (
+        "A column can appear once on a form."
+    ),
+    FindingCode.LISTS_FORM_QUESTION_SETS_COLUMN: (
+        "Required and \"Include time\" belong to the column, not the form. The "
+        "form's own required flag is stored but not honoured. Declare "
+        "`not null`, or `date` against `datetime`, in the DBML."
+    ),
+    FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING: (
+        "The list requires this column and the form does not ask for it, so a "
+        "respondent cannot complete a submission. Add the question or give the "
+        "column a default."
+    ),
+    FindingCode.LISTS_FORM_RICH_TEXT_IS_PLAIN: (
+        "A Lists form asks for rich text in a plain box and may store plain "
+        "text."
+    ),
     FindingCode.LOOKUP_CROSSES_SITE_ROLE: (
         "A lookup's source and target entities map to different "
         "`site_role`s; a SharePoint lookup cannot span webs."
