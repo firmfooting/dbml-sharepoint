@@ -88,10 +88,13 @@ pointer naming any other file while the concern file exists is refused.
 
 A concern that grows long may live in a folder named after its stem instead,
 such as `views.d/` for `views.yaml`. The folder holds only `.yaml` files, each
-with the concern file's shape, and a concern may not have both a file and a
-folder. A section may appear in several files when each holds a mapping, such
-as a few lists' `views` per file; a list declared in two files, or any other
-section declared twice, is refused with the line of each.
+with the concern file's shape, so any other entry, including a hidden or editor
+file such as `.DS_Store`, is refused. A concern may not have both a file and a
+folder, and an existing folder counts as the concern's home for the pointer
+rule too: while it exists, a pointer naming another file, or naming the concern
+file itself, is refused. A section may appear in several files when each holds
+a mapping, such as a few lists' `views` per file; a list declared in two
+files, or any other section declared twice, is refused with the line of each.
 
 Files are read in file-name order (code-point order), and that order sets the
 order of their entries, which reaches the build: checks iterate `views`,

@@ -141,6 +141,8 @@ def read_concern_files(mapping_path: Path, raw: Mapping[str, object]) -> dict[st
     for concern, keys in CONCERN_FILES.items():
         path = base_dir / concern
         folder = base_dir / f"{path.stem}.d"
+        if folder.exists() and not folder.is_dir():
+            raise MappingShapeError(f"{folder.name} exists but is not a folder")
         if path.is_file() and folder.is_dir():
             raise MappingShapeError(
                 f"{concern} and {folder.name}/ both exist: "

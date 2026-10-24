@@ -331,6 +331,14 @@ def test_a_path_in_a_folder_file_resolves_from_the_mapping_folder(tmp_path: Path
     _move(pack, "formatting.d/a.yaml", "column_formatting")
     assert load_mapping(pack / "mapping.yaml").mapping == original
 
+
+def test_a_concern_folder_name_that_is_a_file_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    (pack / "views.d").write_text("views: {}\n", encoding="utf-8")
+    with pytest.raises(MappingShapeError, match=r"^views\.d exists but is not a folder$"):
+        load_mapping(pack / "mapping.yaml")
+
+
 def test_folder_entries_take_file_name_order(tmp_path: Path) -> None:
     pack = _pack(tmp_path)
     views = _views_without(pack)
