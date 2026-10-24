@@ -491,7 +491,14 @@
           .map(([name, px]) => `<FieldRef Name="${xmlAttr(name)}" width="${px}"/>`).join('')
           + '</ColumnWidth>';
         const stripColumnWidth = (xml) => xml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, '');
-        const normalizeXml = (xml) => xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+        // SharePoint returns ' as &#39;; canonicalise each reference in one pass, keeping delimiters escaped.
+        const XML_NAMED = {apos: "'", quot: '"', lt: '<', gt: '>', amp: '&'};
+        const XML_CANON = {'<': '&lt;', '&': '&amp;', '"': '&quot;'};
+        const decodeXmlRefs = (xml) => xml.replace(/&(?:#x([0-9a-fA-F]+)|#(\d+)|(apos|quot|lt|gt|amp));/g, (_, h, d, n) => {
+          const c = h ? String.fromCodePoint(parseInt(h, 16)) : d ? String.fromCodePoint(Number(d)) : XML_NAMED[n];
+          return XML_CANON[c] ?? c;
+        });
+        const normalizeXml = (xml) => decodeXmlRefs(xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim());
         const currentXml = await readListViewXml();
         if (!currentXml.includes('</View>')) {
           throw new Error('view ListViewXml readback has no </View>; refusing widths write');
