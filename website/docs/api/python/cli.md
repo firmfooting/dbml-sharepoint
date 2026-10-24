@@ -265,6 +265,14 @@ carries is recovered; everything else is itemised in the
 EXTRACTION-NOTES.md written beside the output. Read that file before
 editing the schema, and again before deploying anything.
 
+### `mapping_split`
+
+```python
+def mapping_split(mapping: Path | None = ...) -> None
+```
+
+Move a mapping's sections into their concern files, such as views.yaml.
+
 ### `version`
 
 ```python
