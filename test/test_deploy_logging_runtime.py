@@ -2053,3 +2053,22 @@ def test_a_sidecar_whose_hidden_flag_does_not_read_back_is_a_named_failure() -> 
     run = _run_deploy(central_absent=True, ignore_hidden_merge=True)
     assert "flags did not read back" in run["output"].text
     assert run["state"]["lists"][RUN_LOG_TITLE]["Hidden"].value is False
+
+
+def test_a_central_contextinfo_without_a_digest_is_reported_by_the_shared_parse() -> None:
+    overlay = textwrap.dedent(f"""
+        const blindDigestFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {{}}) => {{
+          const u = decodeURIComponent(String(url));
+          if (u.endsWith('/sites/{CENTRAL_LOG_SITE_DEFAULT}/_api/contextinfo')) {{
+            return reply(200, {{ d: {{}} }});
+          }}
+          return blindDigestFetch(url, opts);
+        }};
+    """)
+    run = _run_deploy(overlay=overlay)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
+    failures = run["summary"]["loggingFailures"].dumps()
+    assert ("central contextinfo (request digest) failed: "
+            "HTTP 200 carried no GetContextWebInformation") in failures, failures
+    assert "carried no FormDigestValue" not in run["output"]

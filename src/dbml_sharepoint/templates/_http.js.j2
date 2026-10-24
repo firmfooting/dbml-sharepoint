@@ -24,16 +24,7 @@
   let requestCount = 0;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-  // SharePoint's REST error body carries the human-readable reason at
-  // error.message.value; fall back to (bounded) raw text. A bare HTTP
-  // status left a blocked run undiagnosable (live finding 2026-07-24).
-  const spError = (text) => {
-    let message = text;
-    try {
-      message = JSON.parse(text)?.error?.message?.value || text;
-    } catch {}
-    return String(message).slice(0, 300);
-  };
+{% include "_sp_error.js.j2" %}
 
   // SharePoint's by-name getters do not uniformly 404 for a missing item:
   // fields/getbyinternalnameortitle ("Column 'X' does not exist") and

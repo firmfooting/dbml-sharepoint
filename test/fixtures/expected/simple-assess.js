@@ -348,23 +348,11 @@
   const absListUrl = (title) => `${window.location.origin}${WEB}/Lists/${encodeURIComponent(title)}`;
   log('INFO', 'Read-only assessment. No changes are made.');
 
-  let cachedDigest = null;
-  let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
-  async function getContextWebInformation() {
+  async function readContextWebInformation(r) {
     // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
     const bounded = (e) => String((e && e.message) || e).slice(0, 300);
     const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
-    let r;
-    try {
-      r = await fetchWithRetry(apiUrl('contextinfo'), {
-        method: 'POST',
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-    } catch (err) {
-      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
-      throw failed(`no response (${bounded(err)})`);
-    }
     // Preserve the operation and status even when the refused body is unreadable (#282).
     if (!r.ok) {
       const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
@@ -384,6 +372,22 @@
       throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
     }
     return info;
+  }
+  let cachedDigest = null;
+  let digestExpiresAt = 0;
+  // `url` defaults to this web's; a cross-web write passes the other web's, since a digest only validates on its issuing web.
+  async function getContextWebInformation(url = apiUrl('contextinfo')) {
+    let r;
+    try {
+      r = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
+      throw new Error(`contextinfo (request digest) failed: no response (${String((err && err.message) || err).slice(0, 300)})`);
+    }
+    return readContextWebInformation(r);
   }
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;

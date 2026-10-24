@@ -829,16 +829,12 @@
     // Fetched per write, not cached: a run writes a handful of rows and the
     // ~30-minute cache lifetime is not worth a second invalidation rule.
     const externalDigest = async () => {
-      const r = await fetchWithRetry(crossWebDigestUrl(EXTERNAL_LOG_SITE), {
-        method: 'POST',
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!r.ok) {
-        throw new Error(`central contextinfo: HTTP ${r.status} ${spError(await r.text())}`);
+      try {
+        return (await getContextWebInformation(crossWebDigestUrl(EXTERNAL_LOG_SITE))).FormDigestValue;
+      } catch (err) {
+        // Prefixed so the operator still sees which web refused.
+        throw new Error(`central ${err.message}`);
       }
-      const digest = ((((await r.json()).d || {}).GetContextWebInformation || {}).FormDigestValue) || '';
-      if (!digest) throw new Error('central contextinfo carried no FormDigestValue');
-      return digest;
     };
     const stampExternal = async (kind, text, details) => {
       if (!externalReady) return;

@@ -53,6 +53,11 @@ class FactsRun(TypedDict):
 
 OK = Stub(200, {"d": {}})
 
+
+def contextinfo(digest: str, **lifetime: JsonValue) -> Stub:
+    """A contextinfo answer issuing `digest`, with any lifetime fields beside it."""
+    return Stub(200, {"d": {"GetContextWebInformation": {"FormDigestValue": digest, **lifetime}}})
+
 #: One GET through the transport, its final status reported.
 FETCH_ONCE = """
     const r = await fetchWithRetry(apiUrl('web'), {});
@@ -200,3 +205,41 @@ class TestRetryAfter:
         assert result["status"] == 429
         assert len(result["calls"]) == 9
         assert len(result["waits"]) == 8
+
+
+NO_INFO = "HTTP 200 carried no GetContextWebInformation"
+FAILED = "contextinfo (request digest) failed: "
+
+
+class TestDigest:
+    def test_the_digest_is_posted_and_read_from_the_guarded_chain(self) -> None:
+        result = _run_facts("report.digest = await getDigest();", contextinfo("abc"))
+        assert result["digest"] == "abc"
+        assert result["calls"] == [
+            {"url": "/sites/T/_api/contextinfo", "method": "POST", "digest": None},
+        ]
+
+    @pytest.mark.parametrize(("answer", "detail"), [
+        (Stub(200, {"d": {}}), NO_INFO),
+        (Stub(200, {"d": {"GetContextWebInformation": []}}), NO_INFO),
+        (Stub(200, {"d": {"GetContextWebInformation": {"FormDigestValue": " "}}}),
+         "HTTP 200 carried no usable FormDigestValue"),
+        (Stub(403, {"error": {"message": {"value": "Access denied"}}}), "HTTP 403 Access denied"),
+    ])
+    def test_a_contextinfo_answer_without_a_digest_names_what_is_missing(
+        self, answer: Stub, detail: str,
+    ) -> None:
+        assert _run_facts("await getDigest();", answer)["error"] == FAILED + detail
+
+    def test_a_cross_web_contextinfo_goes_through_the_same_parse(self) -> None:
+        body = "await getContextWebInformation('https://t.example/sites/C/_api/contextinfo');"
+        result = _run_facts(body, Stub(200, {"d": {}}))
+        assert result["calls"][0]["url"] == "https://t.example/sites/C/_api/contextinfo"
+        assert result["error"] == FAILED + NO_INFO
+
+    def test_the_parse_needs_only_sp_error_beside_it(self) -> None:
+        body = "report.digest = (await readContextWebInformation(await fetch('x'))).FormDigestValue"
+        result = _run_facts(
+            body, contextinfo("abc"), partials=("_sp_error.js.j2", "_contextinfo.js.j2"),
+        )
+        assert result["digest"] == "abc"
