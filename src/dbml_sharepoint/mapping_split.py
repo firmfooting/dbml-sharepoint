@@ -4,8 +4,8 @@ Each top-level block moves verbatim, with the comments above it, so comments
 and quoting survive and the operator reviews a move rather than a rewrite.
 The pieces are parsed back and compared with the mapping before anything is
 written. The concern files are written first and the mapping is replaced
-last, in one rename: a failed write leaves a section in two homes, which the
-loader refuses, never in none.
+last, in one rename, after every file reads back as planned: a failed write
+leaves a section in two homes, which the loader refuses, never in none.
 """
 
 import re
@@ -128,6 +128,15 @@ def plan_split(mapping_path: Path) -> SplitPlan:
     return SplitPlan(texts=texts, moved={name: parsed[name] for name in texts if name != _MAPPING})
 
 
+def _read_back(path: Path, text: str, plan: SplitPlan) -> None:
+    """Refuse unless `path` holds `text` as `write_artifact` normalises it."""
+    if path.read_text(encoding="utf-8") != text.replace("\r\n", "\n").replace("\r", "\n"):
+        raise SplitRefusedError(
+            f"{path.name} did not read back as written, so {_MAPPING} was left unchanged; "
+            f"delete {', '.join(plan.moved)} before splitting again",
+        )
+
+
 def split_mapping(mapping_path: Path) -> dict[str, tuple[str, ...]]:
     """Split `mapping_path` into its concern files and return the keys moved into each."""
     # Writes go beside the file the plan read, never beside a symlink to it.
@@ -140,6 +149,9 @@ def split_mapping(mapping_path: Path) -> dict[str, tuple[str, ...]]:
         temp = mapping_path.with_name(f".{_MAPPING}.split")
         try:
             write_artifact(temp, plan.texts[_MAPPING])
+            for name in plan.moved:
+                _read_back(mapping_path.parent / name, plan.texts[name], plan)
+            _read_back(temp, plan.texts[_MAPPING], plan)
             temp.replace(mapping_path)
         finally:
             temp.unlink(missing_ok=True)

@@ -294,6 +294,10 @@ It refuses, and writes nothing, when:
 - a moved piece would not parse alone (an alias whose anchor stays);
 - the pieces do not read back as the same mapping.
 
+Every written file is read back before `mapping.yaml` is replaced. If one
+differs from what was planned, the split refuses and leaves `mapping.yaml`
+unchanged, and the error names the concern files to delete before trying again.
+
 It exits `0` after a split or when there is nothing to split, and `1`, with
 `[ERROR]` and the reason, on a refusal or a file it cannot read or write. Run
 outside a project without `--mapping`, it exits `2`, as `build` does.

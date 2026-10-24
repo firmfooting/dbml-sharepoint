@@ -197,6 +197,26 @@ def test_a_split_through_a_symlink_writes_beside_the_real_mapping(tmp_path: Path
     assert load_mapping(mapping).mapping == original
 
 
+def test_a_concern_file_that_reads_back_short_leaves_the_mapping_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mapping = _pack(tmp_path)
+    before = mapping.read_bytes()
+
+    def short_write(path: Path, text: str) -> None:
+        write_artifact(path, text[:10] if path.name == "views.yaml" else text)
+
+    monkeypatch.setattr(mapping_split, "write_artifact", short_write)
+    with pytest.raises(
+        SplitRefusedError,
+        match=r"^views\.yaml did not read back as written, so mapping\.yaml was left unchanged; "
+        r"delete views\.yaml, ",
+    ):
+        split_mapping(mapping)
+    assert mapping.read_bytes() == before
+    assert not (mapping.parent / ".mapping.yaml.split").exists()
+
+
 @pytest.mark.parametrize(
     ("existing", "name"), [("views.yaml", "views.yaml"), ("views.d/a.yaml", "views.d/")],
 )

@@ -13,8 +13,8 @@ Each top-level block moves verbatim, with the comments above it, so comments
 and quoting survive and the operator reviews a move rather than a rewrite.
 The pieces are parsed back and compared with the mapping before anything is
 written. The concern files are written first and the mapping is replaced
-last, in one rename: a failed write leaves a section in two homes, which the
-loader refuses, never in none.
+last, in one rename, after every file reads back as planned: a failed write
+leaves a section in two homes, which the loader refuses, never in none.
 
 ### `SplitRefusedError`
 
