@@ -30,13 +30,17 @@ PAST_DATE = email.utils.format_datetime(NOW - timedelta(seconds=30), usegmt=True
 
 @dataclass(frozen=True)
 class Stub:
-    """One scripted answer; `hold` keeps it back until the body calls `release()`."""
+    """One scripted answer; `hold` keeps it back until the body calls `release()`.
+
+    `body_fails` answers the status and then fails reading the body, as a dropped stream does.
+    """
 
     status: int
     body: JsonValue = field(default_factory=dict)
     headers: dict[str, str] = field(default_factory=dict)
     url: str = ""
     hold: bool = False
+    body_fails: bool = False
 
 
 class FactsRun(TypedDict):
@@ -105,7 +109,10 @@ const respond = (stub, url) => {
     url: stub.url || url,
     headers: { get: (name) => headers[String(name).toLowerCase()] ?? null },
     json: async () => JSON.parse(JSON.stringify(stub.body)),
-    text: async () => JSON.stringify(stub.body),
+    text: async () => {
+      if (stub.body_fails) throw new TypeError('Failed to fetch');
+      return JSON.stringify(stub.body);
+    },
     clone: () => make(),
   });
   return make();
@@ -325,6 +332,11 @@ class TestDigestCache:
         )
         assert result["status"] == 403
         assert len(result["calls"]) == 2
+
+    def test_a_403_whose_body_cannot_be_read_is_handed_back(self) -> None:
+        result = _run_facts(WRITE, contextinfo("d1", **LIFETIME), Stub(403, body_fails=True))
+        assert result["status"] == 403
+        assert write_digests(result) == ["d1"]
 
     def test_four_lanes_refused_together_share_one_refresh(self) -> None:
         body = """

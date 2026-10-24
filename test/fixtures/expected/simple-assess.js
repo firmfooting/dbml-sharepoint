@@ -424,7 +424,7 @@
   onDigestRefused = async (init, r) => {
     const refused = init.headers?.['X-RequestDigest'];
     if (!issuedDigests.has(refused)) return null;
-    if (!/security validation/i.test(await r.clone().text())) return null;
+    if (!/security validation/i.test(await r.clone().text().catch(() => ''))) return null;
     if (refused === cachedDigest) {
       cachedDigest = null;
       digestRefresh = getDigest().finally(() => { digestRefresh = null; });
