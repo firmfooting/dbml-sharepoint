@@ -16,12 +16,14 @@ from typing import cast
 from dbml_sharepoint.bundle import write_artifact
 from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.sections._concern_files import CONCERN_FILES
+from dbml_sharepoint.model.sections._concern_files import (
+    _HOMES,
+    CONCERN_FILES,
+)
+from dbml_sharepoint.model.sections._concern_files import _MAPPING_FILE_NAME as _MAPPING
 from dbml_sharepoint.model.yamlio import PARSE_ERRORS, safe_load
 
-_MAPPING = "mapping.yaml"
 _KEY_LINE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)[ \t]*:(?:[ \t]|$)")
-_HOMES = {key: concern for concern, keys in CONCERN_FILES.items() for key in keys}
 
 
 class SplitRefusedError(Exception):
@@ -93,9 +95,10 @@ def _verify(source: str, texts: dict[str, str]) -> dict[str, tuple[str, ...]]:
 
 def plan_split(mapping_path: Path) -> SplitPlan:
     """What splitting `mapping_path` would write, verified. Writes nothing."""
-    if mapping_path.name != _MAPPING:
+    # The loader tests the resolved name, so a symlink or another case must agree with it.
+    if (name := mapping_path.resolve().name) != _MAPPING:
         raise SplitRefusedError(
-            f"{mapping_path.name}: only a file named mapping.yaml is split, "
+            f"{name}: only a file named mapping.yaml is split, "
             "because its concern files are read by every mapping in its folder",
         )
     try:

@@ -168,6 +168,19 @@ def test_a_mapping_with_another_name_is_refused(tmp_path: Path) -> None:
         split_mapping(other)
 
 
+def test_a_symlink_named_mapping_to_another_name_is_refused(tmp_path: Path) -> None:
+    mapping = _pack(tmp_path)
+    other = mapping.rename(mapping.parent / "other.yaml")
+    try:
+        mapping.symlink_to(other.name)
+    except OSError:
+        pytest.skip("symlinks are not available here")
+    before = _files(mapping.parent)
+    with pytest.raises(SplitRefusedError, match=r"^other\.yaml: only a file named mapping\.yaml"):
+        split_mapping(mapping)
+    assert _files(mapping.parent) == before
+
+
 @pytest.mark.parametrize(
     ("existing", "name"), [("views.yaml", "views.yaml"), ("views.d/a.yaml", "views.d/")],
 )
