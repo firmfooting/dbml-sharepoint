@@ -7,7 +7,11 @@ Each expected text is the form the receiver was measured to apply
 
 import pytest
 
-from dbml_sharepoint.analysis.folder_defaults import encode_folder_default, person_logins
+from dbml_sharepoint.analysis.folder_defaults import (
+    encode_folder_default,
+    folder_default_problem,
+    person_logins,
+)
 from dbml_sharepoint.model.mapping_types import FolderDefaultValue
 
 _A = "i:0#.f|membership|a@contoso.com"
@@ -28,7 +32,6 @@ _B = "i:0#.f|membership|b@contoso.com"
     # library.folder-defaults.value.boolean-forms: SharePoint reads Yes as No, so it is written 1.
     ("boolean", "Yes", "1"),
     ("boolean", "off", "0"),
-    ("boolean", "maybe", "maybe"),
     ("date", "[today]", "[today]"),
     ("date", "Today", "[today]"),
     ("number", "1,234.5", "1,234.5"),
@@ -46,3 +49,9 @@ def test_each_value_is_spelled_as_the_receiver_applies_it(
 def test_only_person_values_carry_logins_to_resolve() -> None:
     assert person_logins("person[]", ("a@contoso.com", "b@contoso.com")) == [_A, _B]
     assert person_logins("nvarchar", "a@contoso.com") == []
+
+
+def test_boolean_text_sharepoint_reads_as_no_is_refused() -> None:
+    # library.folder-defaults.value.boolean-forms: any other text is applied as No.
+    assert "as No" in (folder_default_problem("boolean", "maybe") or "")
+    assert folder_default_problem("boolean", "Off") is None

@@ -1757,7 +1757,6 @@ def test_folder_default_on_a_lookup_column_is_refused(tmp_path: Path, column: st
     ("Count int", '"1e3"'),
     ("Count int", "-3"),
     ("Flag boolean", "Yes"),
-    ("Flag boolean", "maybe"),
 ])
 def test_folder_defaults_the_receiver_applies_are_accepted(
     tmp_path: Path, column: str, value: str,
@@ -1774,6 +1773,7 @@ def test_folder_defaults_the_receiver_applies_are_accepted(
     ("Owners person[]", "[a@contoso.com, nobody]", "'nobody'"),
     ("Areas division[]", "[Corporate, Finance]", "'Finance' is not a member"),
     ("Owner person", '"a@contoso.com\\n"', "user principal name"),
+    ("Flag boolean", "maybe", "as No"),
     ("Note2 nvarchar", "true", "only a default for a boolean column"),
     ("Count int", "abc", "cannot parse"),
     ("Count int", '"1 234"', "cannot parse"),

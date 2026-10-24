@@ -34,7 +34,7 @@ _DATE_DROPPED = re.compile(
     r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}|today\s*[+-]\s*\d+", re.IGNORECASE,
 )
 _TODAY = ("today", "[today]")
-# library.folder-defaults.value.boolean-forms: true, 1 and -1 read Yes; other text reads No.
+# library.folder-defaults.value.boolean-forms: true, 1, -1 read Yes; other text reads No.
 _BOOLEAN_TEXT = {
     "true": "1", "1": "1", "-1": "1", "yes": "1", "on": "1",
     "false": "0", "0": "0", "no": "0", "off": "0",
@@ -72,6 +72,11 @@ def folder_default_problem(column_type: str, value: FolderDefaultValue) -> str |
     if isinstance(value, tuple):
         # Only a multi-choice column reaches here; the validator judges its members.
         return None
+    if is_boolean(column_type) and value.strip().lower() not in _BOOLEAN_TEXT:
+        return (
+            f"SharePoint applies a boolean default written as {value!r} as No; write "
+            f"true or false (or yes, no, on, off, 1, 0)."
+        )
     if element_type(column_type) in NUMBER_TYPES and _NUMBER_DROPPED.search(value):
         return (
             f"SharePoint drops a number default it cannot parse, such as {value!r}; "
