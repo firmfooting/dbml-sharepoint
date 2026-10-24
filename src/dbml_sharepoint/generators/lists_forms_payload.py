@@ -1,6 +1,7 @@
 """The Lists forms payload deploy, assess and verify read, one spelling for all three."""
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from dbml_sharepoint.analysis.typemap import map_column
 from dbml_sharepoint.generators.schema_types import (
@@ -13,6 +14,12 @@ from dbml_sharepoint.model.parser import Column, Schema
 
 # The designer's create default (`lists-forms.api.create`); an empty string is unmeasured.
 PLATFORM_THANK_YOU = "Your response has been submitted!"
+
+# Enforced only when declared: an absent key leaves the site's value to the owner.
+type OperationalKey = Literal["accepting_responses", "closed_message", "opens", "closes"]
+OPERATIONAL_KEYS: tuple[OperationalKey, ...] = (
+    "accepting_responses", "closed_message", "opens", "closes",
+)
 
 # SharePoint's `DisplayFormat`: 0 is date only, 1 is date and time.
 _DISPLAY_FORMAT = {"date": 0, "datetime": 1}
@@ -58,14 +65,14 @@ def _form_row(
         "thank_you": form.thank_you if form.thank_you is not None else PLATFORM_THANK_YOU,
         "one_response_per_person": form.one_response_per_person,
     }
-    if form.accepting_responses is not None:
-        row["accepting_responses"] = form.accepting_responses
-    if form.closed_message is not None:
-        row["closed_message"] = form.closed_message
-    if form.opens is not None:
-        row["opens"] = utc_text(form.opens)
-    if form.closes is not None:
-        row["closes"] = utc_text(form.closes)
+    for key in OPERATIONAL_KEYS:
+        value = getattr(form, key)
+        if value is None:
+            continue
+        if key in ("opens", "closes"):
+            row[key] = utc_text(value)
+        else:
+            row[key] = value
     return row
 
 

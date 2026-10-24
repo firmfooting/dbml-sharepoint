@@ -15,6 +15,7 @@ from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
+from dbml_sharepoint.generators.lists_forms_payload import OPERATIONAL_KEYS
 from dbml_sharepoint.generators.schema_types import FieldSpec, GroupRow, ListRow, SchemaJson
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.identities import BUILTIN_IDENTITIES, IdentityValue
@@ -405,8 +406,7 @@ def generate_manifest(
         form_formatting=form_formatting,
         field_links=field_links,
         lists_forms=schema_json["lists_forms"],
-        # Enforced only when declared; the manifest names the rest as the owner's.
-        lists_form_operational_keys=("accepting_responses", "closed_message", "opens", "closes"),
+        lists_form_operational_keys=OPERATIONAL_KEYS,
         retention=retention,
         prefix=bundle.mapping.prefix,
         schema_json=schema_json,
