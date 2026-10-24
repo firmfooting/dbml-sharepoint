@@ -74,6 +74,7 @@ from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
+from dbml_sharepoint.generators.lists_forms_payload import lists_forms_payload
 from dbml_sharepoint.generators.schema_types import (
     AclScope,
     FieldBody,
@@ -85,6 +86,7 @@ from dbml_sharepoint.generators.schema_types import (
     GroupRow,
     IndexedColumn,
     ListRow,
+    ListsFormsRow,
     PermissionLevelRow,
     Phase2Lookup,
     PrincipalRow,
@@ -659,6 +661,7 @@ def build_schema_json(
     views_out: list[ViewRow] = []
     form_formatting_out: list[FormFormattingRow] = []
     field_links_out: list[FieldLinkRow] = []
+    lists_forms_out: list[ListsFormsRow] = []
     field_defaults_out: list[FieldDefault] = []
 
     # One family per schema, so it is resolved once rather than per list.
@@ -1057,6 +1060,10 @@ def build_schema_json(
         if field_links:
             field_links_out.append({"list": list_title, "hidden": field_links})
 
+        lists_forms_row = lists_forms_payload(bundle, schema, table_name)
+        if lists_forms_row is not None:
+            lists_forms_out.append(lists_forms_row)
+
         column_types = effective_column_types(
             {col.name: col.type for col in table.columns},
             {name for entity_name, name in cross_site_keys if entity_name == table_name},
@@ -1269,6 +1276,7 @@ def build_schema_json(
         "views": views_out,
         "form_formatting": form_formatting_out,
         "field_links": field_links_out,
+        "lists_forms": lists_forms_out,
         "field_defaults": field_defaults_out,
         "permission_levels": permission_levels_out,
         "groups": groups_out,

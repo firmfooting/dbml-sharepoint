@@ -251,6 +251,35 @@ class SeedItem(TypedDict):
     skip_if_has_rows: bool
 
 
+class ListsFormQuestionRow(TypedDict):
+    column: str
+    label: str
+    help: str
+    # The column's own settings, which the forms step checks and never writes.
+    required: bool
+    display_format: int | None
+
+
+class ListsFormRow(TypedDict):
+    title: str
+    previous_titles: list[str]
+    description: str
+    questions: list[ListsFormQuestionRow]
+    thank_you: str
+    one_response_per_person: bool
+    # Present only when declared: an absent key leaves the site's value alone.
+    accepting_responses: NotRequired[bool]
+    closed_message: NotRequired[str]
+    opens: NotRequired[str]
+    closes: NotRequired[str]
+
+
+class ListsFormsRow(TypedDict):
+    list: str
+    forms: list[ListsFormRow]
+    retired: list[str]
+
+
 class SchemaJson(TypedDict):
     lists: list[ListRow]
     phase2_lookups: list[Phase2Lookup]
@@ -258,6 +287,7 @@ class SchemaJson(TypedDict):
     views: list[ViewRow]
     form_formatting: list[FormFormattingRow]
     field_links: list[FieldLinkRow]
+    lists_forms: list[ListsFormsRow]
     field_defaults: list[FieldDefault]
     permission_levels: list[PermissionLevelRow]
     groups: list[GroupRow]

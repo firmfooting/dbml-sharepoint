@@ -338,6 +338,13 @@ def test_the_built_ins_are_skipped_and_title_is_not() -> None:
     assert builtin_reason(content_type) == "a known built-in column name"
 
 
+def test_the_lists_form_source_column_is_skipped_as_a_built_in() -> None:
+    """`lists-forms.api.source-column`: the platform adds `_FormSourceId_0` with the first form."""
+    source = parse_field_xml(field_xml("Text", StaticName="_FormSourceId_0"))
+    assert is_builtin(source)
+    assert builtin_reason(source) == "a known built-in column name"
+
+
 def test_a_non_field_element_is_refused_by_name() -> None:
     with pytest.raises(FieldXmlError, match="expected a <Field> element"):
         parse_field_xml("<Fields />")

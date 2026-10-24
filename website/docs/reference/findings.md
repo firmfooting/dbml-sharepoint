@@ -286,7 +286,7 @@ dbml-sharepoint explain unknown_column_type
 | `lists_form_question_not_offered` | error | A Lists form never shows a calculated column, the content type or a projected lookup field. Remove the question. |
 | `lists_form_question_repeated` | error | A column can appear once on a form. |
 | `lists_form_question_sets_column` | error | Required and "Include time" belong to the column, not the form. The form's own required flag is stored but not honoured. Declare `not null`, or `date` against `datetime`, in the DBML. |
-| `lists_form_required_column_missing` | error | The list requires this column and the form does not ask for it, so a respondent cannot complete a submission. Add the question or give the column a default. |
+| `lists_form_required_column_missing` | error | The list requires this column and the form does not ask for it, so a respondent cannot complete a submission. Add the question or give the column a default. Multi-line text, hyperlink and person columns get no default on the list, so they need the question. |
 | `lists_form_retired_and_declared` | error | A retired form is deleted on deploy, so it cannot also be declared. |
 | `lists_form_rich_text_is_plain` | warning | A Lists form asks for rich text in a plain box and may store plain text. |
 | `lists_form_schedule_invalid` | error | The schedule is stored in UTC and needs a time zone. The designer refuses an end before the start. |

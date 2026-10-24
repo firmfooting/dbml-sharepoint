@@ -241,8 +241,8 @@ def _form(
     findings += [
         Finding(
             FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING,
-            f"{at.path}: {entity} requires {name!r} with no default, and the form "
-            f"does not ask for it. Add the question or give the column a default.",
+            f"{at.path}: {entity} requires {name!r} with no default the deploy writes, "
+            f"and the form does not ask for it. Add the question or give the column a default.",
             location=at,
         )
         for name in required if name not in asked

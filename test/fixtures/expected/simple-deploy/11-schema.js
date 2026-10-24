@@ -329,6 +329,7 @@
       "validation_message": null
     }
   ],
+  "lists_forms": [],
   "permission_levels": [
     {
       "base_permissions": {

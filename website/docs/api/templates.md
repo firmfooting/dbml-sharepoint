@@ -203,6 +203,12 @@ Included by: `_sp_rest_prelude.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
 
+### `_lists_forms_read.js.j2`
+
+Included by: `deploy.js.j2`
+
+Shared Lists forms reading: parse, match, build and compare, for deploy, assess and verify. Pure apart from listsFormsApi, which needs apiUrl.
+
 ### `_maintain_list.js.j2`
 
 Included by: `columns.js.j2`, `list.js.j2`, `protection.js.j2`
@@ -316,6 +322,12 @@ Phase body: assert Indexed=true on every declared indexed column, verified by re
 *Phase 2.1 (STRUCTURE): list creation*
 
 Phase body: create or reconcile owned lists in dependency order with their non-lookup columns and every same-site lookup whose target already exists. Wave 1 runs sequentially to capture lookup-target GUIDs; wave 2 runs in per-list lanes. Existing lists are reconciled only when exact provenance and immutable shape both match (fail closed).
+
+### `deploy/_lists_forms.js.j2`
+
+*Phase 3.4 (PRESENTATION): Lists forms*
+
+Phase body: create, update and retire each entity's declared Lists forms; a form whose title is not declared is left alone. Needs _lists_forms_read.js.j2.
 
 ### `deploy/_logging.js.j2`
 

@@ -1508,7 +1508,8 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING: (
         "The list requires this column and the form does not ask for it, so a "
         "respondent cannot complete a submission. Add the question or give the "
-        "column a default."
+        "column a default. Multi-line text, hyperlink and person columns get no "
+        "default on the list, so they need the question."
     ),
     FindingCode.LISTS_FORM_RETIRED_AND_DECLARED: (
         "A retired form is deleted on deploy, so it cannot also be declared."

@@ -85,6 +85,7 @@
 {# The same body assess.js runs, never a second copy: it needs
    fetchWithRetry, apiUrl, odataName and getDigest, all declared above. #}
 {% include "_folder_defaults_read.js.j2" %}
+{% include "_lists_forms_read.js.j2" %}
 {% include "_assess_body.js.j2" %}
 
 {% include "deploy/_shape_probes.js.j2" %}

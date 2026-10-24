@@ -1,0 +1,32 @@
+// Synthetic blueprint for the Lists forms build tests.
+Project lists_forms_test { database_type: 'SharePoint Online' }
+
+Enum category {
+  "Building"
+  "IT"
+  "Other"
+}
+
+Enum priority {
+  "Low"
+  "Normal"
+  "High"
+}
+
+Table Request {
+  Id        int       [pk, increment]
+  Title     nvarchar  [not null]
+  Details   longtext
+  Category  category
+  Priority  priority  [not null, default: 'Normal']
+  NeededBy  date
+
+  Note: 'Requests for the facilities team.'
+}
+
+Table Site {
+  Id     int       [pk, increment]
+  Title  nvarchar  [not null]
+
+  Note: 'Sites the facilities team looks after.'
+}
