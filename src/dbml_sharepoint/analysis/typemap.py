@@ -93,8 +93,7 @@ FIELD_KIND_BY_TYPE_KIND: dict[int, FieldKind] = {
     if kind not in SINGLE_ARITY_KIND
 }
 
-#: The kinds whose declared DBML default the deploy writes as DefaultValue.
-#: The rest (Note, URL, User) create no default, so the column stays without one.
+#: The kinds whose DBML default the deploy writes as DefaultValue; Note, URL and User get none.
 DEFAULT_VALUE_KINDS: frozenset[FieldKind] = frozenset(
     {"Text", "Choice", "DateTime", "Boolean", "Number"},
 )

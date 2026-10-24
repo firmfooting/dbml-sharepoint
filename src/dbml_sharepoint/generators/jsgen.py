@@ -1516,8 +1516,7 @@ def _default_value(kind: FieldKind, value: ColumnDefault) -> ColumnDefault:
     """SharePoint's DefaultValue for a kind in DEFAULT_VALUE_KINDS."""
     if kind == "Boolean":
         return _bool_default_to_sp(value)
-    # A date carries a dynamic default ("[today]") or a literal, and a Number's
-    # DefaultValue must be a string, or the create body and MERGE are refused.
+    # A date may be "[today]" or a literal; SharePoint refuses a numeric DefaultValue.
     if kind in {"DateTime", "Number"}:
         return str(value)
     return value
