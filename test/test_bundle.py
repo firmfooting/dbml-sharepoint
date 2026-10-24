@@ -305,12 +305,34 @@ def test_the_package_has_exactly_one_writer() -> None:
         """`path.write_text(...)`, however `path` was spelled."""
         return isinstance(func, ast.Attribute) and func.attr == "write_text"
 
+    def is_a_text_write_open(node: ast.Call) -> bool:
+        """`open(...)` or `path.open(...)` in a text mode that writes."""
+        func = node.func
+        named = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if named != "open":
+            return False
+        modes = [kw.value for kw in node.keywords if kw.arg == "mode"] + list(node.args)
+        mode = next(
+            (m.value for m in modes if isinstance(m, ast.Constant) and isinstance(m.value, str)
+             and set(m.value) <= set("rwaxbt+")),
+            "r",
+        )
+        return "b" not in mode and bool(set(mode) & set("wax+"))
+
     writers: list[str] = []
+    kit_writes: list[str] = []
     for path in sorted(PACKAGE.rglob("*.py")):
-        # The test kit writes node's scratch files, not artifacts; it passes newline itself.
-        if path.relative_to(PACKAGE).parts[0] == "testing":
-            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        # The test kit writes node scratch files directly, so each text write must pass newline.
+        if path.relative_to(PACKAGE).parts[0] == "testing":
+            kit_writes.extend(
+                f"{path.relative_to(PACKAGE)}:{node.lineno} newline="
+                f"{'newline' in {kw.arg for kw in node.keywords}}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and (is_a_write_call(node.func) or is_a_text_write_open(node))
+            )
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and is_a_write_call(node.func):
                 keywords = {kw.arg for kw in node.keywords}
@@ -330,6 +352,11 @@ def test_the_package_has_exactly_one_writer() -> None:
     assert writers[0].startswith("bundle.py:"), writers[0]
     assert "'newline'" in writers[0], (
         f"the one writer must pass newline: {writers[0]}"
+    )
+    # Non-empty, for the same reason as "exactly one": a scan that finds nothing guards nothing.
+    assert kit_writes, "the test kit's writes were not found"
+    assert all(w.endswith("newline=True") for w in kit_writes), (
+        'every text write in the test kit must pass newline="\\n":\n  ' + "\n  ".join(kit_writes)
     )
 
 
