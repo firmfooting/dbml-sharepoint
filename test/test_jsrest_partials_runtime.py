@@ -128,6 +128,15 @@ def test_a_refusal_carries_the_reason_without_the_name() -> None:
         "ensureuser: HTTP 400 The specified user [logon name] could not be found.")
 
 
+def test_a_claim_refused_with_only_its_address_quoted_carries_neither() -> None:
+    claim = "i:0#.f|membership|nobody@t.example"
+    said = "The specified user Nobody@T.example could not be found."
+    error = run_ensure(claim, Stub(400, {"error": {"message": {"value": said}}}))["error"]
+    assert error == "ensureuser: HTTP 400 The specified user [logon name] could not be found."
+    assert "nobody@t.example" not in error.lower()
+    assert claim not in error
+
+
 @pytest.mark.parametrize("principal", [
     {**PRINCIPAL, "Id": "7"}, {**PRINCIPAL, "LoginName": ""}, {}, None,
 ])
