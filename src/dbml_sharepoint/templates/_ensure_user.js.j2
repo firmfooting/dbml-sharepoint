@@ -1,0 +1,28 @@
+{# Resolves a logon name to a site principal. Expects apiUrl, fetchWithRetry,
+   spHeaders, getDigest and spError. No error it throws carries the logon name. #}
+  // EnsureUser is a write (it adds the principal to the site's user information list), hence the digest.
+  async function ensureUser(logonName) {
+    const name = String(logonName);
+    const r = await fetchWithRetry(apiUrl('web/ensureuser?$select=Id,LoginName,Title,Email,PrincipalType'), {
+      method: 'POST',
+      headers: spHeaders(await getDigest()),
+      body: JSON.stringify({ logonName: name }),
+    });
+    if (!r.ok) {
+      // A refusal can quote the claim or only its last '|' segment, in any case; both leave the raw body and the parsed reason.
+      const parts = [name, name.split('|').pop()].filter(Boolean);
+      const scrub = (text) => parts.reduce((t, part) => t.replace(
+        new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[logon name]'), String(text));
+      const reason = scrub(spError(scrub(await r.text().catch(() => ''))));
+      throw new Error(`ensureuser: HTTP ${r.status} ${reason}`);
+    }
+    const d = (await r.json().catch(() => null))?.d;
+    if (!d || !Number.isInteger(d.Id) || typeof d.LoginName !== 'string' || d.LoginName === '') {
+      throw new Error('ensureuser returned an invalid principal response');
+    }
+    const login = d.LoginName.toLowerCase();
+    if ({{ tenant_wide_claim_needles | tojson }}.some((needle) => login.includes(needle))) {
+      throw new Error('ensureuser resolved a tenant-wide claim; refused');
+    }
+    return { Id: d.Id, LoginName: d.LoginName, Title: d.Title, Email: d.Email, PrincipalType: d.PrincipalType };
+  }

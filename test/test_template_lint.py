@@ -103,6 +103,8 @@ KNOWN_CONTEXT = {
     "deployment_log_change_optional_columns",
     # extractgen, for extract.js
     "list_paths", "site_read", "live_format", "download_name",
+    # jsrest.prelude: the flavour switches and the site its guard expects.
+    "writes", "batch", "expected_site",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
     # reason extract.js has none. BOTH halves of that URL are passed:
@@ -124,6 +126,8 @@ KNOWN_CONTEXT = {
     # nothing to guard; pinning it would stop one file walking a fleet.
     # Defaulted ON in `_site_guard.js.j2`, so every other caller keeps it.
     "require_site_match",
+    # "pathname" reads the site from the page URL; `_site_guard.js.j2` defaults it.
+    "site_resolution",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }

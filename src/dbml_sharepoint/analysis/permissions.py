@@ -3,7 +3,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, require_current_resolution
 from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, RoleAssignment
@@ -152,6 +152,9 @@ ENTERPRISE_READER_REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "ViewFormPages",
     "Open",
 )
+
+#: Login-name fragments of the tenant-wide claims ensureuser can return; both callers refuse them.
+TENANT_WIDE_CLAIM_NEEDLES: Final = ("spo-grid-all-users", "c:0(.s|true", "c:0-.f|rolemanager")
 
 #: Bits whose absence NARROWS an enterprise-reader grant without emptying it.
 #:

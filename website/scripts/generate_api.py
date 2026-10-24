@@ -104,6 +104,7 @@ MODULES: list[tuple[str, str]] = [
     ("catalogue", "Packaging: the shipped solution templates, as data"),
     ("wizard", "Packaging: the interactive template wizard"),
     ("jsonvalue", "the shape of decoded JSON and the guards that type it"),
+    ("jsrest", "the shared SharePoint REST prelude a paste-in script runs behind"),
 ]
 
 # Sub-package sidebar categories, in layout order.

@@ -8,6 +8,7 @@ import sys
 import textwrap
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -35,8 +36,10 @@ from dbml_sharepoint.cli import (
     app,
     build,
     extract,
+    prelude_command,
 )
 from dbml_sharepoint.extension import BaseExtension
+from dbml_sharepoint.jsrest import Site, prelude, wrap
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 from dbml_sharepoint.model.identities import IdentityValue, describe_identity
 from dbml_sharepoint.pipeline import (
@@ -144,7 +147,7 @@ def test_a_bare_invocation_prints_help_when_not_a_terminal() -> None:
 DOCUMENTED_COMMANDS = (
     "build", "validate", "report", "extract", "extract-script",
     "protection-script", "columns-script", "list-script", "identify-script",
-    "version", "mapping",
+    "prelude", "version", "mapping",
 )
 
 
@@ -251,6 +254,72 @@ def test_identify_script_refuses_a_site_url_that_is_not_one(tmp_path: Path) -> N
         "--out", str(tmp_path / "identify.js.txt"),
     ])
     assert result.exit_code != 0
+
+
+def test_prelude_prints_the_read_flavour_by_default() -> None:
+    result = runner.invoke(app, ["prelude"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == prelude(writes=False)
+    assert b"\r" not in result.stdout_bytes
+
+
+def test_prelude_by_default_carries_nothing_a_scanner_reads_as_a_write() -> None:
+    """The exact pattern a downstream scanner greps for, counted per line as `grep -c` does."""
+    pattern = re.compile(
+        r"\b(POST|MERGE|PATCH|PUT|DELETE)\b|contextinfo|X-RequestDigest|X-HTTP-Method"
+        r"|getDigest|spHeaders")
+    stdout = runner.invoke(app, ["prelude"]).stdout
+    assert [line for line in stdout.splitlines() if pattern.search(line)] == []
+
+
+def test_prelude_wraps_a_file(tmp_path: Path) -> None:
+    body = tmp_path / "body.js"
+    body.write_text("log('INFO', 'hi');\n", encoding="utf-8", newline="\n")
+    result = runner.invoke(app, ["prelude", "--writes", "--wrap", str(body)])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == wrap("log('INFO', 'hi');\n", writes=True)
+
+
+def test_prelude_passes_the_site_options_through() -> None:
+    site = "https://contoso.sharepoint.com/sites/risk"
+    result = runner.invoke(app, [
+        "prelude", "--writes", "--batch", "--site", "pathname", "--expected-site", site,
+    ])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == prelude(
+        writes=True, batch=True, site="pathname", expected_site=site)
+
+
+def test_prelude_refuses_batch_without_writes() -> None:
+    result = runner.invoke(app, ["prelude", "--batch"])
+    assert result.exit_code == 2
+    assert "batch needs writes=True" in result.stderr
+
+
+def test_prelude_refuses_a_site_that_is_not_https() -> None:
+    result = runner.invoke(app, ["prelude", "--expected-site", "http://example.com/sites/a"])
+    assert result.exit_code == 2
+    assert "https://" in result.stderr
+
+
+def test_prelude_refuses_a_missing_wrap_file(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["prelude", "--wrap", str(tmp_path / "absent.js")])
+    assert result.exit_code == 2
+    assert "absent.js" in result.stderr
+
+
+def test_prelude_offers_exactly_the_jsrest_site_modes() -> None:
+    annotation = inspect.signature(prelude_command).parameters["site"].annotation
+    assert get_args(annotation) == get_args(Site.__value__)
+
+
+def test_prelude_refuses_a_wrap_file_that_is_not_utf8(tmp_path: Path) -> None:
+    body = tmp_path / "body.js"
+    body.write_bytes(b"log('INFO', '\xff');\n")
+    result = runner.invoke(app, ["prelude", "--wrap", str(body)])
+    assert result.exit_code == 2
+    assert "not UTF-8" in result.stderr
+
 
 def test_help_still_renders_as_rich_panels() -> None:
     """The CLI's help screen is its user surface, and nothing else asserts it.

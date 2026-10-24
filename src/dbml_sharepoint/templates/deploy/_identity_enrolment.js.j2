@@ -21,7 +21,7 @@
   {
     const IDENTITY_GROUPS = {{ identity_enrolment | tojson }};
     // Tenant-wide claims ensureuser can hand back; refused for every resolved value, user or group.
-    const TENANT_WIDE = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
+    const TENANT_WIDE = {{ tenant_wide_claim_needles | tojson }};
     // Removes a value (the claim or the GUID, any case) from error text before it is thrown or logged.
     const scrub = (text, value) => String(text).replace(
       new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[value]');

@@ -19,6 +19,7 @@ from jinja2.bccache import Bucket, BytecodeCache
 
 import dbml_sharepoint
 from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME
+from dbml_sharepoint.analysis.permissions import TENANT_WIDE_CLAIM_NEEDLES
 from dbml_sharepoint.analysis.typemap import (
     BASE_TYPE_AS_STRING_PAIRS,
     DERIVED_FIELD_PROPERTIES,
@@ -157,6 +158,8 @@ def script_env(application: str = APPLICATION_NAME) -> ScriptEnvironment:
     # list.
     env_globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
     env_globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
+    # One list for the deploy's enrolment guard and the shared ensureUser, so the two cannot drift.
+    env_globals["tenant_wide_claim_needles"] = TENANT_WIDE_CLAIM_NEEDLES
     # The identity every script and manifest stamps, chosen by the generator's caller.
     env_globals["application_name"] = application
     env_globals["command_name"] = COMMAND_NAME

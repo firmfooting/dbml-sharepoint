@@ -243,6 +243,17 @@ it to one, which is worth doing when handing the file to somebody else.
 
 Every request the script makes is a GET. It carries no write helpers.
 
+### `prelude_command`
+
+```python
+def prelude_command(writes: bool = ..., batch: bool = ..., site: Literal['page-context', 'pathname'] = ..., expected_site: str | None = ..., wrap_file: Path | None = ...) -> None
+```
+
+Print the shared SharePoint REST prelude, or a script body wrapped behind it.
+
+With no options it prints the read flavour, which carries no write helper.
+A wrapped body must not redeclare any name the prelude declares.
+
 ### `extract`
 
 ```python

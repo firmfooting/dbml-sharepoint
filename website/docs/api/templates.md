@@ -139,9 +139,21 @@ The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site 
 
 ### `_digest_cached.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined, and brings the contextinfo parse with it. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
+
+### `_download.js.j2`
+
+Included by: `_sp_rest_prelude.js.j2`
+
+A JSON file download for a pasteable script's output. Expects `log`. Extract and identify still carry their own copies of this shape.
+
+### `_ensure_user.js.j2`
+
+Included by: `_sp_rest_prelude.js.j2`
+
+Resolves a logon name to a site principal. Expects apiUrl, fetchWithRetry, spHeaders, getDigest and spError. No error it throws carries the logon name.
 
 ### `_folder_defaults_read.js.j2`
 
@@ -169,13 +181,13 @@ A GUID SharePoint returned, checked before it is spliced into a URL. Every id he
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
 ### `_http_batch.js.j2`
 
-Included by: `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
 
 The WRITE half of the shared OData $batch transport: BatchWriter, which collapses many single writes into one ChangeSet. It includes _http_batch_read.js.j2 for the boundary and byte helpers, the body budget and BatchReader, so a script including this partial gets the same transport it got before the read half was split out. Included only by scripts that make writes (deploy, rollback, demo); the read-only assess script includes the read half alone. Expects `spHeaders` from _http_write.js.j2, so a ChangeSet part carries exactly the headers a single write does, plus `isThrottled`, `spError` and `dbg` from _http.js.j2. A part's verb goes in its request line rather than in an X-HTTP-Method header, so a caller passes the method and headers of the single write it replaces and the part still comes out in the documented shape. getDigest, fetchWithRetry, apiUrl and log arrive as CONSTRUCTOR ARGUMENTS rather than off the enclosing scope, so this stays a transport primitive with nothing to reimplement. The body-size ceiling this budgets against was measured by the same #404 probe recorded in _http_batch_read.js.j2. That probe's control read the item count back and confirmed the ChangeSet parts were accepted, so the encoding below is the proven spelling rather than a plausible one, digest on both the outer request and every part included. The PART ENCODING was measured separately, recorded 2026-09-04, after a live governance deploy landed every POST part and refused every MERGE part with HTTP 400. Nine candidate spellings were sent one per $batch against a scratch list and each verdict read back off the object rather than off the part status. Two things decide acceptance, and the earlier reading of that 400 had them the wrong way round: 1. The VERB MUST BE IN THE REQUEST LINE. X-HTTP-Method does not tunnel inside a part. SharePoint reads the part as the verb it was given, so a tunnelled MERGE arrives as a POST to the entity and its body keys are read as method arguments: "The parameter Description does not exist in method GetById". `POST` + X-HTTP-Method: MERGE was refused under both nometadata and verbose parts. 2. THE BODY ANNOTATION MUST MATCH THE PART'S CONTENT TYPE. `__metadata` is the verbose transport annotation, so a part declaring odata=nometadata is refused with "The property '__metadata' does not exist on type 'SP.FieldText'". `MERGE <url>` with verbose part headers and a __metadata body was accepted (HTTP 204, read back applied), as was a bodyless function POST under verbose part headers. odata=verbose is therefore NOT what a part is refused for; the earlier finding to that effect was drawn from a shape that also carried the tunnelled header, which is what SharePoint was actually refusing. Parts carry spHeaders for that reason.
 
@@ -187,7 +199,7 @@ The READ half of the shared OData $batch transport: the boundary and byte helper
 
 ### `_http_write.js.j2`
 
-Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
 
@@ -199,7 +211,7 @@ Shared list resolution for the three maintenance scripts (protection.js, columns
 
 ### `_odata_read.js.j2`
 
-Included by: `extract.js.j2`, `identify.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `extract.js.j2`, `identify.js.j2`
 
 Shared read-side OData helpers: one entity, or a whole paged collection. Expects `log`, `apiUrl` (from _site_guard.js.j2) and `fetchWithRetry` + `spError` (from _http.js.j2) to be defined already. Here rather than in each script because extract.js and identify.js both walk a site read-only and both need the same two shapes. AGENTS.md: where both sides need the same fact, it lives in a shared module.
 
@@ -211,7 +223,7 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `_sp_rest_prelude.js.j2`, `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function to be defined already, and a SITE_URL const whenever `require_site_match` is on; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line. `require_site_match` defaults ON, so a caller that omits it keeps the guard. identify.js.j2 is the one caller that turns it off: the guard is here because a write on the wrong site cannot be taken back, and a read-only inventory has nothing to guard. Pinning it would only stop one file walking a whole fleet.
 
@@ -220,6 +232,10 @@ Shared web-context resolution for every pasteable script. Expects a `log` functi
 Included by: `_http.js.j2`
 
 SharePoint's REST error reason, on its own so a harness without the transport can include it. Needs nothing defined.
+
+### `_sp_rest_prelude.js.j2`
+
+The shared SharePoint REST prelude, rendered by jsrest.prelude() for a downstream paste-in script. Expects `expected_site` (a URL or none), `require_site_match`, `site_resolution`, `writes` and `batch`. The read flavour carries no write helper, so its no-write property is auditable from its text; $batch needs the write half, which jsrest enforces.
 
 ### `_verify_body.js.j2`
 

@@ -1,0 +1,19 @@
+{# A JSON file download for a pasteable script's output. Expects
+   `log`. Extract and identify still carry their own copies of this shape. #}
+  // false, with a warning, means the download could not start; true means it was attempted, not saved, since a browser block acts after click() and never throws.
+  const download = (name, data) => {
+    try {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      return true;
+    } catch (err) {
+      log('WARN', `The download could not start (${err.message}).`);
+      return false;
+    }
+  };
