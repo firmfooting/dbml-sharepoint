@@ -38,6 +38,12 @@ from dbml_sharepoint.testing.node import NODE
     ("i++ / 2; // half\n", "i++ / 2;\n"),
     ("arr.of / 2; // c\n", "arr.of / 2;\n"),
     ("f(x) / 2; // c\n", "f(x) / 2;\n"),
+    ("throw /https?:\\/\\//; // c\n", "throw /https?:\\/\\//;\n"),
+    ("await /a:\\/\\//.exec(s); // c\n", "await /a:\\/\\//.exec(s);\n"),
+    ("yield /a:\\/\\//; // c\n", "yield /a:\\/\\//;\n"),
+    ("new /a:\\/\\//; // c\n", "new /a:\\/\\//;\n"),
+    ("delete /a:\\/\\//.x; // c\n", "delete /a:\\/\\//.x;\n"),
+    ("x instanceof /a:\\/\\//; // c\n", "x instanceof /a:\\/\\//;\n"),
 ])
 def test_comments_go_and_literals_stay(source: str, expected: str) -> None:
     assert strip_js_comments(source) == expected
