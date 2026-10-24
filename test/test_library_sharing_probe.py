@@ -132,7 +132,7 @@ const fetch = async (url, options) => {
     script = (
         f"const source = {json.dumps(source)}; const scenario = {json.dumps(scenario)};\n{harness}"
     )
-    # Via a FILE, never `node -e`, for the reason `_node.run_node` gives:
+    # Via a FILE, never `node -e`, for the reason `testing.node.run_node` gives:
     # Windows caps a command line and this probe is past it. MEASURED in CI
     # on 2026-09-21, every scenario here failed with WinError 206 once the
     # probe grew, while Ubuntu passed. `newline="\n"` so Node parses the

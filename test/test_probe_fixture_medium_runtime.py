@@ -14,7 +14,6 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
 from _paths import MANUAL
 from test_probe_fixture_runtime import _catalogued_dependents, _run_probe, _void_ids
 from test_probe_library_identity_runtime import _SITE_MOCK
@@ -31,6 +30,8 @@ from test_probe_runtime import (
 )
 from test_probe_runtime import _HARNESS as _THRESHOLD_INDEX_HARNESS
 from test_probe_runtime import _HEALTHY as _THRESHOLD_INDEX_HEALTHY
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

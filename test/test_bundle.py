@@ -307,6 +307,9 @@ def test_the_package_has_exactly_one_writer() -> None:
 
     writers: list[str] = []
     for path in sorted(PACKAGE.rglob("*.py")):
+        # The test kit writes node's scratch files, not artifacts; it passes newline itself.
+        if path.relative_to(PACKAGE).parts[0] == "testing":
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and is_a_write_call(node.func):

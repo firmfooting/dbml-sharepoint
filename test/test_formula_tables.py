@@ -3,7 +3,6 @@
 import pytest
 from _format_eval import evaluate_expression
 from _formula_grid import check_parity
-from _node import NODE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.formula.parse import parse_formula
@@ -15,6 +14,7 @@ from dbml_sharepoint.analysis.formula.translate import (
     translate_column,
 )
 from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 

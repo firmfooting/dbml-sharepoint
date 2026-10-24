@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from _format_eval import date_field, evaluate_expression, evaluate_rows
 from _model import bundle, column, enum, schema, table
-from _node import NODE
 
 from dbml_sharepoint.analysis import form_header
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
@@ -43,6 +42,7 @@ from dbml_sharepoint.model.form_tree import (
 from dbml_sharepoint.model.help_guides import HelpGuides
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, FormFormatting, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 

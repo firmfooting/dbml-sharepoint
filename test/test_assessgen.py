@@ -13,7 +13,6 @@ from _model import as_library, column
 from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE, run_node
 from _packs import blocks, entities
 from _packs import pack as write_pack
 from _paths import EXPECTED, FIXTURES, GOLDEN_DEPLOYER_VERSION, pin_deployer_version, write_golden
@@ -46,6 +45,7 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE, run_node
 
 
 def _by_title(rows: list[JsonValue]) -> dict[str, JsonValue]:

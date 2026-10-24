@@ -25,9 +25,10 @@ from collections.abc import Mapping
 import pytest
 from _json_view import Json
 from _narrow import as_dict
-from _node import NODE
-from _node import run_node as _run
 from _paths import MANUAL
+
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 PROBE = MANUAL / "lookup-acl-probe.js"
 

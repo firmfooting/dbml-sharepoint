@@ -1,4 +1,4 @@
-"""The generator import rule fails on a tree that breaks it.
+"""The import contracts fail on a tree that breaks them.
 
 The real tree passing is `uv run lint-imports`, a gate. This proves the
 contract text itself can fire, so a mistyped module path cannot go green.
@@ -15,13 +15,16 @@ from _paths import REPO_ROOT
 
 def test_contract_fails_when_a_generator_imports_checks(tmp_path: Path) -> None:
     pkg = tmp_path / "dbml_sharepoint"
-    for d in (pkg, pkg / "generators", pkg / "analysis", pkg / "analysis" / "checks"):
+    checks = pkg / "analysis" / "checks"
+    for d in (pkg, pkg / "generators", pkg / "analysis", checks, pkg / "testing"):
         d.mkdir(parents=True, exist_ok=True)
         (d / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "generators" / "bad.py").write_text(
-        "from dbml_sharepoint.analysis.checks import x\n", encoding="utf-8"
+        "from dbml_sharepoint.analysis.checks import x\nfrom dbml_sharepoint.testing import kit\n",
+        encoding="utf-8",
     )
     (pkg / "analysis" / "checks" / "x.py").write_text("", encoding="utf-8")
+    (pkg / "testing" / "kit.py").write_text("", encoding="utf-8")
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # Only the importlinter tables: a table added after them must not leak into the config.
     tables = re.findall(r"^\[+tool\.importlinter[^\n]*\n(?:(?!\[).*\n)*", pyproject, re.MULTILINE)
@@ -42,4 +45,5 @@ def test_contract_fails_when_a_generator_imports_checks(tmp_path: Path) -> None:
     )
     assert result.returncode != 0, result.stdout + result.stderr
     assert "Generators never import analysis checks" in result.stdout
-    assert "BROKEN" in result.stdout
+    assert "Nothing outside the test kit imports it" in result.stdout
+    assert result.stdout.count("BROKEN") == 2, result.stdout

@@ -1,5 +1,5 @@
 # test/test_sp_mock.py
-"""The prelude `run_node` loads ahead of every script (`_sp_mock.PRELUDE`).
+"""The prelude `run_node` loads ahead of every script (`testing.sp_mock.PRELUDE`).
 
 Every runtime test now depends on it answering the way SharePoint does, so a
 projection that kept too much would quietly return the suite to the mock
@@ -11,10 +11,10 @@ import json
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
-from _sp_mock import UnselectedReadError
 
 from dbml_sharepoint.jsonvalue import JsonValue
+from dbml_sharepoint.testing.node import NODE, run_node
+from dbml_sharepoint.testing.sp_mock import UnselectedReadError
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

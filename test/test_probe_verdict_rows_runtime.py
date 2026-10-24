@@ -12,7 +12,6 @@ import textwrap
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
 from test_probe_fixture_high_runtime import (
     _BY_FOLDER,
     _BY_METADATA,
@@ -34,6 +33,8 @@ from test_probe_runtime import (
     _fixture_probe_js,
     _fixture_rows,
 )
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

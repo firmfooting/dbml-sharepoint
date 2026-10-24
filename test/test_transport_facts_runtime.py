@@ -17,12 +17,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, NotRequired, TypedDict, cast
 
 import pytest
-from _node import NODE
-from _node import run_node as _run
 
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.jsrest import wrap
 from dbml_sharepoint.templating import script_env
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

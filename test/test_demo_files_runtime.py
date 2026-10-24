@@ -19,12 +19,12 @@ from _model import bundle as make_bundle
 from _model import column, enum
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE, run_node
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
 from dbml_sharepoint.model.mapping_types import DemoFile, DemoItem, EntityMapping
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

@@ -16,10 +16,10 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 
 from dbml_sharepoint.generators.extractgen import generate_extract_js
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 GENERATED_AT = "2026-09-06T12:00:00+00:00"
 SITE = "https://example.sharepoint.com/sites/risk"

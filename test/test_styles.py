@@ -626,7 +626,7 @@ def test_calculated_date_expression_preserves_the_year(prefix: str) -> None:
 
 def _evaluate_scalar(expression: str, value: int | str) -> JsonValue:
     """Exercise documented scalar operations; this is not a SharePoint renderer."""
-    from _node import NODE, run_node
+    from dbml_sharepoint.testing.node import NODE, run_node
 
     if NODE is None:
         pytest.skip("node is required")

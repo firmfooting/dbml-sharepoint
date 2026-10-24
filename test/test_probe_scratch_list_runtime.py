@@ -16,9 +16,10 @@ from types import ModuleType
 import pytest
 from _json_view import Json
 from _narrow import as_dict
-from _node import NODE, run_node
 from _paths import MANUAL
 from _versions_mock import VERSIONS_MOCK, mock_list_id
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

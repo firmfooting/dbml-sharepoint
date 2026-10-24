@@ -12,11 +12,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from _node import NODE
 from _paths import FIXTURES, JINJA_TEMPLATES
 
 from dbml_sharepoint.analysis.phases import phase_number
 from dbml_sharepoint.pipeline import execute_build
+from dbml_sharepoint.testing.node import NODE
 
 LIBRARY = FIXTURES / "library"
 

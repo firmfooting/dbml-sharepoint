@@ -20,8 +20,9 @@ from collections.abc import Callable, Mapping, Sequence
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
 from _paths import MANUAL
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

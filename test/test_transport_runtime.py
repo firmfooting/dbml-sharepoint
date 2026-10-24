@@ -27,8 +27,6 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.resolve import resolve
@@ -37,6 +35,8 @@ from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

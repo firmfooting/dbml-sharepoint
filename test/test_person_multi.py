@@ -15,7 +15,6 @@ from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE, run_node
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode
@@ -34,6 +33,7 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DemoItem, MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE, run_node
 
 
 @pytest.fixture(scope="module")

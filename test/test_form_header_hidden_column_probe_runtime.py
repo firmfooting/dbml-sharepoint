@@ -14,11 +14,11 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE
 from _paths import MANUAL
 from _probe_runs import ended_with_report, run_probe, voided
 
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

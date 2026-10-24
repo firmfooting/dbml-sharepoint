@@ -3,7 +3,6 @@
 import pytest
 from _format_eval import evaluate_expression
 from _formula_grid import check_parity
-from _node import NODE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.formula.functions import SUPPORTED, function_names
@@ -11,6 +10,7 @@ from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.refusal import FormulaRefusal
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
+from dbml_sharepoint.testing.node import NODE
 
 # Their parity cases are in test_formula_dates.py.
 DATE_FUNCTIONS = {"DATE", "YEAR", "MONTH", "DAY"}

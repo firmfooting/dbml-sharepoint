@@ -37,7 +37,6 @@ from typing import override
 import pytest
 from _console import ScriptedConsole, collapsed, plain
 from _narrow import as_dict
-from _node import NODE
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
@@ -107,6 +106,7 @@ from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.testing.node import NODE
 
 SAMPLE = FIXTURES / "sample-list-extract.json"
 

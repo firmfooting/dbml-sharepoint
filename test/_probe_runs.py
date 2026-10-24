@@ -10,8 +10,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from _json_view import Json
-from _node import run_node
 from _paths import MANUAL
+
+from dbml_sharepoint.testing.node import run_node
 
 # Every scratch title ends in a per-run token; a mock answers for fixed titles, so runs pin it away.
 UNPINNED_TITLE = "  const runTitle = (base) => `${base} ${RUN}`;"
