@@ -1,0 +1,12 @@
+{# SharePoint's REST error reason, on its own so a harness without the
+   transport can include it. Needs nothing defined. #}
+  // SharePoint's REST error body carries the human-readable reason at
+  // error.message.value; fall back to (bounded) raw text. A bare HTTP
+  // status left a blocked run undiagnosable (live finding 2026-07-24).
+  const spError = (text) => {
+    let message = text;
+    try {
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
+  };

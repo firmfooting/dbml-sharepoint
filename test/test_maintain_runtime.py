@@ -88,6 +88,7 @@ _HARNESS = textwrap.dedent(r"""
       headers: { get: () => null },
       json: async () => payload,
       text: async () => JSON.stringify(payload),
+      clone() { return this; },
     });
     // A response whose BODY never arrives: the status is known and the stream
     // then fails. A 400 is the case that needs its body read, because the

@@ -125,6 +125,12 @@ Included by: `assess.js.j2`, `deploy.js.j2`
 
 The host names the pack data differently: assess.js.j2 passes `targets`, deploy.js.j2 `assess_targets_data`. One name here, so a probe that branches on the pack cannot render in one host and fail in the other.
 
+### `_contextinfo.js.j2`
+
+Included by: `_digest_cached.js.j2`
+
+The one contextinfo parse, for this web's answer and another web's alike. Expects only spError, so a harness without the transport can include it.
+
 ### `_cross_web.js.j2`
 
 Included by: `deploy/_logging.js.j2`
@@ -135,7 +141,7 @@ The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site 
 
 Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
-Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
+Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined, and brings the contextinfo parse with it. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
 ### `_folder_defaults_read.js.j2`
 
@@ -208,6 +214,12 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function to be defined already, and a SITE_URL const whenever `require_site_match` is on; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line. `require_site_match` defaults ON, so a caller that omits it keeps the guard. identify.js.j2 is the one caller that turns it off: the guard is here because a write on the wrong site cannot be taken back, and a read-only inventory has nothing to guard. Pinning it would only stop one file walking a whole fleet.
+
+### `_sp_error.js.j2`
+
+Included by: `_http.js.j2`
+
+SharePoint's REST error reason, on its own so a harness without the transport can include it. Needs nothing defined.
 
 ### `_verify_body.js.j2`
 

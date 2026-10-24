@@ -218,8 +218,12 @@
   // script (no rebuild needed). deploy.js.txt additionally prints a per-phase
   // seconds table before DONE when this is on.
   const DEBUG = false;
+  // The longest one Retry-After wait; an operator may raise it in the pasted script.
+  const MAX_WAIT_SECONDS = 300;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
   let requestCount = 0;
+  // Set by _digest_cached.js.j2; null in a script without it, so a 403 is handed back as is.
+  let onDigestRefused = null;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
   // SharePoint's REST error body carries the human-readable reason at
@@ -281,7 +285,14 @@
     return throttleGate;
   }
 
-  // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
+  // Seconds the server asked for, NaN when the header is absent or unreadable.
+  function retryAfterSeconds(r) {
+    const h = String(r.headers.get('Retry-After') ?? '').trim();
+    if (/^\d+$/.test(h)) return Number(h);
+    return h ? Math.ceil((Date.parse(h) - Date.now()) / 1000) : NaN;
+  }
+
+  // Retry-After-aware fetch. Honour Retry-After, seconds or an HTTP date (RFC 9110 section 10.2.3), never sent early,
   // else back off exponentially (capped), up to `attempts` before
   // returning the final response to the caller's own error handling.
   //
@@ -313,19 +324,33 @@
   // neither reads an entry nor leaves one.
   async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
-    const init = { ...(opts || {}), cache: 'no-store' };
+    let init = { ...(opts || {}), cache: 'no-store' };
+    let refreshed = false;
     for (let i = 0; ; i++) {
       await passThrottleGate();
       const r = await fetch(url, init);
       requestCount += 1;
       if (isThrottled(r) && i < attempts) {
-        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);
+        const asked = retryAfterSeconds(r);
+        if (asked > MAX_WAIT_SECONDS) {
+          log('WARN', `Retry-After asks ${asked}s, over the ${MAX_WAIT_SECONDS}s ceiling; stopping.`);
+          return r;
+        }
+        const ra = asked > 0 ? asked : Math.min(2 ** i, 60);
         const how = THROTTLE_PAGE.test(r.url || '')
           ? `redirected to the throttling page (HTTP ${r.status})`
           : `HTTP ${r.status}`;
         log('INFO', `Throttled, ${how}; every lane waits ${ra}s, retry ${i + 1}/${attempts}.`);
         await holdEveryLane(ra);
         continue;
+      }
+      if (r.status === 403 && onDigestRefused && !refreshed) {
+        const next = await onDigestRefused(init, r);
+        if (next) {
+          init = next;
+          refreshed = true;
+          continue;
+        }
       }
       dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}...` : url} -> ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
       return r;
@@ -334,23 +359,11 @@
   const absListUrl = (title) => `${window.location.origin}${WEB}/Lists/${encodeURIComponent(title)}`;
   log('INFO', 'Read-only assessment. No changes are made.');
 
-  let cachedDigest = null;
-  let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
-  async function getContextWebInformation() {
+  async function readContextWebInformation(r) {
     // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
     const bounded = (e) => String((e && e.message) || e).slice(0, 300);
     const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
-    let r;
-    try {
-      r = await fetchWithRetry(apiUrl('contextinfo'), {
-        method: 'POST',
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-    } catch (err) {
-      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
-      throw failed(`no response (${bounded(err)})`);
-    }
     // Preserve the operation and status even when the refused body is unreadable (#282).
     if (!r.ok) {
       const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
@@ -371,6 +384,26 @@
     }
     return info;
   }
+  let cachedDigest = null;
+  let digestExpiresAt = 0;
+  // Every digest getDigest() handed out, so a cross-web or caller-built digest is never refreshed.
+  const issuedDigests = new Set();
+  // The one pending refresh that every lane refused together waits on.
+  let digestRefresh = null;
+  // `url` defaults to this web's; a cross-web write passes the other web's, since a digest only validates on its issuing web.
+  async function getContextWebInformation(url = apiUrl('contextinfo')) {
+    let r;
+    try {
+      r = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
+      throw new Error(`contextinfo (request digest) failed: no response (${String((err && err.message) || err).slice(0, 300)})`);
+    }
+    return readContextWebInformation(r);
+  }
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
     let info;
@@ -382,10 +415,31 @@
       throw failure;
     }
     cachedDigest = info.FormDigestValue;
+    issuedDigests.add(cachedDigest);
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
     return cachedDigest;
   }
+  // A 403 "security validation" is the measured answer to a refused digest (cross-web digest finding); any other 403 goes back as is.
+  onDigestRefused = async (init, r) => {
+    const refused = init.headers?.['X-RequestDigest'];
+    if (!issuedDigests.has(refused)) return null;
+    if (!/security validation/i.test(await r.clone().text().catch(() => ''))) return null;
+    if (refused === cachedDigest) {
+      cachedDigest = null;
+      digestRefresh = getDigest().finally(() => { digestRefresh = null; });
+    }
+    let fresh;
+    try {
+      fresh = await (digestRefresh || getDigest());
+    } catch (err) {
+      // The write's own 403 tells the caller more than the refresh failure does.
+      log('WARN', `Request digest refresh failed (${(err && err.message) || err}); handing back the HTTP 403.`);
+      return null;
+    }
+    log('INFO', 'HTTP 403 security validation on a write; retrying once with a fresh request digest.');
+    return { ...init, headers: { ...init.headers, 'X-RequestDigest': fresh } };
+  };
   // Forms/client_LocationBasedDefaults.html, one <a href> entry per folder.
   const unescapeDefaults = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
   const folderDefaultPaths = (text) => [...String(text).matchAll(/<a\s+href="([^"]*)"\s*>/g)].map((m) => {
