@@ -1,6 +1,6 @@
 ---
 title: cli
-sidebar_position: 54
+sidebar_position: 55
 ---
 
 # `dbml_sharepoint.cli`
@@ -275,6 +275,14 @@ This is a SCAFFOLDING tool, not a lossless round-trip. What the read
 carries is recovered; everything else is itemised in the
 EXTRACTION-NOTES.md written beside the output. Read that file before
 editing the schema, and again before deploying anything.
+
+### `mapping_split`
+
+```python
+def mapping_split(mapping: Path | None = ...) -> None
+```
+
+Move a mapping's sections into their concern files, such as views.yaml.
 
 ### `version`
 
