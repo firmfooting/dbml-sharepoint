@@ -229,9 +229,6 @@ def _form(
         name for name, sp in fields.items()
         if sp.required and sp.default is None and name not in formulas and name not in retired
     ]
-    # Core leaves an undeclared Title as the platform made it: required.
-    if "Title" not in {c.name for c in table.columns}:
-        required.insert(0, "Title")
     at = Location(Section.LISTS_FORMS, entity=entity, sub=f"forms[{i}]")
     findings += [
         Finding(

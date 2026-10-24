@@ -237,12 +237,13 @@ def test_lists_form_required_column_missing_fires_when_a_not_null_column_is_left
     assert "'Title'" in finding.message
 
 
-def test_lists_form_required_column_missing_fires_when_an_undeclared_title_is_left_off() -> None:
+def test_an_undeclared_title_is_optional_and_may_still_be_asked() -> None:
+    # The deploy patches the built-in Title optional when the DBML omits it.
     schema = make_schema(
         make_table("Request", column("Details", "longtext"), note="A request."),
     )
-    findings = _check(_q("Details"), schema=schema, entities=["Request"])
-    assert "'Title'" in only(findings, FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING).message
+    assert _check(_q("Details"), schema=schema, entities=["Request"]) == []
+    assert _check(_q("Title"), _q("Details"), schema=schema, entities=["Request"]) == []
 
 
 def test_lists_form_lookup_source_unreadable_fires_when_a_lookup_is_not_acknowledged() -> None:
@@ -283,6 +284,7 @@ def test_spec_refused_example_column_rules() -> None:
     schema = make_schema(
         make_table(
             "Request",
+            column("Title", required=True),
             column("Status", "priority"),
             make_ref("Site", "Site.Id"),
             note="A request.",
