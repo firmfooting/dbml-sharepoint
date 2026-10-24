@@ -110,9 +110,13 @@ def _read_folder(
         block = _read_block(path, f"{folder.name}/", keys, base_dir, mapping_name)
         for key, value in block.items():
             if key not in merged:
-                merged[key], first[key] = value, path
-                if isinstance(value, dict):
-                    owner.update({(key, name): path for name in value})
+                first[key] = path
+                if not isinstance(value, dict):
+                    merged[key] = value
+                    continue
+                # A YAML alias may share this dict with another section; extend a copy.
+                merged[key] = dict(cast("dict[object, object]", value))
+                owner.update({(key, name): path for name in value})
                 continue
             held = merged[key]
             if not isinstance(held, dict) or not isinstance(value, dict):

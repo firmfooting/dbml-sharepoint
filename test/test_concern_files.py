@@ -339,6 +339,18 @@ def test_a_concern_folder_name_that_is_a_file_is_refused(tmp_path: Path) -> None
         load_mapping(pack / "mapping.yaml")
 
 
+def test_an_aliased_section_is_not_extended_through_its_alias(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    views = _views_without(pack)
+    _folder(pack, {"b.yaml": {"views": views}})
+    (pack / "views.d" / "a.yaml").write_text(
+        "field_sets: &empty {}\nviews: *empty\n", encoding="utf-8",
+    )
+    got = load_mapping(pack / "mapping.yaml").mapping
+    assert got.field_sets == {}
+    assert list(got.views) == list(views)
+
+
 def test_folder_entries_take_file_name_order(tmp_path: Path) -> None:
     pack = _pack(tmp_path)
     views = _views_without(pack)
