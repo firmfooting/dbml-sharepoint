@@ -4,7 +4,6 @@ This module holds the comment stripper that shortens the emitted script without
 touching a string, template or regex literal.
 """
 
-# A `/` after one of these starts a regex literal; after anything else it divides.
 # shortcut: a `/` after a block `}` reads as a regex, so node --check; track blocks if one divides.
 _REGEX_AFTER_CHARS = frozenset("(,=:[!&|?{};+-*%<>~^")
 _REGEX_AFTER_WORDS = frozenset({"return", "typeof", "case", "do", "else", "in", "of", "void"})
