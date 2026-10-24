@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.37.0...v0.37.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **views:** compare view width readback after decoding XML character references ([#956](https://github.com/firmfooting/dbml-sharepoint/issues/956)) ([75b59d7](https://github.com/firmfooting/dbml-sharepoint/commit/75b59d70f613a07921f85bb38848949400ede51a))
+
 ## [0.37.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.36.0...v0.37.0) (2026-10-23)
 
 
