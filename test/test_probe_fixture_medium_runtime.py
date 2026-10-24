@@ -1002,9 +1002,7 @@ _V2_WINDOW = (
 )
 
 
-def _run_operand(
-    existing: dict[str, int],
-) -> tuple[dict[str, Json], list[Json]]:
+def _operand_output(existing: dict[str, int], mock: str = _LIST_MOCK) -> str:
     """The v2 core prints its table through console.table, so the dump is spliced there."""
     js = (MANUAL / _OPERAND).read_text(encoding="utf-8")
     for gate in ("CONFIRMED", "ALLOW_WRITES"):
@@ -1015,8 +1013,13 @@ def _run_operand(
                     "console.log('__ROWS__' + JSON.stringify(results)); console.table(results);")
     config = {"existing": {title: {"template": template, "description": _OPERAND_OWNER}
                            for title, template in existing.items()}}
-    output = run_node(_V2_WINDOW + _LIST_MOCK.replace("__CONFIG__", json.dumps(config))
-                      + "\n" + js)
+    return run_node(_V2_WINDOW + mock.replace("__CONFIG__", json.dumps(config)) + "\n" + js)
+
+
+def _run_operand(
+    existing: dict[str, int],
+) -> tuple[dict[str, Json], list[Json]]:
+    output = _operand_output(existing)
     table = [ln for ln in output.splitlines() if ln.startswith("__ROWS__")][-1]
     rows = {row["id"].text: Json({"outcome": row["observed"].value,
                                   "evidence": row["detail"].value,
@@ -1027,6 +1030,19 @@ def _run_operand(
 
 
 _OPERAND_TARGET_ROW = "formula.calc.fixture-target-list-created"
+
+
+NO_INFO = "contextinfo (request digest) failed: HTTP 200 carried no GetContextWebInformation"
+
+
+def test_a_v2_contextinfo_answer_without_its_payload_is_named() -> None:
+    healthy = ("return respond(200, "
+               "{ d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });")
+    assert healthy in _LIST_MOCK, "the contextinfo answer is not spelled as this test expects"
+    output = _operand_output({}, _LIST_MOCK.replace(healthy, "return respond(200, { d: {} });"))
+
+    assert NO_INFO in output
+    assert "TypeError" not in output, output[-3000:]
 
 
 @pytest.mark.parametrize(

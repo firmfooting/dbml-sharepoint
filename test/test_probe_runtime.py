@@ -112,7 +112,8 @@ _HARNESS = textwrap.dedent("""
       const body = opts.body === undefined ? null : String(opts.body);
 
       if (u.includes('/contextinfo')) {
-        return jsonResponse(200, { d: { GetContextWebInformation: {
+        if (CONFIG.contextinfoRejects) throw new TypeError('Failed to fetch');
+        return jsonResponse(200, CONFIG.contextinfo || { d: { GetContextWebInformation: {
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
       }
       if (u.includes('RenderListDataAsStream')) {
@@ -247,6 +248,25 @@ def _run_probe(**changes: object) -> dict[str, str]:
         row["id"].text: row["outcome"].text
         for row in Json.loads(line.removeprefix("__ROWS__"))
     }
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_contextinfo_answer_without_its_payload_is_named_rather_than_a_type_error() -> None:
+    """#282: the v1 harness dereferenced the payload blind, so this surfaced as a TypeError."""
+    no_payload: dict[str, object] = {}
+    config = {**copy.deepcopy(_HEALTHY), "contextinfo": {"d": no_payload}}
+    output = _run(_HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js())
+
+    assert "failed: HTTP 200 carried no GetContextWebInformation" in output
+    assert "TypeError" not in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_contextinfo_request_that_gets_no_response_is_named() -> None:
+    config = {**copy.deepcopy(_HEALTHY), "contextinfoRejects": True}
+    output = _run(_HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js())
+
+    assert "contextinfo (request digest) failed: no response (Failed to fetch)" in output
 
 
 #: Every row `measureGuard` gates behind its dependency check. Named here

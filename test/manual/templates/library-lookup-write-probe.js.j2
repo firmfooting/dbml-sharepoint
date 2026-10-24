@@ -480,7 +480,7 @@
       return { ok: false, status: 0, body: null, text: String(err) };
     }
   };
-  const spError = (res) => {
+  const writeError = (res) => {
     const err = res.body && (res.body['odata.error'] || res.body.error);
     const message = err && err.message && (err.message.value || err.message);
     return clip(message || res.text, 160);
@@ -573,9 +573,9 @@
     return {
       ok: !readFailed(whole),
       id: present ? whole.body[key] : undefined,
-      description: `readback $select=${key} FAILED HTTP ${narrow.status} ${spError(narrow)}; `
+      description: `readback $select=${key} FAILED HTTP ${narrow.status} ${writeError(narrow)}; `
         + `the whole item read HTTP ${whole.status}`
-        + (readFailed(whole) ? ` ${spError(whole)}` : `, ${key} ${present ? `present as ${show(whole.body[key])}` : 'ABSENT'}`),
+        + (readFailed(whole) ? ` ${writeError(whole)}` : `, ${key} ${present ? `present as ${show(whole.body[key])}` : 'ABSENT'}`),
     };
   };
 
@@ -596,7 +596,7 @@
     const results = [];
     for (const [label, path] of shapes) {
       const res = await spGetText(path);
-      results.push({ label, ok: !readFailed(res), status: res.status, error: readFailed(res) ? spError(res) : '' });
+      results.push({ label, ok: !readFailed(res), status: res.status, error: readFailed(res) ? writeError(res) : '' });
     }
     const viewXml = '<View><Query></Query>'
       + `<ViewFields><FieldRef Name='ID'/><FieldRef Name='${name}'/></ViewFields>`
@@ -780,7 +780,7 @@
     const res = await spGetText(`${srcPath}/items(${mergeRowId})`);
     answer(id, !readFailed(res) ? 'ANSWERS' : isRefusal(res.status) ? 'FAILS' : 'NOT ESTABLISHED',
            `items(${mergeRowId}) with no $select, ${when}: HTTP ${res.status}`
-           + (readFailed(res) ? ` ${spError(res)}` : ''));
+           + (readFailed(res) ? ` ${writeError(res)}` : ''));
   };
   await wholeRead('library.lookup.control-whole-item-read-before-lookups',
     'before any lookup column exists on the list');
@@ -980,7 +980,7 @@
            !readFailed(via) ? (projected(via, column) === FILE_PLAIN ? 'PROJECTS' : 'ACCEPTED BUT NOT THE NAME')
              : isRefusal(via.status) ? 'REFUSED' : 'NOT ESTABLISHED',
            `on items(${rowId}): $select=${name}/${column}&$expand=${name}: HTTP ${via.status}, `
-           + `${column}=${show(projected(via, column))}${readFailed(via) ? ` ${spError(via)}` : ''}`
+           + `${column}=${show(projected(via, column))}${readFailed(via) ? ` ${writeError(via)}` : ''}`
            + `; the same through /Title: HTTP ${viaTitle.status}, Title=${show(projected(viaTitle, 'Title'))}. `
            + 'PROJECTS is what lets analysis/reporting/plan.py expand this lookup like any other.');
   };
@@ -1086,7 +1086,7 @@
       description: `POST ${name} ${formula} (SP.FieldCalculated, OutputType 2): HTTP ${made.status}`
         + (made.ok ? '' : ` ${clip(made.text, 200)}`)
         + `; field readback ${readFailed(read) ? `failed HTTP ${read.status}` : `TypeAsString=${show(read.body.TypeAsString)} Formula=${show(read.body.Formula)}`}`
-        + `; items?$select=${name}: HTTP ${values.status}${readFailed(values) ? ` ${spError(values)}` : ''}`
+        + `; items?$select=${name}: HTTP ${values.status}${readFailed(values) ? ` ${writeError(values)}` : ''}`
         + `, untitled file ${show(plain)}, titled file ${show(titled)}`,
     };
   };

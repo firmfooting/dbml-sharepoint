@@ -374,7 +374,7 @@ def test_a_digest_lost_mid_run_leaves_the_rest_open_and_asks_for_a_recycle_by_ha
 
     assert rows[TARGET]["outcome"] == "PASS"
     assert all(rows[row_id]["state"] == "open" for row_id in [*PAYLOAD, READ, ITEM])
-    assert "probe aborted: contextinfo failed: HTTP 403" in output
+    assert "probe aborted: contextinfo (request digest) failed: HTTP 403 denied" in output
     assert "could not recycle 'dbmlsp Probe VersionsTarget'" in output
     assert "recycle it by hand" in output
     assert _recycled(sent) == []

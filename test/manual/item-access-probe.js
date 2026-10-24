@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: A FILE'S OWN ROLE ASSIGNMENTS IN A LIBRARY WITH UNIQUE PERMISSIONS ----
  *
- * REVISION: c6ecc29b
+ * REVISION: b1698521
  *
  * WHY: a flow that grants item-level access breaks inheritance on one file,
  * binds one user to a custom level there, later removes that binding, and
@@ -92,13 +92,49 @@
 
   const log = (level, msg) => console.log(`[${level}] ${msg}`);
 
+  // SharePoint's REST error body carries the human-readable reason at
+  // error.message.value; fall back to (bounded) raw text. A bare HTTP
+  // status left a blocked run undiagnosable (live finding 2026-07-24).
+  const spError = (text) => {
+    let message = text;
+    try {
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
+  };
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function readContextWebInformation(r) {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
+  // A raw fetch, uncached, with no retry and no no-store, so a probe's own transport stays what it measures.
   const getDigest = async () => {
     const res = await fetch(`${WEB}/_api/contextinfo`, {
       method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    }).catch((err) => {
+      throw new Error(`contextinfo (request digest) failed: no response (${String((err && err.message) || err).slice(0, 300)})`);
     });
-    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
-    const body = await res.json();
-    return body.d.GetContextWebInformation.FormDigestValue;
+    return (await readContextWebInformation(res)).FormDigestValue;
   };
 
   const spGet = async (path) => {
@@ -869,7 +905,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision c6ecc29b. Quote this when reporting results.');
+  log('INFO', 'probe revision b1698521. Quote this when reporting results.');
 
   // 1: build the fixture and ask C1 to C4. 2: ask C5 and C6 on what STATE 1 left.
   const STATE = 1;

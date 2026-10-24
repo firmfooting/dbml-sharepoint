@@ -1073,7 +1073,8 @@ def test_a_digest_throttled_past_the_retries_sends_no_delete_and_says_so() -> No
     assert delete["outcome"] == "NOT ESTABLISHED", delete
     assert delete["evidence"].startswith(
         "no DELETE was sent: the read by Id answered HTTP 200 carrying this probe's marker, but "
-        "no digest could be had (Error: contextinfo failed: HTTP 429), so no DELETE was sent"
+        "no digest could be had (Error: contextinfo (request digest) failed: HTTP 429, "
+        "still throttled), so no DELETE was sent"
     ), delete["evidence"]
     failures = [line for line in _lines(output, "FAIL") if "may still exist" in line]
     assert len(failures) == 1
@@ -1619,7 +1620,11 @@ def test_a_digest_that_cannot_be_read_creates_nothing_and_claims_nothing_was_mad
 
     assert not _creates(calls)
     stops = _lines(output, "FAIL")
-    assert stops == ["[FAIL] the measurement pass stopped: contextinfo failed: HTTP 403"], stops
+    # Core's spError reads error.message.value only, so this odata.error body is shown raw.
+    assert stops == [
+        ("[FAIL] the measurement pass stopped: contextinfo (request digest) failed: HTTP 403 "
+         '{"odata.error":{"code":"-1, x","message":{"lang":"en-US","value":"no digest"}}}'),
+    ], stops
     for row in ALL:
         assert rows[row]["state"] == "open", rows[row]
         assert rows[row]["evidence"].startswith("the run stopped before this question")

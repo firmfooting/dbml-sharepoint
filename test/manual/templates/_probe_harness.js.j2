@@ -29,13 +29,16 @@
 
   const log = (level, msg) => console.log(`[${level}] ${msg}`);
 
+{% include "_sp_error.js.j2" %}
+{% include "_contextinfo.js.j2" %}
+  // A raw fetch, uncached, with no retry and no no-store, so a probe's own transport stays what it measures.
   const getDigest = async () => {
     const res = await fetch(`${WEB}/_api/contextinfo`, {
       method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    }).catch((err) => {
+      throw new Error(`contextinfo (request digest) failed: no response (${String((err && err.message) || err).slice(0, 300)})`);
     });
-    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
-    const body = await res.json();
-    return body.d.GetContextWebInformation.FormDigestValue;
+    return (await readContextWebInformation(res)).FormDigestValue;
   };
 
   const spGet = async (path) => {
