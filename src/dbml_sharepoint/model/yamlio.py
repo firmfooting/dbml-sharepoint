@@ -577,7 +577,7 @@ def _key_lines(text: str, depth: int = 2) -> dict[tuple[str, ...], int]:
     lines: dict[tuple[str, ...], int] = {}
 
     def walk(node: Node | None, path: tuple[str, ...]) -> None:
-        if not isinstance(node, MappingNode) or len(path) == depth:
+        if not isinstance(node, MappingNode) or len(path) >= depth:
             return
         pairs: list[tuple[Node, Node]] = node.value
         for key, value in pairs:
