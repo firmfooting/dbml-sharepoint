@@ -47,8 +47,16 @@
         const viewStatus = async (id) => (await fetchWithRetry(
           listsFormsApi(rootUrl, `GetList(@a1)/Views('${odataName(id)}')`, '&$select=Id'), VERBOSE_READ)).status;
         let owned = false;
+        // Kept so a per-form catch rethrows it: a list that is not ours fails the entity once.
+        let ownershipError = null;
         const ownBeforeWrite = async () => {
-          if (!owned) await ownedListIdentity(entity.list, listId, 'before a Lists form write');
+          if (owned) return;
+          try {
+            await ownedListIdentity(entity.list, listId, 'before a Lists form write');
+          } catch (err) {
+            ownershipError = err;
+            throw err;
+          }
           owned = true;
         };
         const post = async (route, body, query = '', extra = {}) => {
@@ -87,6 +95,7 @@
               throw new Error('its view does not answer, so its link cannot open it');
             }
           } catch (err) {
+            if (err === ownershipError) throw err;
             failures.push(`'${want.title}': ${err.message}`);
           }
         }
@@ -110,9 +119,16 @@
         const deleted = [];
         for (const title of entity.retired) {
           for (const form of current.filter((f) => f.schema.header.title === title)) {
-            await ownBeforeWrite();
-            await post('GetListUsingPath(DecodedUrl=@a1)/Views(@a2)', undefined,
-              `&@a2=${encodeURIComponent(`'${form.id}'`)}`, { 'X-HTTP-Method': 'DELETE' });
+            // A refused delete must not skip the read-back of the ones already sent.
+            try {
+              await ownBeforeWrite();
+              await post('GetListUsingPath(DecodedUrl=@a1)/Views(@a2)', undefined,
+                `&@a2=${encodeURIComponent(`'${form.id}'`)}`, { 'X-HTTP-Method': 'DELETE' });
+            } catch (err) {
+              if (err === ownershipError) throw err;
+              failures.push(`retired '${title}': ${err.message}`);
+              continue;
+            }
             deleted.push({ title, id: form.id });
             logChange({ key: `lists-form:${entity.list}:${title}`, kind: 'lists-form', target: entity.list, oldValue: form.id, newValue: 'deleted' });
           }
@@ -124,8 +140,8 @@
             const status = after.has(listsFormGuid(id)) ? 200 : await viewStatus(id);
             if (status !== 400 && status !== 404) failures.push(`retired '${title}' is still there after its delete (view HTTP ${status})`);
           }
-          if (failures.length) throw new Error(failures.join('; '));
         }
+        if (failures.length) throw new Error(failures.join('; '));
         log('INFO', `[Phase 3.4] Lists forms on '${entity.list}' verified (${written.length} written, ${deleted.length} retired).`);
       } catch (err) {
         log('ERROR', `Phase 3.4 Lists forms '${entity.list}': ${err.message}`);

@@ -59,7 +59,7 @@ _HARNESS = textwrap.dedent(r"""
           json: async () => JSON.parse(text), text: async () => text };
       };
       const alias = decodeURIComponent((/[?&]@a1=([^&]*)/.exec(url) || [])[1] || '');
-      if (url.includes('(@a1)') && alias !== `'${STATE.root}'`) {
+      if (url.includes('(@a1)') && alias !== `'${STATE.root.replace(/'/g, "''")}'`) {
         return reply(404, { error: 'wrong @a1' });
       }
       if (url.includes('web/currentuser')) return reply(200, { d: { Title: 'Deploy Operator' } });
@@ -85,6 +85,7 @@ _HARNESS = textwrap.dedent(r"""
       if (url.includes('GetListUsingPath(DecodedUrl=@a1)/Views(@a2)')) {
         const id = decodeURIComponent(/[?&]@a2=([^&]*)/.exec(url)[1]).replace(/'/g, '');
         if ((opts.headers || {})['X-HTTP-Method'] !== 'DELETE') return reply(400, '{}');
+        if ((STATE.refuseDelete || []).includes(id)) return reply(403, '{}');
         const at = forms.findIndex((f) => f.Id === id);
         if (at >= 0) forms.splice(at, 1);
         return reply(200, '');
@@ -104,6 +105,7 @@ _HARNESS = textwrap.dedent(r"""
     const owned = [];
     const ownedListIdentity = async (title, id) => {
       owned.push([title, id]);
+      if (STATE.notOwned) throw new Error('the list is not ours');
       return { Id: STATE.listId };
     };
 """)
@@ -537,3 +539,52 @@ def test_no_lists_forms_makes_no_requests() -> None:
     """An empty `SCHEMA.lists_forms` makes no request at all."""
     result = _run(_state(), [])
     assert result["calls"] == [] and result["summary"]["errors"] == []
+
+
+def test_a_stored_form_that_does_not_require_sign_in_is_updated() -> None:
+    """`requireSignIn` other than true is a difference; the update writes true, then settles."""
+    settings = {"requireSignIn": False, "formSuccessMessage": _THANKS}
+    stored = [{"Id": _OLD_ID, "schema": _designer_schema(settings=settings)}]
+    result = _run(_state(stored), [_entity()])
+    assert result["summary"]["errors"] == []
+    (post,) = result["posts"]
+    assert "UpdateListForm" in str(post["url"].value)
+    assert _schemas(result)[_OLD_ID]["settings"]["requireSignIn"].value is True
+    again = _run(_stored_state(result), [_entity()])
+    assert again["summary"]["errors"] == [] and again["posts"] == []
+
+
+def test_a_refused_delete_still_reads_back_the_sent_ones() -> None:
+    """Every sent delete is read back; the error names only the refused one."""
+    first = _created()
+    stored = [*_forms(first),
+              {"Id": _OLD_ID, "SchemaJSON": json.dumps(_designer_schema("Old"))},
+              {"Id": _OTHER_ID, "SchemaJSON": json.dumps(_designer_schema("Older"))}]
+    result = _run(_stored_state(first, forms=stored, refuseDelete=[_OTHER_ID]),
+                  [_entity(retired=["Old", "Older"])])
+    (error,) = result["summary"]["errors"]
+    message = str(error["error"].value)
+    assert "retired 'Older'" in message and "'Old'" not in message
+    assert _OLD_ID not in _schemas(result) and _OTHER_ID in _schemas(result)
+    assert any(c["method"] == "GET" and f"Views('{_OLD_ID}')" in str(c["url"].value)
+               for c in result["calls"])
+    assert [c["newValue"].value for c in result["changes"]] == ["deleted"]
+
+
+def test_a_list_that_is_not_ours_fails_the_entity_once() -> None:
+    """A failed ownership check is one error for the entity and stops every write."""
+    result = _run(_state(notOwned=True), [_entity(_form(), _form("Second"))])
+    (error,) = result["summary"]["errors"]
+    assert str(error["error"].value) == "the list is not ours"
+    assert result["posts"] == [] and len(result["owned"]) == 1
+
+
+def test_a_root_folder_url_with_an_apostrophe_and_a_space() -> None:
+    """The `@a1` literal doubles the apostrophe; create and read back still agree."""
+    root = "/sites/test/Lists/Bob's list"
+    result = _run(_state(root=root), [_entity()])
+    assert result["summary"]["errors"] == []
+    (post,) = result["posts"]
+    assert "@a1='%2Fsites%2Ftest%2FLists%2FBob''s%20list'" in str(post["url"].value)
+    again = _run(_stored_state(result, root=root), [_entity()])
+    assert again["summary"]["errors"] == [] and again["posts"] == []

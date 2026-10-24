@@ -123,6 +123,7 @@
     if (!sameQuestions) keys.push('questions');
     if (settings.formSuccessMessage !== want.thank_you) keys.push('thank_you');
     if ((settings.ensureSingleResponsePerUser === true) !== want.one_response_per_person) keys.push('one_response_per_person');
+    if (settings.requireSignIn !== true) keys.push('require_sign_in');
     if ('accepting_responses' in want && (settings.formDisabled === true) !== !want.accepting_responses) keys.push('accepting_responses');
     if ('closed_message' in want && settings.formDisabledMessage !== want.closed_message) keys.push('closed_message');
     if ('opens' in want && !listsFormSameTime(schedule.scheduleResponsesStartDate, want.opens)) keys.push('opens');
