@@ -1,6 +1,6 @@
 ---
 title: jsrest
-sidebar_position: 58
+sidebar_position: 59
 ---
 
 # `dbml_sharepoint.jsrest`

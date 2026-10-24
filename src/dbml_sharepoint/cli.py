@@ -58,6 +58,7 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_protection_js,
 )
 from dbml_sharepoint.jsrest import prelude, wrap
+from dbml_sharepoint.mapping_split import SplitRefusedError, split_mapping
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
@@ -913,6 +914,28 @@ def extract(
     execute_extraction(
         source, out=out, entity=entity, prefix=prefix, project=project, force=force,
     )
+
+
+mapping_app = typer.Typer(help="Work on a mapping file.", no_args_is_help=True)
+app.add_typer(mapping_app, name="mapping")
+
+
+@mapping_app.command("split")
+def mapping_split(
+    mapping: Path | None = typer.Option(
+        None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
+    ),
+) -> None:
+    """Move a mapping's sections into their concern files, such as views.yaml."""
+    try:
+        moved = split_mapping(project_input(mapping, MAPPING_RELPATH, "--mapping"))
+    except (SplitRefusedError, OSError) as error:
+        typer.echo(f"[ERROR] {terminal_safe(str(error))}", err=True)
+        raise typer.Exit(code=1) from error
+    for name, keys in moved.items():
+        typer.echo(f"{name}: {', '.join(keys)}")
+    if not moved:
+        typer.echo("nothing to split")
 
 
 @app.command()

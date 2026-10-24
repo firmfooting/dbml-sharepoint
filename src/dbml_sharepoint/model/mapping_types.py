@@ -1212,6 +1212,42 @@ class RetentionPolicy:
     trigger: str
 
 
+@dataclass(frozen=True)
+class ListsFormQuestion:
+    """One question of a Lists form, from `lists-forms.yaml`."""
+
+    column: str
+    label: str | None = None
+    help: str = ""
+    respondents_read_source: bool = False
+    # The `required` and `include_time` keys the author wrote, in file order.
+    sets_column: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ListsForm:
+    """One Lists form. A None operational key is left as the site has it."""
+
+    title: str
+    questions: tuple[ListsFormQuestion, ...]
+    previous_titles: tuple[str, ...] = ()
+    description: str = ""
+    thank_you: str | None = None
+    one_response_per_person: bool = False
+    accepting_responses: bool | None = None
+    closed_message: str | None = None
+    opens: str | None = None
+    closes: str | None = None
+
+
+@dataclass(frozen=True)
+class EntityListsForms:
+    """An entity's block in `lists-forms.yaml`: its forms and the titles to delete."""
+
+    forms: tuple[ListsForm, ...]
+    retired: tuple[str, ...] = ()
+
+
 @dataclass
 class MappingBundle:
     """Mapping + the generic configs it references, all loaded."""
@@ -1231,6 +1267,8 @@ class MappingBundle:
     governance: Governance = field(default_factory=Governance)
     # entity -> `header` or `footer` -> component tree as written in form.yaml
     form_trees: dict[str, dict[str, HeaderTree]] = field(default_factory=dict)
+    # entity -> its forms as written in lists-forms.yaml
+    lists_forms: dict[str, EntityListsForms] = field(default_factory=dict)
 
     def extension_config_for(self, name: str | None) -> dict[object, object]:
         """The named extension's config block; {} when name is None or the

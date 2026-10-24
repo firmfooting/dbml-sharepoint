@@ -1039,6 +1039,50 @@ class RetentionPolicy:
 
 One policy from config/retention-policies.yaml.
 
+### `ListsFormQuestion`
+
+```python
+@dataclass(frozen=True)
+class ListsFormQuestion:
+    column: str
+    label: str | None = None
+    help: str = ''
+    respondents_read_source: bool = False
+    sets_column: tuple[str, ...] = ()
+```
+
+One question of a Lists form, from `lists-forms.yaml`.
+
+### `ListsForm`
+
+```python
+@dataclass(frozen=True)
+class ListsForm:
+    title: str
+    questions: tuple[dbml_sharepoint.model.mapping_types.ListsFormQuestion, ...]
+    previous_titles: tuple[str, ...] = ()
+    description: str = ''
+    thank_you: str | None = None
+    one_response_per_person: bool = False
+    accepting_responses: bool | None = None
+    closed_message: str | None = None
+    opens: str | None = None
+    closes: str | None = None
+```
+
+One Lists form. A None operational key is left as the site has it.
+
+### `EntityListsForms`
+
+```python
+@dataclass(frozen=True)
+class EntityListsForms:
+    forms: tuple[dbml_sharepoint.model.mapping_types.ListsForm, ...]
+    retired: tuple[str, ...] = ()
+```
+
+An entity's block in `lists-forms.yaml`: its forms and the titles to delete.
+
 ### `MappingBundle`
 
 ```python
@@ -1052,6 +1096,7 @@ class MappingBundle:
     source_paths: dict[str, pathlib.Path] = field(default_factory=dict)
     governance: Governance = field(default_factory=Governance)
     form_trees: dict[str, dict[str, dbml_sharepoint.model.form_tree.HeaderTree]] = field(default_factory=dict)
+    lists_forms: dict[str, dbml_sharepoint.model.mapping_types.EntityListsForms] = field(default_factory=dict)
 ```
 
 Mapping + the generic configs it references, all loaded.

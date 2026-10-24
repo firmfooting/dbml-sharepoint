@@ -268,6 +268,40 @@ The catalogue it reads, `analysis/finding_help.py`, ships inside the package
 and is the same source the [findings reference](findings.md) is generated
 from, so the two cannot disagree.
 
+## `mapping split`
+
+Move a mapping's sections into their [concern files](mapping.md#concern-files),
+such as `views.yaml` for `field_sets` and `views`. `--mapping` defaults to
+`20-configure/mapping.yaml` inside a project, as for `build`.
+
+```console
+$ dbml-sharepoint mapping split
+views.yaml: field_sets, views
+permissions.yaml: groups, permission_levels, list_permissions
+```
+
+Each section moves verbatim with the comments above it. Every other section
+stays in the mapping, including the pointers (`reporting_source`,
+`demo_source`, `retention_policies_source`) and `form_formatting` and
+`form_visibility`. A mapping with nothing to move prints `nothing to split`.
+The split mapping builds the same bundle, byte for byte.
+
+It refuses, and writes nothing, when:
+
+- the file is not named `mapping.yaml`;
+- the mapping does not load;
+- a concern file or its `.d` folder already exists;
+- a moved piece would not parse alone (an alias whose anchor stays);
+- the pieces do not read back as the same mapping.
+
+Every written file is read back before `mapping.yaml` is replaced. If one
+differs from what was planned, the split refuses and leaves `mapping.yaml`
+unchanged, and the error names the concern files to delete before trying again.
+
+It exits `0` after a split or when there is nothing to split, and `1`, with
+`[ERROR]` and the reason, on a refusal or a file it cannot read or write. Run
+outside a project without `--mapping`, it exits `2`, as `build` does.
+
 ## Exit codes
 
 Measured, because a CI gate keys on these:
