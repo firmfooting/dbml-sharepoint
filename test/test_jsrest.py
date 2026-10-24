@@ -1,11 +1,16 @@
-"""The comment stripper for emitted JavaScript, on literals and on the shared partials."""
+"""The comment stripper, and the shared prelude it strips, in every flavour."""
 
+import hashlib
+import itertools
+import re
 import subprocess
 
 import pytest
 from _node import NODE
+from _paths import GOLDEN_DEPLOYER_VERSION
 
-from dbml_sharepoint.jsrest import strip_js_comments
+from dbml_sharepoint import jsrest
+from dbml_sharepoint.jsrest import Site, prelude, strip_js_comments, wrap
 from dbml_sharepoint.templating import script_env
 
 
@@ -79,3 +84,100 @@ def test_every_prelude_partial_strips_to_code_node_accepts(partial: str) -> None
 def test_the_throttle_page_regex_survives_the_transport_partial() -> None:
     stripped = strip_js_comments(script_env().get_template("_http.js.j2").render())
     assert "const THROTTLE_PAGE = /\\/_layouts\\/15\\/throttle\\.htm(\\?|$)/i;" in stripped
+
+
+WRITE_VERB = re.compile(r"\b(POST|MERGE|PATCH|PUT|DELETE)\b")
+SITE_URL = "https://t.example/sites/T"
+SITES: list[Site] = ["page-context", "pathname"]
+type Flavour = tuple[bool, bool, Site, str | None]
+#: Every legal (writes, batch) pair, under both site modes, with and without an expected site.
+FLAVOURS: list[Flavour] = [
+    (writes, batch, site, expected)
+    for (writes, batch), site, expected in itertools.product(
+        [(False, False), (True, False), (True, True)], SITES, [None, SITE_URL])
+]
+
+
+def between_sentinels(text: str) -> str:
+    return "\n".join(text.strip("\n").split("\n")[1:-1])
+
+
+@pytest.mark.parametrize("site", SITES)
+def test_the_read_flavour_has_no_write_verb_and_no_contextinfo(site: Site) -> None:
+    text = prelude(writes=False, site=site, expected_site=SITE_URL)
+    assert not WRITE_VERB.search(text)
+    assert not re.search(r"contextinfo|X-RequestDigest|X-HTTP-Method|getDigest|spHeaders", text)
+
+
+def test_a_read_flavour_cannot_batch() -> None:
+    with pytest.raises(ValueError, match="batch needs writes=True"):
+        prelude(writes=False, batch=True)
+    with pytest.raises(ValueError, match="batch needs writes=True"):
+        wrap("", writes=False, batch=True)
+
+
+def test_the_sentinels_name_the_version_and_the_body_hash() -> None:
+    text = prelude(writes=True)
+    first, *body, last = text.strip("\n").split("\n")
+    digest = hashlib.sha256("\n".join(body).encode()).hexdigest()[:12]
+    assert first == f"// sp-rest {GOLDEN_DEPLOYER_VERSION} sha256:{digest} begin"
+    assert last == f"// sp-rest {GOLDEN_DEPLOYER_VERSION} sha256:{digest} end"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_the_prelude_is_comment_free_between_the_sentinels(flavour: Flavour) -> None:
+    writes, batch, site, expected = flavour
+    no_comment_remains(between_sentinels(
+        prelude(writes=writes, batch=batch, site=site, expected_site=expected)))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_every_flavour_wrapped_passes_node_check(flavour: Flavour) -> None:
+    assert NODE is not None
+    writes, batch, site, expected = flavour
+    proc = subprocess.run(  # noqa: S603
+        [NODE, "--check", "--input-type=commonjs"],
+        input=wrap("log('INFO', 'body');", writes=writes, batch=batch, site=site,
+                   expected_site=expected),
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_wrap_hands_a_rejection_to_the_caller() -> None:
+    text = wrap("body();", writes=False)
+    assert text.startswith("(async () => {\n// sp-rest ")
+    assert text.endswith("\nbody();\n})();\n")
+    assert ".catch" not in text
+
+
+@pytest.mark.parametrize("url", [
+    "http://t.example/sites/T", "/sites/T", "https:///sites/T", "t.example/sites/T", "",
+])
+def test_an_expected_site_that_is_not_https_is_refused(url: str) -> None:
+    with pytest.raises(ValueError, match="absolute https:// URL"):
+        prelude(writes=False, expected_site=url)
+
+
+def test_the_expected_site_is_a_json_literal() -> None:
+    text = prelude(writes=False, expected_site="https://t.example/sites/It's")
+    assert 'const SITE_URL = "https://t.example/sites/It\\u0027s";' in text
+
+
+def test_the_documented_identifiers_are_the_declared_ones() -> None:
+    assert jsrest.__doc__ is not None
+    documented = set(re.findall(r"`([\w$]+)`", jsrest.__doc__.split("must not redeclare", 1)[1]))
+    declared = {
+        name
+        for writes, batch, site, expected in FLAVOURS
+        for name in re.findall(
+            r"^  (?:const|let|var|class|(?:async )?function) ([\w$]+)",
+            prelude(writes=writes, batch=batch, site=site, expected_site=expected), re.MULTILINE)
+    }
+    assert {"log", "fetchWithRetry", "getDigest", "BatchWriter"} <= declared
+    assert documented == declared
+
+
+def test_the_prelude_is_deterministic() -> None:
+    assert prelude(writes=True, batch=True) == prelude(writes=True, batch=True)

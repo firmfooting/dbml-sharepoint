@@ -1,0 +1,21 @@
+{# The shared SharePoint REST prelude, rendered by jsrest.prelude() for a
+   downstream paste-in script. Expects `expected_site` (a URL or none),
+   `require_site_match`, `site_resolution`, `writes` and `batch`. The read
+   flavour carries no write helper, so its no-write property is auditable
+   from its text; $batch needs the write half, which jsrest enforces. #}
+  const log = (level, message) => console.log(`[${level}] ${message}`);
+{% if expected_site is not none %}
+  const SITE_URL = {{ expected_site | tojson }};
+{% endif %}
+{% include "_site_guard.js.j2" %}
+{% include "_http.js.j2" %}
+{% include "_odata_read.js.j2" %}
+{% include "_download.js.j2" %}
+{% if writes %}
+{% include "_http_write.js.j2" %}
+{% include "_digest_cached.js.j2" %}
+{% include "_ensure_user.js.j2" %}
+{% endif %}
+{% if batch %}
+{% include "_http_batch.js.j2" %}
+{% endif %}

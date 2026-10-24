@@ -1,8 +1,75 @@
 """The JavaScript runtime core shares with a downstream paste-in prelude.
 
-This module holds the comment stripper that shortens the emitted script without
-touching a string, template or regex literal.
+`prelude()` renders the shared SharePoint REST transport, comment-free and
+between version sentinels, in a read flavour that carries no write helper or a
+write flavour with the request digest; `wrap()` puts a body behind it. The
+comment stripper shortens the text without touching a string, template or
+regex literal.
+
+A body runs in the prelude's own scope, so it must not redeclare any of the
+names the prelude declares in one flavour or another:
+
+- every flavour: `log`, `WEB`, `apiUrl`, `odataName`, `DEBUG`, `MAX_WAIT_SECONDS`, `dbg`,
+  `requestCount`, `onDigestRefused`, `sleep`, `spError`, `isAbsent400`, `THROTTLE_PAGE`,
+  `isThrottled`, `throttleGate`, `passThrottleGate`, `holdEveryLane`, `retryAfterSeconds`,
+  `fetchWithRetry`, `verbose`, `getOne`, `getAll`, `download`;
+- the site guard, by mode: `SITE_URL`, `actualPath`, `expectedOrigin`, `expectedPath`,
+  `actualOrigin`, `siteHome`, `sitePath`, `expectedSite`;
+- writes: `spHeaders`, `readContextWebInformation`, `cachedDigest`, `digestExpiresAt`,
+  `issuedDigests`, `digestRefresh`, `getContextWebInformation`, `getDigest`, `ensureUser`;
+- batch: `BATCH_BODY_BUDGET_BYTES`, `BATCH_ENVELOPE_BYTES`, `BATCH_BOUNDARY_SAMPLE`,
+  `batchBoundary`, `utf8Bytes`, `BatchReader`, `BatchWriter`.
 """
+
+import hashlib
+from typing import Literal
+from urllib.parse import urlsplit
+
+import dbml_sharepoint
+from dbml_sharepoint.templating import script_env
+
+type Site = Literal["page-context", "pathname"]
+
+
+def prelude(
+    *, writes: bool, batch: bool = False, site: Site = "page-context",
+    expected_site: str | None = None,
+) -> str:
+    """The shared prelude as a function-body fragment; the site guard may `return` from it.
+
+    `writes` adds the write headers, the cached request digest and ensureUser;
+    `batch` adds BatchWriter and needs `writes`. With `expected_site`, the site
+    guard refuses any other site; `site` picks whether the page's site comes
+    from `_spPageContextInfo` or from the page path.
+    """
+    if batch and not writes:
+        raise ValueError("batch needs writes=True: $batch is a POST carrying a request digest")
+    if expected_site is not None:
+        parts = urlsplit(expected_site)
+        if parts.scheme != "https" or not parts.hostname:
+            raise ValueError(
+                f"expected_site {expected_site!r} must be an absolute https:// URL with a host")
+    text = script_env().get_template("_sp_rest_prelude.js.j2").render(
+        writes=writes, batch=batch, expected_site=expected_site,
+        require_site_match=expected_site is not None, site_resolution=site,
+    )
+    body = strip_js_comments(text).strip("\n")
+    stamp = f"// sp-rest {dbml_sharepoint.__version__} sha256:"
+    stamp += hashlib.sha256(body.encode()).hexdigest()[:12]
+    return f"{stamp} begin\n{body}\n{stamp} end\n"
+
+
+def wrap(
+    body: str, *, writes: bool, batch: bool = False, site: Site = "page-context",
+    expected_site: str | None = None,
+) -> str:
+    """`body` behind the prelude in an async arrow, called at once.
+
+    No `.catch` is attached, so a caller that awaits the script sees its rejection.
+    """
+    fragment = prelude(writes=writes, batch=batch, site=site, expected_site=expected_site)
+    return f"(async () => {{\n{fragment}{body}\n}})();\n"
+
 
 # shortcut: a `/` after a block `}` reads as a regex, so node --check; track blocks if one divides.
 _REGEX_AFTER_CHARS = frozenset("(,=:[!&|?{};+-*%<>~^")

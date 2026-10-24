@@ -103,6 +103,8 @@ KNOWN_CONTEXT = {
     "deployment_log_change_optional_columns",
     # extractgen, for extract.js
     "list_paths", "site_read", "live_format", "download_name",
+    # jsrest.prelude: the flavour switches and the site its guard expects.
+    "writes", "batch", "expected_site",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
     # reason extract.js has none. BOTH halves of that URL are passed:
@@ -236,8 +238,6 @@ def test_no_orphan_templates(env: Environment) -> None:
     referenced.update(
         phase_step.template for _g, steps in DEPLOY_GROUPS for phase_step in steps
     )
-    # The jsrest prelude's partials, landed before the prelude that includes them.
-    referenced.update({"_download.js.j2", "_ensure_user.js.j2"})
     orphans = sorted(set(ALL_TEMPLATES) - referenced)
     assert not orphans, f"templates nothing references: {orphans}"
 
