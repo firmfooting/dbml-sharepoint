@@ -12,7 +12,7 @@
  *   measured for ONE column, ONE method and ONE file shape, and a family
  *   that shipped two such columns rested on the create alone.
  *
- * REVISION: ecfd86f5
+ * REVISION: 364cd917
  *
  * WHY: `analysis/checks/_naming.py` accepts `display_column: FileLeafRef` on a
  * document library because the create is measured. Whether a user can then
@@ -336,13 +336,49 @@
 
   const log = (level, msg) => console.log(`[${level}] ${msg}`);
 
+  // SharePoint's REST error body carries the human-readable reason at
+  // error.message.value; fall back to (bounded) raw text. A bare HTTP
+  // status left a blocked run undiagnosable (live finding 2026-07-24).
+  const spError = (text) => {
+    let message = text;
+    try {
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
+  };
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function readContextWebInformation(r) {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
+  // A raw fetch, uncached, with no retry and no no-store, so a probe's own transport stays what it measures.
   const getDigest = async () => {
     const res = await fetch(`${WEB}/_api/contextinfo`, {
       method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    }).catch((err) => {
+      throw new Error(`contextinfo (request digest) failed: no response (${String((err && err.message) || err).slice(0, 300)})`);
     });
-    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
-    const body = await res.json();
-    return body.d.GetContextWebInformation.FormDigestValue;
+    return (await readContextWebInformation(res)).FormDigestValue;
   };
 
   const spGet = async (path) => {
@@ -633,7 +669,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ecfd86f5. Quote this when reporting results.');
+  log('INFO', 'probe revision 364cd917. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic note in the header.
   const LIB = 'dbmlsp Probe LibWrite Lib';
@@ -800,7 +836,7 @@
       return { ok: false, status: 0, body: null, text: String(err) };
     }
   };
-  const spError = (res) => {
+  const writeError = (res) => {
     const err = res.body && (res.body['odata.error'] || res.body.error);
     const message = err && err.message && (err.message.value || err.message);
     return clip(message || res.text, 160);
@@ -893,9 +929,9 @@
     return {
       ok: !readFailed(whole),
       id: present ? whole.body[key] : undefined,
-      description: `readback $select=${key} FAILED HTTP ${narrow.status} ${spError(narrow)}; `
+      description: `readback $select=${key} FAILED HTTP ${narrow.status} ${writeError(narrow)}; `
         + `the whole item read HTTP ${whole.status}`
-        + (readFailed(whole) ? ` ${spError(whole)}` : `, ${key} ${present ? `present as ${show(whole.body[key])}` : 'ABSENT'}`),
+        + (readFailed(whole) ? ` ${writeError(whole)}` : `, ${key} ${present ? `present as ${show(whole.body[key])}` : 'ABSENT'}`),
     };
   };
 
@@ -916,7 +952,7 @@
     const results = [];
     for (const [label, path] of shapes) {
       const res = await spGetText(path);
-      results.push({ label, ok: !readFailed(res), status: res.status, error: readFailed(res) ? spError(res) : '' });
+      results.push({ label, ok: !readFailed(res), status: res.status, error: readFailed(res) ? writeError(res) : '' });
     }
     const viewXml = '<View><Query></Query>'
       + `<ViewFields><FieldRef Name='ID'/><FieldRef Name='${name}'/></ViewFields>`
@@ -1100,7 +1136,7 @@
     const res = await spGetText(`${srcPath}/items(${mergeRowId})`);
     answer(id, !readFailed(res) ? 'ANSWERS' : isRefusal(res.status) ? 'FAILS' : 'NOT ESTABLISHED',
            `items(${mergeRowId}) with no $select, ${when}: HTTP ${res.status}`
-           + (readFailed(res) ? ` ${spError(res)}` : ''));
+           + (readFailed(res) ? ` ${writeError(res)}` : ''));
   };
   await wholeRead('library.lookup.control-whole-item-read-before-lookups',
     'before any lookup column exists on the list');
@@ -1300,7 +1336,7 @@
            !readFailed(via) ? (projected(via, column) === FILE_PLAIN ? 'PROJECTS' : 'ACCEPTED BUT NOT THE NAME')
              : isRefusal(via.status) ? 'REFUSED' : 'NOT ESTABLISHED',
            `on items(${rowId}): $select=${name}/${column}&$expand=${name}: HTTP ${via.status}, `
-           + `${column}=${show(projected(via, column))}${readFailed(via) ? ` ${spError(via)}` : ''}`
+           + `${column}=${show(projected(via, column))}${readFailed(via) ? ` ${writeError(via)}` : ''}`
            + `; the same through /Title: HTTP ${viaTitle.status}, Title=${show(projected(viaTitle, 'Title'))}. `
            + 'PROJECTS is what lets analysis/reporting/plan.py expand this lookup like any other.');
   };
@@ -1406,7 +1442,7 @@
       description: `POST ${name} ${formula} (SP.FieldCalculated, OutputType 2): HTTP ${made.status}`
         + (made.ok ? '' : ` ${clip(made.text, 200)}`)
         + `; field readback ${readFailed(read) ? `failed HTTP ${read.status}` : `TypeAsString=${show(read.body.TypeAsString)} Formula=${show(read.body.Formula)}`}`
-        + `; items?$select=${name}: HTTP ${values.status}${readFailed(values) ? ` ${spError(values)}` : ''}`
+        + `; items?$select=${name}: HTTP ${values.status}${readFailed(values) ? ` ${writeError(values)}` : ''}`
         + `, untitled file ${show(plain)}, titled file ${show(titled)}`,
     };
   };

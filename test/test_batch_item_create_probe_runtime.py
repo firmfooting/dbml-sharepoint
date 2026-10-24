@@ -897,7 +897,8 @@ def test_a_digest_lost_mid_run_is_caught_and_the_rest_left_open() -> None:
     rows, sent, output = _run(digestsAllowed=4)
 
     assert rows[SINGLE]["outcome"] == "PASS"
-    assert "probe aborted: contextinfo failed: HTTP 403. The unasked rows stay open." in output
+    assert ("probe aborted: contextinfo (request digest) failed: HTTP 403 denied. "
+            "The unasked rows stay open.") in output
     for row_id in (*OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, *ADDVALIDATED):
         assert rows[row_id]["state"] == "open", rows[row_id]
     assert "recycle it by hand" in output

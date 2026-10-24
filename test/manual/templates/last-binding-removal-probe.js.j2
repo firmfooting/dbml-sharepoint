@@ -350,14 +350,9 @@
   // The harness's getDigest is a bare fetch; the deploy's goes through fetchWithRetry, as this does.
   const freshDigest = async () => {
     const res = await send(api('contextinfo'), { method: 'POST', headers: { Accept: VERBOSE } });
-    if (!res.ok || isThrottled(res)) throw new Error(`contextinfo failed: HTTP ${res.status}`);
-    const body = await res.json().catch(() => null);
-    const value = body && body.d && body.d.GetContextWebInformation
-      ? body.d.GetContextWebInformation.FormDigestValue : undefined;
-    if (typeof value !== 'string' || !value.trim()) {
-      throw new Error(`contextinfo failed: HTTP ${res.status} carried no usable FormDigestValue`);
-    }
-    return value;
+    // A throttle page can arrive as a 200, so it is refused before the parse reads it.
+    if (isThrottled(res)) throw new Error(`contextinfo (request digest) failed: HTTP ${res.status}, still throttled`);
+    return (await readContextWebInformation(res)).FormDigestValue;
   };
 
   // Not an answer at all: a throttle that outlasted the retries, a timeout, or a throw.

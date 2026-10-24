@@ -131,6 +131,96 @@ def test_probe_revision_hashes_only_its_transitive_template_dependencies(
     assert render.revision_of(probe) != initial
 
 
+# === The contextinfo parse lives in core's _contextinfo.js.j2 alone =========
+HARNESSES = ("_probe_harness.js.j2", "_probe_core_v2.js.j2")
+V1_PROBE_TEMPLATE = TEMPLATES / "threshold-index-probe.js.j2"
+# Under what is committed today, so retiring a probe stays an ordinary edit.
+_MIN_HARNESS_PROBES = 60
+
+
+def probes_including(partials: tuple[str, ...]) -> list[Path]:
+    """Probe templates whose include closure reaches any of `partials`."""
+    render = _load_renderer()
+    return [
+        template for template in render.probe_templates()
+        if any(source.name in partials for source in render._dependency_sources(template))
+    ]
+
+
+def rendered(template: Path) -> str:
+    """The committed .js an operator pastes, for one probe template."""
+    return Path(_load_renderer().target_for(template)).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_no_harness_parses_contextinfo_itself(harness: str) -> None:
+    # The parse lives in core's _contextinfo.js.j2 alone; a harness naming the field has a copy.
+    assert "GetContextWebInformation" not in (TEMPLATES / harness).read_text(encoding="utf-8")
+
+
+def test_every_harness_probe_carries_the_shared_parse() -> None:
+    probes = probes_including(HARNESSES)
+    assert len(probes) >= _MIN_HARNESS_PROBES, f"only {len(probes)} harness probes found"
+    parse = "async function readContextWebInformation("
+    missing = [p.name for p in probes if parse not in rendered(p)]
+    assert not missing, missing
+
+
+def test_a_probe_revision_covers_the_core_partials_it_reaches() -> None:
+    sources = _load_renderer()._dependency_sources(V1_PROBE_TEMPLATE)
+    assert {"_sp_error.js.j2", "_contextinfo.js.j2"} <= {p.name for p in sources}
+
+
+#: A RATCHET: contextinfo parses outside core's _contextinfo.js.j2. Entries only come out.
+ALLOWED_CONTEXTINFO_PARSES = {
+    # Observes the raw answer under both Accept headers, so the parse is the observation.
+    "_probe_raw_request_v1.js.j2": 1,
+    # Observes throttling, so it keeps its own transport and parse.
+    "throttle-batch-probe.js.j2": 1,
+    # The hand-delete one-liner printed for an operator to paste cannot include a partial.
+    "last-binding-removal-probe.js.j2": 1,
+    # Built by generate_form_header_parity_probe.py, not Jinja.
+    "form-header-parity-probe.js.in": 1,
+}
+
+
+def test_only_the_allowed_probe_sources_parse_contextinfo_themselves() -> None:
+    counts = {
+        p.name: n for p in TEMPLATES.iterdir()
+        if (n := p.read_text(encoding="utf-8").count("GetContextWebInformation"))
+    }
+    assert counts == ALLOWED_CONTEXTINFO_PARSES
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_shared_parse_refuses_with_only_sp_error_beside_it() -> None:
+    """The v1 harness and projected-lookup carry no transport, so the parse must
+    refuse with nothing else defined: no log, no apiUrl, no fetchWithRetry."""
+    env = _load_renderer()._env()
+    partials = "".join(
+        env.get_template(name).render() for name in ("_sp_error.js.j2", "_contextinfo.js.j2")
+    )
+    script = (
+        "(async () => {\n" + partials
+        + "  console.log('__ABSENT__' + [typeof log, typeof apiUrl, typeof fetchWithRetry]);\n"
+        "  const answer = (status, text) => ({ ok: status === 200, status,\n"
+        "    text: async () => text, json: async () => JSON.parse(text) });\n"
+        "  const denied = JSON.stringify({ error: { message: { value: 'Access denied.' } } });\n"
+        "  for (const r of [answer(403, denied), answer(200, '{\"d\":{}}')]) {\n"
+        "    try { await readContextWebInformation(r); console.log('__RESOLVED__'); }\n"
+        "    catch (e) { console.log('__REFUSED__' + e.constructor.name + ': ' + e.message); }\n"
+        "  }\n"
+        "})();\n"
+    )
+    output = run_node(script)
+    assert "__ABSENT__undefined,undefined,undefined" in output, output
+    assert [ln for ln in output.splitlines() if ln.startswith("__RE")] == [
+        "__REFUSED__Error: contextinfo (request digest) failed: HTTP 403 Access denied.",
+        ("__REFUSED__Error: contextinfo (request digest) failed: "
+         "HTTP 200 carried no GetContextWebInformation"),
+    ], output
+
+
 def test_probes_carry_no_tenant_url() -> None:
     """A tenant URL committed here has leaked twice, both times through a
     SITE_URL field an operator edited. Probes read the site they are pasted

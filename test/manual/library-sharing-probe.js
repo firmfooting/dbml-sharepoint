@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision 48163f40. Not yet run live.
+ * Library sharing probe, revision 79601e67. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -133,7 +133,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 48163f40; core v2; results v1.`);
+  log('INFO', `probe revision 79601e67; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -164,6 +164,31 @@
       return response;
     }
   }
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function readContextWebInformation(r) {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
   let cachedDigest = null;
   let digestExpiresAt = 0;
   async function getDigest() {
@@ -172,12 +197,7 @@
       method: 'POST',
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`contextinfo failed HTTP ${response.status}: ${spError(text)}`);
-    }
-    const info = JSON.parse(text)?.d?.GetContextWebInformation;
-    if (!info?.FormDigestValue) throw new Error('contextinfo omitted FormDigestValue');
+    const info = await readContextWebInformation(response);
     cachedDigest = info.FormDigestValue;
     digestExpiresAt = Date.now()
       + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
@@ -250,7 +270,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: '48163f40', capturedAt: new Date().toISOString(),
+    revision: '79601e67', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };

@@ -15,13 +15,20 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, meta
 
+from dbml_sharepoint.templating import TEMPLATES_DIR
+
 TEMPLATES = Path(__file__).parent / "templates"
 OUT = Path(__file__).parent
 
 
+def _roots() -> tuple[Path, Path]:
+    """Probe templates first, then core's, so a probe can include a core partial."""
+    return (TEMPLATES, TEMPLATES_DIR)
+
+
 def _env() -> Environment:
     return Environment(
-        loader=FileSystemLoader(TEMPLATES),
+        loader=FileSystemLoader(_roots()),
         undefined=StrictUndefined,
         autoescape=False,  # noqa: S701 (emits JavaScript, not HTML)
         trim_blocks=True,
@@ -31,13 +38,20 @@ def _env() -> Environment:
 
 
 def _dependency_sources(template_path: Path) -> list[Path]:
-    """Return one template and the static include/import closure it uses."""
+    """Return one template and the static include/import closure it uses.
+
+    A reference resolves against each root in the loader's order, and a source
+    is keyed by its root's position and its path, so the closure covers the core
+    partials a probe reaches and a probe reaching none hashes as it did before.
+    """
     environment = _env()
+    roots = _roots()
     pending = [template_path]
-    found: dict[str, Path] = {}
+    found: dict[tuple[int, str], Path] = {}
     while pending:
         source = pending.pop()
-        key = source.relative_to(TEMPLATES).as_posix()
+        index = next(i for i, root in enumerate(roots) if source.is_relative_to(root))
+        key = (index, source.relative_to(roots[index]).as_posix())
         if key in found:
             continue
         found[key] = source
@@ -45,7 +59,10 @@ def _dependency_sources(template_path: Path) -> list[Path]:
         for reference in meta.find_referenced_templates(parsed):
             if reference is None:
                 raise ValueError(f"{source.name} uses a dynamic template reference")
-            pending.append(TEMPLATES / reference)
+            pending.append(next(
+                (root / reference for root in roots if (root / reference).is_file()),
+                TEMPLATES / reference,
+            ))
     return [found[key] for key in sorted(found)]
 
 

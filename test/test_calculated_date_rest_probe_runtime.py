@@ -282,7 +282,7 @@ def test_a_digest_lost_mid_run_leaves_the_rest_open_and_asks_for_a_recycle_by_ha
     assert rows[COLUMN]["outcome"] == "PASS"
     assert rows[ITEM]["state"] == "open"
     assert all(rows[row_id]["state"] == "open" for row_id in (DIFFER, NOMETADATA, VERBOSE))
-    assert "probe aborted: contextinfo failed: HTTP 403" in output
+    assert "probe aborted: contextinfo (request digest) failed: HTTP 403 denied" in output
     assert "recycle it by hand" in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
 
@@ -409,7 +409,8 @@ def test_a_digest_lost_before_the_column_leaves_it_open_not_void() -> None:
 
     assert rows[LIST]["outcome"] == "PASS"
     assert all(row["state"] == "open" for row_id, row in rows.items() if row_id not in (LIST, ZONE))
-    told = "could not recycle 'dbmlsp Probe CalcDate' (contextinfo failed: HTTP 403); recycle it"
+    told = ("could not recycle 'dbmlsp Probe CalcDate' "
+            "(contextinfo (request digest) failed: HTTP 403 denied); recycle it")
     assert f"{told} by hand." in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
 

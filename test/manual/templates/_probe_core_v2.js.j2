@@ -48,6 +48,7 @@
       return response;
     }
   }
+{% include "_contextinfo.js.j2" %}
   let cachedDigest = null;
   let digestExpiresAt = 0;
   async function getDigest() {
@@ -56,12 +57,7 @@
       method: 'POST',
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`contextinfo failed HTTP ${response.status}: ${spError(text)}`);
-    }
-    const info = JSON.parse(text)?.d?.GetContextWebInformation;
-    if (!info?.FormDigestValue) throw new Error('contextinfo omitted FormDigestValue');
+    const info = await readContextWebInformation(response);
     cachedDigest = info.FormDigestValue;
     digestExpiresAt = Date.now()
       + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
