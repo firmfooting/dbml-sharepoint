@@ -145,6 +145,13 @@ def read_concern_files(mapping_path: Path, raw: Mapping[str, object]) -> dict[st
     for concern, keys in CONCERN_FILES.items():
         path = base_dir / concern
         folder = base_dir / f"{path.stem}.d"
+        yml = path.with_suffix(".yml")
+        pointer = raw.get(_POINTERS.get(keys, ""))
+        # Never read, its sections would deploy nothing; a pointer naming it reads it.
+        if yml.exists() and not (
+            isinstance(pointer, str) and (base_dir / pointer).resolve() == yml.resolve()
+        ):
+            raise MappingShapeError(f"{yml.name}: concern files are named {concern}")
         if folder.exists() and not folder.is_dir():
             raise MappingShapeError(f"{folder.name} exists but is not a folder")
         if path.is_file() and folder.is_dir():

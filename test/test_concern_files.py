@@ -104,6 +104,23 @@ def test_a_pointer_elsewhere_beside_a_concern_file_is_refused(tmp_path: Path) ->
         load_mapping(pack / "mapping.yaml")
 
 
+def test_a_concern_file_spelled_yml_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _move(pack, "views.yml", "views")
+    with pytest.raises(
+        MappingShapeError, match=r"^views\.yml: concern files are named views\.yaml$",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_pointer_naming_a_yml_file_reads_it(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    original = load_mapping(pack / "mapping.yaml").mapping
+    _move(pack, "demo.yml", "demo_items")
+    _write(pack / "mapping.yaml", {**_read(pack / "mapping.yaml"), "demo_source": "demo.yml"})
+    assert load_mapping(pack / "mapping.yaml").mapping.demo_items == original.demo_items
+
+
 def test_concern_files_beside_another_name_are_not_read(tmp_path: Path) -> None:
     pack = _pack(tmp_path)
     _move(pack, "views.yaml", "views", mapping="other-mapping.yaml")

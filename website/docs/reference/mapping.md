@@ -70,8 +70,10 @@ per concern, under these fixed names:
 
 A section read from its concern file loads exactly as if it were written in
 the mapping, so the build is the same either way. A file that is empty or
-holds only comments is the same as no file. Concern files are read only
-beside a mapping named `mapping.yaml`.
+holds only comments loads the same as no file, though it still counts as the
+concern's file for the pointer rule below and for `mapping split`. Concern
+files are read only beside a mapping named `mapping.yaml`, which refuses a
+concern file spelled `.yml`, such as `views.yml`, unless a pointer names it.
 
 A section lives in one place. Declared in both the mapping and its concern
 file, it is refused with the line of each, for example
