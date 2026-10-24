@@ -73,7 +73,10 @@ def wrap(
 
 # shortcut: a `/` after a block `}` reads as a regex, so node --check; track blocks if one divides.
 _REGEX_AFTER_CHARS = frozenset("(,=:[!&|?{};+-*%<>~^")
-_REGEX_AFTER_WORDS = frozenset({"return", "typeof", "case", "do", "else", "in", "of", "void"})
+_REGEX_AFTER_WORDS = frozenset({
+    "await", "case", "delete", "do", "else", "in", "instanceof", "new", "of", "return", "throw",
+    "typeof", "void", "yield",
+})
 _CONTROL_WORDS = frozenset({"if", "while", "for", "with"})  # `if (x) /re/` holds a regex
 
 
