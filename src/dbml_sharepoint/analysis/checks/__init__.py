@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.checks import (
     _governance,
     _identities,
     _library,
+    _lists_forms,
     _loading,
     _naming,
     _permissions,
@@ -55,4 +56,5 @@ CHECK_FAMILIES: tuple[Callable[[ValidationContext], list["Finding"]], ...] = (
     _loading.check,
     _watched.check,
     _governance.check,
+    _lists_forms.check,
 )
