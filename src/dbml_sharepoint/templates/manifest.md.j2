@@ -560,8 +560,9 @@ _(none declared)_
 {% if lists_forms %}
 Each declared form is found on its list by title, or by a previous title when
 the title is absent, and is created or updated to the declaration below. A
-form whose title is not declared is left alone, and a retired title is
-deleted. Branch and visibility rules made in the designer are removed when a
+form whose title is not declared is left alone. A retired title is deleted
+only after every declared form of its list was written and read back equal;
+otherwise it is kept until the next deploy. Branch and visibility rules made in the designer are removed when a
 form is written. The logo and the theme stay as stored.
 
 {% for entry in lists_forms %}
@@ -575,7 +576,7 @@ form is written. The logo and the theme stay as stored.
   - Left to the owner: {% for key in lists_form_operational_keys if key not in form %}`{{ key }}`, {% endfor %}the logo and the theme
 {% endfor %}
 {% if entry.retired %}
-- Retired, deleted on deploy: {{ entry.retired | join(', ') }}
+- Retired, deleted once every declared form of this list reads back equal: {{ entry.retired | join(', ') }}
 {% endif %}
 
 {% endfor %}
@@ -583,8 +584,9 @@ Responses are list rows; Created By is the respondent; the form id is stored in 
 
 A Lists form error records a deploy error, which stops the later seed step
 (Phase {{ phase_num['seeds'] }}). When the site holds more than one form under
-a declared title, or under one of its previous titles, nothing is written to
-that form and the deploy's assessment gate reports it as BLOCKED.
+a declared title, more than one under its previous titles, or one form under
+the title and another under a previous title, nothing is written to that
+form, the list records a deploy error, and the list's retired forms are kept.
 {% else %}
 _(none; no list declares Lists forms)_
 {% endif %}

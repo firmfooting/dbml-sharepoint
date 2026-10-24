@@ -1591,7 +1591,7 @@ Per entity:
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `forms` | list of form | required | One or more forms. Several forms on one list are independent |
-| `retired` | list of titles | `[]` | Forms deleted on deploy. A form left out of `forms` and not listed here is left alone |
+| `retired` | list of titles | `[]` | Forms deleted on deploy, once every declared form of the list was written and read back equal; otherwise kept until the next deploy. A form left out of `forms` and not listed here is left alone |
 
 Per form:
 
@@ -1654,11 +1654,16 @@ alone. Responses are list rows, Created By is the respondent, and the form
 id is stored in `_FormSourceId_0`. Owners make the respondent link in the
 designer.
 
+A retired form is deleted only after every declared form of its list was
+written and read back equal. Otherwise it is kept until the next deploy, so a
+replacement that failed never leaves the list without the form it replaces.
+
 A Lists form error records a deploy error, which stops the later seed step.
-When the site holds more than one form under a declared title, or under one
-of its previous titles, nothing is written to that form, and the deploy's
-assessment gate reports it as BLOCKED. Delete or rename the extra form in the
-designer.
+When the site holds more than one form under a declared title, more than one
+under its previous titles, or one form under the title and another under a
+previous title, nothing is written to that form, the list records a deploy
+error, and the list's retired forms are kept. Delete or rename the extra form
+in the designer.
 
 A list that declares no `Title` column keeps the built-in `Title`, which core
 makes optional, so a form on that list may leave `Title` off.
@@ -1683,8 +1688,10 @@ Errors:
 - [`lists_form_question_sets_column`](./findings.md): a question declares
   `required` or `include_time`.
 - [`lists_form_required_column_missing`](./findings.md): a `not null` column
-  with no default is not a question. A `default_formulas` entry counts as a
-  default, and retired and auto-increment columns are exempt.
+  with no default is not a question. A default counts only when the deploy
+  writes it to the column, so a multi-line text, hyperlink or person column
+  gets none. A `default_formulas` entry counts as a default, and retired and
+  auto-increment columns are exempt.
 - [`lists_form_question_repeated`](./findings.md): two questions name the
   same column.
 - [`lists_form_title_invalid`](./findings.md): a title is empty, holds a
