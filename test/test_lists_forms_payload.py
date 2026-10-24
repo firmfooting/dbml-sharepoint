@@ -11,6 +11,7 @@ from _paths import FIXTURES
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.lists_forms_payload import (
+    OPERATIONAL_KEYS,
     PLATFORM_THANK_YOU,
     lists_forms_payload,
     utc_text,
@@ -146,6 +147,19 @@ def test_declared_operational_keys_only() -> None:
     assert out["closed_message"] == "Closed"
     assert "opens" not in out
     assert "closes" not in out
+
+
+def test_operational_keys_constant_names_what_the_row_writes() -> None:
+    when = "2026-11-01T09:00:00+11:00"
+    form = replace(
+        _form(), accepting_responses=True, closed_message="Closed", opens=when, closes=when
+    )
+    row = lists_forms_payload(_bundle(form), _schema(), "Request")
+    assert row is not None
+    bare = lists_forms_payload(_bundle(_form()), _schema(), "Request")
+    assert bare is not None
+    added = set(row["forms"][0]) - set(bare["forms"][0])
+    assert added == set(OPERATIONAL_KEYS)
 
 
 def test_entity_without_forms_has_no_payload() -> None:

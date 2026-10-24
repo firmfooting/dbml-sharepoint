@@ -65,14 +65,15 @@ def _form_row(
         "thank_you": form.thank_you if form.thank_you is not None else PLATFORM_THANK_YOU,
         "one_response_per_person": form.one_response_per_person,
     }
-    for key in OPERATIONAL_KEYS:
-        value = getattr(form, key)
-        if value is None:
-            continue
-        if key in ("opens", "closes"):
-            row[key] = utc_text(value)
-        else:
-            row[key] = value
+    # Explicit per key so each keeps its type; a test pins this set to OPERATIONAL_KEYS.
+    if form.accepting_responses is not None:
+        row["accepting_responses"] = form.accepting_responses
+    if form.closed_message is not None:
+        row["closed_message"] = form.closed_message
+    if form.opens is not None:
+        row["opens"] = utc_text(form.opens)
+    if form.closes is not None:
+        row["closes"] = utc_text(form.closes)
     return row
 
 
