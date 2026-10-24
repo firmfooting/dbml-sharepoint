@@ -11,11 +11,11 @@ Every finding below is derived from an evidence package committed under `evidenc
 
 Runs: 150. Findings: 427. Captures superseded: 1.
 
-Probes: 104. Probed: 79. Not yet probed: 25.
+Probes: 106. Probed: 79. Not yet probed: 27.
 
 Checks with a probe result, not settled: 425 of 1976. Checks with a reviewed capture, not settled: 9 of 50.
 
-## formula — 9 of 11 probes with evidence, 67 findings
+## formula — 9 of 12 probes with evidence, 67 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ Checks with a probe result, not settled: 425 of 1976. Checks with a reviewed cap
 
 301 further checks in this surface are settled.
 
-Not yet probed: `hyperlink-validation-operand-probe.js`, `blank-operand-probe.js`.
+Not yet probed: `hyperlink-validation-operand-probe.js`, `blank-operand-probe.js`, `formula-facts-probe.js`.
 
 ## expression — no evidence
 
@@ -126,7 +126,7 @@ Not yet probed: `calculated-filter-probe.js`.
 
 27 further checks in this surface are settled.
 
-## form — 2 of 4 probes with evidence, 16 findings
+## form — 2 of 5 probes with evidence, 16 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -149,7 +149,7 @@ Not yet probed: `calculated-filter-probe.js`.
 
 24 further checks in this surface are settled.
 
-Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe.js`.
+Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe.js`, `form-header-parity-probe.js`.
 
 ## field — 16 of 21 probes with evidence, 23 findings
 
