@@ -1,0 +1,21 @@
+Request:
+  forms:
+    - title: Facilities request
+      description: |
+        Tell us what needs fixing. We reply within two working days.
+        How we handle requests: https://example.com/facilities/requests
+      thank_you: Thanks. The facilities team reads every request.
+      one_response_per_person: false
+      opens: "2026-11-02T09:00:00+11:00"
+      closes: "2026-12-18T17:00:00+11:00"
+      questions:
+        - column: Title
+          label: What needs fixing?
+        - column: Details
+          help: Include the building and room number.
+        - column: Category
+        - column: Priority
+        - column: NeededBy
+        - column: Attachments
+  retired:
+    - Old intake

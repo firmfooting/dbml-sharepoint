@@ -84,7 +84,8 @@ refused too, naming the file the section belongs in.
 `reporting_source` and `demo_source` may name their concern file, as in
 `demo_source: demo.yaml`, which is then read once through the pointer. A
 pointer naming any other file while the concern file exists is refused.
-[`form.yaml`](#formyaml) keeps its own shape, keyed by entity.
+[`form.yaml`](#formyaml) and [`lists-forms.yaml`](#lists-formsyaml) keep
+their own shape, keyed by entity.
 
 ### Folders
 
@@ -1546,6 +1547,176 @@ established:
 - Text equality that ignores case for non-ASCII characters.
 - A header at the saved-size floor is the largest size known to save, not one
   shown to render.
+
+## `lists-forms.yaml`
+
+`lists-forms.yaml` sits beside `mapping.yaml` and declares the Lists forms
+of each list: the forms a respondent fills in from the list's Forms button,
+whose answers are saved as list rows. The file is found by name, with no
+pointer key, and its top level is keyed by DBML entity name, like
+`form.yaml`. Without the file nothing changes. A `lists_forms` key inside
+`mapping.yaml` is refused as an unknown section, so the file is the only
+home. It is a separate file from `form.yaml`, which describes the list's own
+New and Edit form; a Lists form shares none of its rendering.
+
+```yaml
+Request:
+  forms:
+    - title: Facilities request
+      description: |
+        Tell us what needs fixing. We reply within two working days.
+        How we handle requests: https://example.com/facilities/requests
+      thank_you: Thanks. The facilities team reads every request.
+      one_response_per_person: false
+      opens: "2026-11-02T09:00:00+11:00"
+      closes: "2026-12-18T17:00:00+11:00"
+      questions:
+        - column: Title
+          label: What needs fixing?
+        - column: Details
+          help: Include the building and room number.
+        - column: Category
+        - column: Priority
+        - column: NeededBy
+        - column: Attachments
+```
+
+Here `Priority` is a `not null` enum with a default, so it may be asked or
+left off. `Title` is `not null` with no default, so it must be a question.
+
+### Keys
+
+Per entity:
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `forms` | list of form | required | One or more forms. Several forms on one list are independent |
+| `retired` | list of titles | `[]` | Forms deleted on deploy. A form left out of `forms` and not listed here is left alone |
+
+Per form:
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `title` | text | required | Identifies the form on redeploy |
+| `previous_titles` | list of titles | `[]` | Matched when the current title is absent, so a rename keeps the form and its id |
+| `description` | text | `""` | The subtitle. Line breaks are kept |
+| `questions` | list of question | required | Asked in this order |
+| `thank_you` | text | "Your response has been submitted!" | The message after a response is submitted |
+| `one_response_per_person` | `true` or `false` | `false` | Counts rows a person made before the switch was turned on |
+| `accepting_responses` | `true` or `false` | absent: left alone | Operational |
+| `closed_message` | text | absent: left alone | Operational. The message of a form that is not accepting responses |
+| `opens` | quoted ISO 8601 time with an offset | absent: left alone | Operational. Stored in UTC |
+| `closes` | quoted ISO 8601 time with an offset | absent: left alone | Operational. Stored in UTC; must be after `opens` |
+
+Per question:
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `column` | DBML column name, or `Attachments` | required | The column the answer is saved to |
+| `label` | text | the column's display title | The question text. The column is untouched |
+| `help` | text | `""` | The question's description. The column is untouched |
+| `respondents_read_source` | `true` or `false` | `false` | Required on a lookup question, as an acknowledgement that every respondent can read the lookup's source list |
+
+Any other key is refused by name. Required and "Include time" have no form
+key: they belong to the column, so declare `not null`, or `date` against
+`datetime`, in the DBML. A question that declares `required` or
+`include_time` is refused.
+
+`opens` and `closes` must be quoted. An unquoted YAML time is parsed before
+core sees it, so the loader refuses it and asks for quotes.
+
+### What a deploy writes
+
+The content keys (`title`, `description`, `questions`, `thank_you` and
+`one_response_per_person`) are the whole declared state. A content key left
+out is written as its default, so a change made in the designer to the
+title, description, questions or thank-you text is reverted by the next
+deploy.
+
+The operational keys (`accepting_responses`, `closed_message`, `opens` and
+`closes`) are enforced only when declared. Leave one out and the owner sets
+it in the designer, and a redeploy leaves it alone. This lets an owner close
+a form or change its schedule without a release.
+
+A deploy also:
+
+- keeps the form's logo and theme as stored, because this file cannot
+  declare them yet;
+- removes branch and visibility rules made in the designer, since a kept
+  rule could point at a question the declaration dropped or moved;
+- always requires sign-in. Anonymous forms are out of scope;
+- never writes a column. It fails the list, naming the column, when a
+  question's column is missing or its required or date-only setting differs
+  from the DBML.
+
+A form whose title is not declared, by `title` or `previous_titles`, is left
+alone. Responses are list rows, Created By is the respondent, and the form
+id is stored in `_FormSourceId_0`. Owners make the respondent link in the
+designer.
+
+A Lists form error records a deploy error, which stops the later seed step.
+When the site holds more than one form under a declared title, or under one
+of its previous titles, nothing is written to that form, and the deploy's
+assessment gate reports it as BLOCKED. Delete or rename the extra form in the
+designer.
+
+A list that declares no `Title` column keeps the built-in `Title`, which core
+makes optional, so a form on that list may leave `Title` off.
+
+### What the build refuses in a Lists form
+
+Each code is described in the [findings reference](./findings.md).
+
+Errors:
+
+- [`unknown_entity`](./findings.md): the file names an entity the mapping
+  does not declare.
+- [`lists_form_on_document_library`](./findings.md): the entity is a
+  document library.
+- [`lists_form_column_unknown`](./findings.md): a question names a column
+  the entity does not have, or a retired one.
+- [`lists_form_question_not_offered`](./findings.md): a question names a
+  calculated column, `ContentType` or a lookup projection.
+- [`lists_form_question_hidden_on_list_form`](./findings.md): a question
+  names a column that `form_visibility` or `form.yaml` hides or shows
+  conditionally.
+- [`lists_form_question_sets_column`](./findings.md): a question declares
+  `required` or `include_time`.
+- [`lists_form_required_column_missing`](./findings.md): a `not null` column
+  with no default is not a question. A `default_formulas` entry counts as a
+  default, and retired and auto-increment columns are exempt.
+- [`lists_form_question_repeated`](./findings.md): two questions name the
+  same column.
+- [`lists_form_title_invalid`](./findings.md): a title is empty, holds a
+  line break, is over 80 characters, or repeats another declared, previous
+  or retired title of the entity. A `title: |` block ends in a line break,
+  so it is refused.
+- [`lists_form_text_too_long`](./findings.md): `description` is over 1260
+  characters, or `thank_you` or `closed_message` over 300.
+- [`lists_form_link_markup`](./findings.md): `description` or `help` holds
+  Markdown or HTML link markup. Write the bare `https://` URL.
+- [`lists_form_link_not_https`](./findings.md): `description` or `help`
+  holds a `mailto:` or `http://` address, or a `www.` address with no
+  scheme.
+- [`lists_form_image_in_text`](./findings.md): any form text holds Markdown
+  image or `<img>` markup.
+- [`lists_form_link_in_message`](./findings.md): `thank_you` or
+  `closed_message` holds a URL.
+- [`lists_form_lookup_source_unreadable`](./findings.md): a lookup question
+  lacks `respondents_read_source: true`.
+- [`lists_form_attachments_off`](./findings.md): an `Attachments` question
+  while the mapping declares `attachments: false`.
+- [`lists_form_schedule_invalid`](./findings.md): `opens` or `closes` is not
+  an ISO 8601 time with an offset, or `closes` is not after `opens`.
+- [`lists_form_retired_and_declared`](./findings.md): a title is both
+  declared and retired.
+
+Warnings:
+
+- [`lists_form_rich_text_is_plain`](./findings.md): a question on a
+  `richtext` column.
+- [`lists_form_list_validation_is_silent`](./findings.md): the entity
+  declares `list_validation`.
 
 ## `column_validation`
 

@@ -555,6 +555,40 @@ the default item content type's field link (Phase {{ phase_num['field_links'] }}
 _(none declared)_
 {% endif %}
 
+## Phase {{ phase_num['lists_forms'] }}: Lists forms
+
+{% if lists_forms %}
+Each declared form is found on its list by title, or by a previous title when
+the title is absent, and is created or updated to the declaration below. A
+form whose title is not declared is left alone, and a retired title is
+deleted. Branch and visibility rules made in the designer are removed when a
+form is written. The logo and the theme stay as stored.
+
+{% for entry in lists_forms %}
+**{{ entry.list }}**
+
+{% for form in entry.forms %}
+- **{{ form.title }}**{{ ' (previously ' + (form.previous_titles | join(', ')) + ')' if form.previous_titles else '' }}: {% for q in form.questions %}{{ q.column }} ({{ q.label }}){% if not loop.last %}, {% endif %}{% endfor %}
+
+  - Settings in force: thank-you text "{{ form.thank_you }}"; one response per person: {{ 'yes' if form.one_response_per_person else 'no' }}{% for key in lists_form_operational_keys if key in form %}; `{{ key }}`: {{ ('yes' if form[key] else 'no') if form[key] is boolean else form[key] }}{% endfor %}
+
+  - Left to the owner: {% for key in lists_form_operational_keys if key not in form %}`{{ key }}`, {% endfor %}the logo and the theme
+{% endfor %}
+{% if entry.retired %}
+- Retired, deleted on deploy: {{ entry.retired | join(', ') }}
+{% endif %}
+
+{% endfor %}
+Responses are list rows; Created By is the respondent; the form id is stored in `_FormSourceId_0`. Owners make the respondent link in the designer.
+
+A Lists form error records a deploy error, which stops the later seed step
+(Phase {{ phase_num['seeds'] }}). When the site holds more than one form under
+a declared title, or under one of its previous titles, nothing is written to
+that form and the deploy's assessment gate reports it as BLOCKED.
+{% else %}
+_(none; no list declares Lists forms)_
+{% endif %}
+
 ## Permissions
 
 ### Custom permission levels

@@ -404,6 +404,9 @@ def generate_manifest(
         list_validation=list_validation,
         form_formatting=form_formatting,
         field_links=field_links,
+        lists_forms=schema_json["lists_forms"],
+        # Enforced only when declared; the manifest names the rest as the owner's.
+        lists_form_operational_keys=("accepting_responses", "closed_message", "opens", "closes"),
         retention=retention,
         prefix=bundle.mapping.prefix,
         schema_json=schema_json,
