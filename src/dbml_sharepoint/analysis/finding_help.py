@@ -1457,6 +1457,21 @@ FINDING_HELP: dict[FindingCode, str] = {
         "from the list silently drops out of the form, so the build refuses it "
         "instead."
     ),
+    FindingCode.LISTS_FORM_IMAGE_IN_TEXT: (
+        "A Lists form draws no image inside text."
+    ),
+    FindingCode.LISTS_FORM_LINK_IN_MESSAGE: (
+        "The thank-you text shows a URL as plain text, not a link. Put the "
+        "link in the description."
+    ),
+    FindingCode.LISTS_FORM_LINK_MARKUP: (
+        "Lists forms show Markdown and HTML as text and link the URL with the "
+        "trailing bracket. Write the bare `https://` URL."
+    ),
+    FindingCode.LISTS_FORM_LINK_NOT_HTTPS: (
+        "Only `https://` URLs become links on a Lists form. Write the full "
+        "`https://` URL."
+    ),
     FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT: (
         "When a list validation rule fails, a Lists form shows only \"We're not "
         "accepting responses at the moment.\" and stores nothing. Column "
@@ -1495,9 +1510,24 @@ FINDING_HELP: dict[FindingCode, str] = {
         "respondent cannot complete a submission. Add the question or give the "
         "column a default."
     ),
+    FindingCode.LISTS_FORM_RETIRED_AND_DECLARED: (
+        "A retired form is deleted on deploy, so it cannot also be declared."
+    ),
     FindingCode.LISTS_FORM_RICH_TEXT_IS_PLAIN: (
         "A Lists form asks for rich text in a plain box and may store plain "
         "text."
+    ),
+    FindingCode.LISTS_FORM_SCHEDULE_INVALID: (
+        "The schedule is stored in UTC and needs a time zone. The designer "
+        "refuses an end before the start."
+    ),
+    FindingCode.LISTS_FORM_TEXT_TOO_LONG: (
+        "The form designer cuts its inputs at these lengths, so a longer text "
+        "could not be edited there without loss."
+    ),
+    FindingCode.LISTS_FORM_TITLE_INVALID: (
+        "The form title identifies the form on redeploy, so it must be one "
+        "line, at most 80 characters, and unique on the list."
     ),
     FindingCode.LOOKUP_CROSSES_SITE_ROLE: (
         "A lookup's source and target entities map to different "

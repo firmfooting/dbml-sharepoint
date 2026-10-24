@@ -275,6 +275,10 @@ dbml-sharepoint explain unknown_column_type
 | `list_validation_references_a_retired_column` | error | A list validation condition references a column that has been retired. |
 | `lists_form_attachments_off` | error | The list does not accept attachments. |
 | `lists_form_column_unknown` | error | A question names a column this entity does not have. A column removed from the list silently drops out of the form, so the build refuses it instead. |
+| `lists_form_image_in_text` | error | A Lists form draws no image inside text. |
+| `lists_form_link_in_message` | error | The thank-you text shows a URL as plain text, not a link. Put the link in the description. |
+| `lists_form_link_markup` | error | Lists forms show Markdown and HTML as text and link the URL with the trailing bracket. Write the bare `https://` URL. |
+| `lists_form_link_not_https` | error | Only `https://` URLs become links on a Lists form. Write the full `https://` URL. |
 | `lists_form_list_validation_is_silent` | warning | When a list validation rule fails, a Lists form shows only "We're not accepting responses at the moment." and stores nothing. Column validation shows its message as usual. |
 | `lists_form_lookup_source_unreadable` | error | A respondent who cannot read the lookup's source list sees an empty option list and cannot pick a value. Declare `respondents_read_source: true` only when every respondent can read that list. |
 | `lists_form_on_document_library` | error | SharePoint stores a Lists form on a library but refuses its respondent link with "Cannot have submit role on a file", so nobody without library access can respond. Collect the answers in a list. |
@@ -283,7 +287,11 @@ dbml-sharepoint explain unknown_column_type
 | `lists_form_question_repeated` | error | A column can appear once on a form. |
 | `lists_form_question_sets_column` | error | Required and "Include time" belong to the column, not the form. The form's own required flag is stored but not honoured. Declare `not null`, or `date` against `datetime`, in the DBML. |
 | `lists_form_required_column_missing` | error | The list requires this column and the form does not ask for it, so a respondent cannot complete a submission. Add the question or give the column a default. |
+| `lists_form_retired_and_declared` | error | A retired form is deleted on deploy, so it cannot also be declared. |
 | `lists_form_rich_text_is_plain` | warning | A Lists form asks for rich text in a plain box and may store plain text. |
+| `lists_form_schedule_invalid` | error | The schedule is stored in UTC and needs a time zone. The designer refuses an end before the start. |
+| `lists_form_text_too_long` | error | The form designer cuts its inputs at these lengths, so a longer text could not be edited there without loss. |
+| `lists_form_title_invalid` | error | The form title identifies the form on redeploy, so it must be one line, at most 80 characters, and unique on the list. |
 | `lookup_crosses_site_role` | error | A lookup's source and target entities map to different `site_role`s; a SharePoint lookup cannot span webs. |
 | `lookup_display_column_unknown` | error | A lookup target declares a `display_column` that is not one of its columns, so the deploy would emit an unresolvable `LookupField`. |
 | `lookup_would_render_blank` | error | A lookup target has no `Title` column and declares no `display_column`, so every lookup into it renders blank. |

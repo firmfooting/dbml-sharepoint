@@ -5,6 +5,7 @@ refuses a question the form would present differently from the list, or one
 a respondent could not complete.
 """
 
+from pathlib import Path
 from typing import Unpack
 
 from _findings import none_of, only
@@ -14,9 +15,11 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 
+from dbml_sharepoint.analysis.checks._lists_forms import DESCRIPTION_MAX, MESSAGE_MAX, TITLE_MAX
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.conditions import Leaf
+from dbml_sharepoint.model.lists_forms import LISTS_FORMS_FILE_NAME, read_lists_forms_file
 from dbml_sharepoint.model.mapping_types import (
     EntityListsForms,
     EntityMapping,
@@ -212,8 +215,19 @@ def test_lists_form_question_hidden_on_list_form_fires_when_shown_conditionally(
 
 
 def test_lists_form_question_sets_column_fires_when_required_is_declared() -> None:
+    findings = _check(_q("Title"), _q("Due", sets_column=("required",)))
+    assert only(findings, FindingCode.LISTS_FORM_QUESTION_SETS_COLUMN).location == _at(1)
+
+
+def test_lists_form_question_sets_column_fires_when_include_time_is_declared() -> None:
     findings = _check(_q("Title"), _q("Due", sets_column=("include_time",)))
     assert only(findings, FindingCode.LISTS_FORM_QUESTION_SETS_COLUMN).location == _at(1)
+
+
+def test_lists_form_question_sets_column_names_both_keys_in_one_sentence() -> None:
+    findings = _check(_q("Title"), _q("Due", sets_column=("required", "include_time")))
+    message = only(findings, FindingCode.LISTS_FORM_QUESTION_SETS_COLUMN).message
+    assert "`required` and `include_time`" in message
 
 
 def test_lists_form_required_column_missing_fires_when_a_not_null_column_is_left_off() -> None:
@@ -238,7 +252,9 @@ def test_lists_form_lookup_source_unreadable_fires_when_a_lookup_is_not_acknowle
 
 def test_lists_form_attachments_off_fires_when_the_list_takes_no_attachments() -> None:
     findings = _check(_q("Title"), _q("Attachments"), attachments=False)
-    assert only(findings, FindingCode.LISTS_FORM_ATTACHMENTS_OFF).location == _at(1)
+    finding = only(findings, FindingCode.LISTS_FORM_ATTACHMENTS_OFF)
+    assert finding.location == _at(1)
+    assert "the mapping declares `attachments: false`" in finding.message
 
 
 def test_lists_form_rich_text_is_plain_fires_when_the_column_is_richtext() -> None:
@@ -288,3 +304,177 @@ def test_spec_refused_example_column_rules() -> None:
         FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING,
     ])
 
+
+
+# --- title, text, link and schedule refusals ------------------------------
+
+
+_FORM_AT = Location(Section.LISTS_FORMS, entity="Request", sub="forms[0]")
+
+
+def _form(
+    title: str = "Intake",
+    description: str = "",
+    thank_you: str | None = None,
+    closed_message: str | None = None,
+    opens: str | None = None,
+    closes: str | None = None,
+) -> list[Finding]:
+    """One form asking for Title, with the text and schedule given."""
+    form = ListsForm(
+        title=title, questions=(_q("Title"),), description=description, thank_you=thank_you,
+        closed_message=closed_message, opens=opens, closes=closes,
+    )
+    return _check(lists_forms={"Request": EntityListsForms(forms=(form,))})
+
+
+def _two(first: ListsForm, second: ListsForm, retired: tuple[str, ...] = ()) -> list[Finding]:
+    return _check(lists_forms={"Request": EntityListsForms(forms=(first, second), retired=retired)})
+
+
+def _named(title: str, *previous: str) -> ListsForm:
+    return ListsForm(title=title, questions=(_q("Title"),), previous_titles=previous)
+
+
+def test_lists_form_title_invalid_fires_when_the_title_holds_a_line_break() -> None:
+    assert only(_form(title="Intake\rform"), FindingCode.LISTS_FORM_TITLE_INVALID).location == (
+        _FORM_AT
+    )
+
+
+def test_whitespace_title_is_empty() -> None:
+    only(_form(title="  "), FindingCode.LISTS_FORM_TITLE_INVALID)
+
+
+def test_title_at_80_is_accepted_and_81_refused() -> None:
+    assert _form(title="x" * TITLE_MAX) == []
+    only(_form(title="x" * (TITLE_MAX + 1)), FindingCode.LISTS_FORM_TITLE_INVALID)
+
+
+def test_lists_form_title_invalid_fires_when_two_forms_share_a_title() -> None:
+    finding = only(_two(_named("Intake"), _named("Intake")), FindingCode.LISTS_FORM_TITLE_INVALID)
+    # Reported on the later form, as a repeated question is.
+    assert finding.location == Location(Section.LISTS_FORMS, entity="Request", sub="forms[1]")
+
+
+def test_lists_form_title_invalid_fires_when_a_title_is_another_forms_previous_title() -> None:
+    findings = _two(_named("Intake", "Old intake"), _named("Old intake"))
+    only(findings, FindingCode.LISTS_FORM_TITLE_INVALID)
+
+
+def test_lists_form_title_invalid_fires_when_two_forms_share_a_previous_title() -> None:
+    findings = _two(_named("Intake", "Old"), _named("Follow-up", "Old"))
+    only(findings, FindingCode.LISTS_FORM_TITLE_INVALID)
+
+
+def test_lists_form_title_invalid_fires_when_a_previous_title_is_retired() -> None:
+    findings = _two(_named("Intake", "Old"), _named("Follow-up"), retired=("Old",))
+    assert only(findings, FindingCode.LISTS_FORM_TITLE_INVALID).location == _FORM_AT
+
+
+def test_lists_form_retired_and_declared_fires_when_a_title_is_retired() -> None:
+    findings = _two(_named("Intake"), _named("Follow-up"), retired=("Intake",))
+    assert only(findings, FindingCode.LISTS_FORM_RETIRED_AND_DECLARED).location == _FORM_AT
+
+
+def test_description_at_1260_is_accepted() -> None:
+    assert _form(description="x" * DESCRIPTION_MAX) == []
+
+
+def test_lists_form_text_too_long_fires_when_the_description_is_over_1260() -> None:
+    only(_form(description="x" * (DESCRIPTION_MAX + 1)), FindingCode.LISTS_FORM_TEXT_TOO_LONG)
+
+
+def test_lists_form_text_too_long_fires_when_the_thank_you_is_over_300() -> None:
+    assert _form(thank_you="x" * MESSAGE_MAX) == []
+    only(_form(thank_you="x" * (MESSAGE_MAX + 1)), FindingCode.LISTS_FORM_TEXT_TOO_LONG)
+
+
+def test_lists_form_text_too_long_fires_when_the_closed_message_is_over_300() -> None:
+    only(_form(closed_message="x" * (MESSAGE_MAX + 1)), FindingCode.LISTS_FORM_TEXT_TOO_LONG)
+
+
+def test_lists_form_link_markup_fires_when_the_description_holds_a_markdown_link() -> None:
+    findings = _form(description="See [the policy](https://example.com/p).")
+    assert only(findings, FindingCode.LISTS_FORM_LINK_MARKUP).location == _FORM_AT
+
+
+def test_lists_form_link_markup_fires_when_a_help_holds_an_anchor() -> None:
+    findings = _check(_q("Title", help='See <A href="https://example.com">here</A>.'))
+    assert only(findings, FindingCode.LISTS_FORM_LINK_MARKUP).location == _at(0)
+
+
+def test_lists_form_link_not_https_fires_when_the_description_holds_http() -> None:
+    only(_form(description="See HTTP://example.com/x"), FindingCode.LISTS_FORM_LINK_NOT_HTTPS)
+
+
+def test_lists_form_link_not_https_fires_when_a_help_holds_mailto() -> None:
+    findings = _check(_q("Title", help="Write to mailto:desk@example.com"))
+    assert only(findings, FindingCode.LISTS_FORM_LINK_NOT_HTTPS).location == _at(0)
+
+
+def test_https_www_url_is_not_a_bare_www() -> None:
+    assert _form(description="See https://www.example.com/x") == []
+    assert _form(description="See https://example.com/www.x") == []
+    only(_form(description="See www.example.com"), FindingCode.LISTS_FORM_LINK_NOT_HTTPS)
+
+
+def test_lists_form_image_in_text_fires_when_a_label_holds_an_img_tag() -> None:
+    findings = _check(_q("Title", label='Name <IMG src="https://example.com/a.png">'))
+    assert only(findings, FindingCode.LISTS_FORM_IMAGE_IN_TEXT).location == _at(0)
+
+
+def test_lists_form_image_in_text_fires_when_the_title_holds_markdown_image() -> None:
+    findings = _form(title="![logo](https://example.com/a.png) Intake")
+    only(findings, FindingCode.LISTS_FORM_IMAGE_IN_TEXT)
+
+
+def test_image_markdown_is_not_also_link_markup() -> None:
+    findings = _form(description="![x](https://example.com/a.png)")
+    assert [f.code for f in findings] == [FindingCode.LISTS_FORM_IMAGE_IN_TEXT]
+
+
+def test_lists_form_link_in_message_fires_when_the_closed_message_holds_www() -> None:
+    findings = _form(closed_message="Try www.example.com instead.")
+    assert only(findings, FindingCode.LISTS_FORM_LINK_IN_MESSAGE).location == _FORM_AT
+
+
+def test_lists_form_schedule_invalid_fires_when_a_time_has_no_offset() -> None:
+    only(_form(opens="2026-11-02T09:00:00"), FindingCode.LISTS_FORM_SCHEDULE_INVALID)
+
+
+def test_lists_form_schedule_invalid_fires_when_a_time_does_not_parse() -> None:
+    only(_form(closes="next Friday"), FindingCode.LISTS_FORM_SCHEDULE_INVALID)
+
+
+def test_date_only_schedule_is_refused() -> None:
+    only(_form(opens="2026-11-02"), FindingCode.LISTS_FORM_SCHEDULE_INVALID)
+
+
+def test_lists_form_schedule_invalid_fires_when_closes_is_not_after_opens() -> None:
+    # The same instant in two zones is not "after".
+    findings = _form(opens="2026-11-02T09:00:00+11:00", closes="2026-11-01T22:00:00Z")
+    only(findings, FindingCode.LISTS_FORM_SCHEDULE_INVALID)
+
+
+def test_a_valid_schedule_is_accepted() -> None:
+    assert _form(opens="2026-11-02T09:00:00+11:00", closes="2026-12-18T17:00:00Z") == []
+
+
+def test_block_scalar_title_is_refused_but_block_description_is_not(tmp_path: Path) -> None:
+    (tmp_path / LISTS_FORMS_FILE_NAME).write_text(
+        "Request:\n  forms:\n    - title: |\n        Intake\n"
+        "      description: |\n        First line.\n        Second line.\n"
+        "      questions:\n        - column: Title\n",
+        encoding="utf-8",
+    )
+    findings = _check(lists_forms=read_lists_forms_file(tmp_path))
+    assert [f.code for f in findings] == [FindingCode.LISTS_FORM_TITLE_INVALID]
+
+
+def test_spec_refused_example_text_rules() -> None:
+    findings = _form(title="Intake\nform", thank_you="Track it at https://example.com/track")
+    assert sorted(f.code for f in findings) == sorted([
+        FindingCode.LISTS_FORM_TITLE_INVALID,
+        FindingCode.LISTS_FORM_LINK_IN_MESSAGE,
+    ])
