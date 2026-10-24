@@ -1,0 +1,138 @@
+{# Phase body: create, update and retire each entity's declared Lists forms; a form whose title is not declared is left alone. Needs _lists_forms_read.js.j2. #}
+  // === Phase {{ phase.number }}: Lists forms ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  {
+    const VERBOSE_READ = { headers: { 'Accept': 'application/json;odata=verbose' } };
+    const formsJson = async (url, what) => {
+      const r = await fetchWithRetry(url, VERBOSE_READ);
+      if (!r.ok) throw new Error(`${what} failed: HTTP ${r.status} ${spError(await r.text())}`);
+      return (((await r.json()) || {}).d) || null;
+    };
+    // The running account's display name, read once and only when a create is due.
+    let formsCreator = null;
+    const formsCreatorName = async () => {
+      if (formsCreator === null) {
+        const me = await formsJson(apiUrl('web/currentuser?$select=Title'), 'current user read');
+        if (!me || typeof me.Title !== 'string') throw new Error('the current user read back no Title');
+        formsCreator = me.Title;
+      }
+      return formsCreator;
+    };
+    for (const entity of SCHEMA.lists_forms) {
+      try {
+        const list = await formsJson(apiUrl(`web/lists/getbytitle('${odataName(entity.list)}')?$select=Id,RootFolder/ServerRelativeUrl&$expand=RootFolder`), 'list read');
+        const listId = list && list.Id;
+        const rootUrl = list && list.RootFolder && list.RootFolder.ServerRelativeUrl;
+        if (typeof listId !== 'string' || !listId || typeof rootUrl !== 'string' || !rootUrl.startsWith('/')) {
+          throw new Error('the list read back no Id or root folder URL');
+        }
+        const fieldPage = await formsJson(listsFormsApi(rootUrl, 'GetList(@a1)/fields', `&$select=Id,InternalName,Required,DisplayFormat&$top=${FIELD_PAGE_SIZE}`), 'field read');
+        const fieldRows = resultsOf(fieldPage, 'field read');
+        if (pageTruncated(fieldRows, validatedNextPage(fieldPage, 'field read'), FIELD_PAGE_SIZE)) {
+          throw new Error('the field read may be truncated, so a missing field cannot be told from an unread one');
+        }
+        const fields = listsFormsFields(fieldRows);
+        const columnProblems = [...new Set(entity.forms.flatMap((want) => listsFormFieldProblems(want, fields)))];
+        if (columnProblems.length) {
+          throw new Error(`${columnProblems.join('; ')}. The forms step never writes a column, so nothing was written`);
+        }
+        const readForms = async () => {
+          const d = await formsJson(listsFormsApi(rootUrl, 'GetList(@a1)/GetListForms'), 'GetListForms');
+          const parsed = listsFormsParse(resultsOf(d && d.GetListForms, 'GetListForms'));
+          if (parsed.unreadable.length) {
+            throw new Error(`the stored schema of form ${parsed.unreadable.join(', ')} does not parse, so nothing more was written`);
+          }
+          return parsed.forms;
+        };
+        const viewStatus = async (id) => (await fetchWithRetry(
+          listsFormsApi(rootUrl, `GetList(@a1)/Views('${odataName(id)}')`, '&$select=Id'), VERBOSE_READ)).status;
+        let owned = false;
+        const ownBeforeWrite = async () => {
+          if (!owned) await ownedListIdentity(entity.list, listId, 'before a Lists form write');
+          owned = true;
+        };
+        const post = async (route, body, query = '', extra = {}) => {
+          const r = await fetchWithRetry(listsFormsApi(rootUrl, route, query), {
+            method: 'POST', headers: spHeaders(await getDigest(), extra),
+            body: body === undefined ? undefined : JSON.stringify(body),
+          });
+          if (!r.ok) throw new Error(`${route.split('/').pop()} refused: HTTP ${r.status} ${spError(await r.text())}`);
+          return r;
+        };
+        let current = await readForms();
+        const failures = [];
+        const written = [];
+        for (const want of entity.forms) {
+          try {
+            const { form, problem } = listsFormMatch(current, want);
+            if (problem === 'duplicate') throw new Error('more than one form carries this title; nothing was written');
+            if (problem) throw new Error('one form carries this title and another a previous title; nothing was written');
+            if (!form) {
+              await ownBeforeWrite();
+              const schema = listsFormCreateSchema(want, listId, fields, await formsCreatorName());
+              const r = await post('GetList(@a1)/CreateListForm',
+                { parameters: { __metadata: { type: 'SP.ListForm' }, SchemaJSON: JSON.stringify(schema) } });
+              const id = ((((await r.json()) || {}).d || {}).CreateListForm || {}).Id;
+              if (typeof id !== 'string' || !id) throw new Error('CreateListForm returned no form id');
+              written.push({ want, id });
+              logChange({ key: `lists-form:${entity.list}:${want.title}`, kind: 'lists-form', target: entity.list, oldValue: '', newValue: id });
+            } else if (listsFormDiff(form.schema, want, fields).length) {
+              await ownBeforeWrite();
+              await post('GetList(@a1)/UpdateListForm', { parameters: {
+                __metadata: { type: 'SP.ListForm' }, Id: form.id, SchemaJSON: JSON.stringify(listsFormPatch(form.schema, want, fields)),
+              } });
+              written.push({ want, id: form.id });
+              logChange({ key: `lists-form:${entity.list}:${want.title}`, kind: 'lists-form', target: entity.list, oldValue: form.id, newValue: form.id });
+            } else if (await viewStatus(form.id) !== 200) {
+              throw new Error('its view does not answer, so its link cannot open it');
+            }
+          } catch (err) {
+            failures.push(`'${want.title}': ${err.message}`);
+          }
+        }
+        if (written.length) {
+          current = await readForms();
+          for (const { want, id } of written) {
+            const { form, problem } = listsFormMatch(current, want);
+            if (problem || !form || listsFormGuid(form.id) !== listsFormGuid(id)) {
+              failures.push(`'${want.title}' did not read back as the one form with its title`);
+              continue;
+            }
+            const drift = listsFormDiff(form.schema, want, fields);
+            if (drift.length) failures.push(`'${want.title}' read back different on ${drift.join(', ')}`);
+            else if (await viewStatus(id) !== 200) failures.push(`'${want.title}' was written but its view does not answer`);
+          }
+        }
+        // A replacement that failed must never leave the list without the form it replaces.
+        if (failures.length) {
+          throw new Error(`${failures.join('; ')}${entity.retired.length ? '. No retired form was deleted' : ''}`);
+        }
+        const deleted = [];
+        for (const title of entity.retired) {
+          for (const form of current.filter((f) => f.schema.header.title === title)) {
+            await ownBeforeWrite();
+            await post('GetListUsingPath(DecodedUrl=@a1)/Views(@a2)', undefined,
+              `&@a2=${encodeURIComponent(`'${form.id}'`)}`, { 'X-HTTP-Method': 'DELETE' });
+            deleted.push({ title, id: form.id });
+            logChange({ key: `lists-form:${entity.list}:${title}`, kind: 'lists-form', target: entity.list, oldValue: form.id, newValue: 'deleted' });
+          }
+        }
+        if (deleted.length) {
+          const after = new Set((await readForms()).map((f) => listsFormGuid(f.id)));
+          for (const { title, id } of deleted) {
+            // An absent view answers 400 or 404 (lists-forms.storage.absent).
+            const status = after.has(listsFormGuid(id)) ? 200 : await viewStatus(id);
+            if (status !== 400 && status !== 404) failures.push(`retired '${title}' is still there after its delete (view HTTP ${status})`);
+          }
+          if (failures.length) throw new Error(failures.join('; '));
+        }
+        log('INFO', `[Phase {{ phase.number }}] Lists forms on '${entity.list}' verified (${written.length} written, ${deleted.length} retired).`);
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} Lists forms '${entity.list}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: entity.list, error: err.message });
+      }
+    }
+  }

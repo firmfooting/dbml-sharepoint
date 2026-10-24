@@ -1,0 +1,131 @@
+{# Shared Lists forms reading: parse, match, build and compare, for deploy, assess and verify. Pure apart from listsFormsApi, which needs apiUrl. #}
+  // A form is a hidden view of its list, its whole state one SchemaJSON text (lists-forms.storage.shape).
+  const listsFormsApi = (rootUrl, route, query = '') =>
+    apiUrl(`web/${route}?@a1=${encodeURIComponent(`'${String(rootUrl).replace(/'/g, "''")}'`)}${query}`);
+  const listsFormGuid = (value) => String(value == null ? '' : value).replace(/[{}]/g, '').toLowerCase();
+  const listsFormIsObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  // Fields keyed by lower-case internal name, as SharePoint resolves a field name.
+  const listsFormsFields = (rows) => new Map(rows.map((f) => [String(f.InternalName).toLowerCase(), f]));
+  const listsFormField = (fieldsByName, column) => fieldsByName.get(String(column).toLowerCase());
+  function listsFormsParse(rows) {
+    const forms = [];
+    const unreadable = [];
+    for (const row of rows) {
+      let schema = null;
+      try { schema = JSON.parse(row.SchemaJSON); } catch { /* reported as unreadable below */ }
+      const usable = listsFormIsObject(schema) && listsFormIsObject(schema.header)
+        && typeof schema.header.title === 'string' && Array.isArray(schema.elements)
+        && schema.elements.every(listsFormIsObject) && listsFormIsObject(schema.settings);
+      if (usable) forms.push({ id: row.Id, schema });
+      else unreadable.push(row.Id);
+    }
+    return { forms, unreadable };
+  }
+  function listsFormMatch(forms, want) {
+    const titled = (title) => forms.filter((f) => f.schema.header.title === title);
+    const current = titled(want.title);
+    const previous = want.previous_titles.flatMap(titled);
+    if (current.length > 1 || previous.length > 1) return { form: null, problem: 'duplicate' };
+    if (current.length && previous.length) return { form: null, problem: 'current-and-previous' };
+    return { form: current[0] || previous[0] || null, problem: null };
+  }
+  function listsFormFieldProblems(want, fieldsByName) {
+    const problems = [];
+    for (const q of want.questions) {
+      const field = listsFormField(fieldsByName, q.column);
+      if (!field) {
+        problems.push(`the column '${q.column}' is not on the list`);
+        continue;
+      }
+      // Attachments is a list setting the form shows, not a column the DBML shapes.
+      if (q.column === 'Attachments') continue;
+      if (field.Required !== q.required) {
+        problems.push(`the column '${q.column}' reads Required ${field.Required}, the DBML says ${q.required}`);
+      }
+      if (q.display_format !== null && field.DisplayFormat !== q.display_format) {
+        problems.push(`the column '${q.column}' reads DisplayFormat ${field.DisplayFormat}, the DBML says ${q.display_format}`);
+      }
+    }
+    return problems;
+  }
+  function listsFormElements(want, fieldsByName) {
+    return want.questions.map((q) => {
+      // A missing field reads as no ID, so a comparison names questions instead of throwing.
+      const field = listsFormField(fieldsByName, q.column) || { InternalName: q.column, Id: null };
+      const element = { displayName: q.label, internalName: field.InternalName, ID: field.Id, required: q.required };
+      if (q.help !== '') element.description = q.help;
+      return element;
+    });
+  }
+  function listsFormPatch(schema, want, fieldsByName) {
+    const next = JSON.parse(JSON.stringify(schema));
+    next.header = { ...next.header, title: want.title, description: want.description };
+    // Rebuilt, so designer branch and visibility rules go: they can point at a dropped question.
+    next.elements = listsFormElements(want, fieldsByName);
+    next.selectedFields = next.elements.map((e) => e.internalName);
+    const settings = next.settings;
+    settings.formSuccessMessage = want.thank_you;
+    settings.requireSignIn = true;
+    if (want.one_response_per_person) settings.ensureSingleResponsePerUser = true;
+    else delete settings.ensureSingleResponsePerUser;
+    // Operational keys are written only when declared, so the owner's own switch stays.
+    if ('accepting_responses' in want) settings.formDisabled = !want.accepting_responses;
+    if ('closed_message' in want) settings.formDisabledMessage = want.closed_message;
+    if ('opens' in want || 'closes' in want) {
+      const info = listsFormIsObject(settings.formScheduleResponseInfo) ? settings.formScheduleResponseInfo : {};
+      if ('opens' in want) info.scheduleResponsesStartDate = want.opens;
+      if ('closes' in want) info.scheduleResponsesEndDate = want.closes;
+      settings.formScheduleResponseInfo = info;
+    }
+    return next;
+  }
+  // The designer's own create body (lists-forms.api.create), with isAnonymous false.
+  function listsFormCreateSchema(want, listId, fieldsByName, createdBy) {
+    return listsFormPatch({
+      header: { title: '', description: '' },
+      elements: [],
+      selectedFields: [],
+      templateId: 'EMERALDGRADIENT',
+      theme: { background: { backgroundColor: 'linear-gradient(122.54deg, #2dafc033 0%, #70ff0033 100%)' }, primaryColor: '#005E50' },
+      formId: '',
+      listId: `{${listId}}`,
+      createdBy,
+      listBaseType: '0',
+      settings: {
+        formDisabled: false, formDisabledMessage: "We're not accepting responses at the moment.",
+        emailNotifications: false, requireSignIn: true, formSuccessMessage: 'Your response has been submitted!',
+        notificationUserInfo: [], formScheduleResponses: true, formScheduleResponseInfo: {}, isAnonymous: false,
+      },
+    }, want, fieldsByName);
+  }
+  const listsFormRuleSet = (v) => v != null && v !== ''
+    && (Array.isArray(v) ? v.length > 0 : !listsFormIsObject(v) || Object.keys(v).length > 0);
+  // A missing time is no schedule; any other spelling of the same instant is equal.
+  const listsFormSameTime = (stored, want) => stored != null && Date.parse(stored) === Date.parse(want);
+  function listsFormDiff(schema, want, fieldsByName) {
+    const keys = [];
+    const settings = schema.settings;
+    const schedule = listsFormIsObject(settings.formScheduleResponseInfo) ? settings.formScheduleResponseInfo : {};
+    if (schema.header.title !== want.title) keys.push('title');
+    if ((schema.header.description ?? '') !== want.description) keys.push('description');
+    const wanted = listsFormElements(want, fieldsByName);
+    const stored = schema.elements;
+    const sameQuestions = stored.length === wanted.length
+      && stored.every((e, i) => e.displayName === wanted[i].displayName
+        && e.internalName === wanted[i].internalName
+        && listsFormGuid(e.ID) === listsFormGuid(wanted[i].ID)
+        && e.required === wanted[i].required
+        && (e.description ?? '') === (wanted[i].description ?? '')
+        && !listsFormRuleSet(e.branchRules) && !listsFormRuleSet(e.visibilityConditions))
+      && Array.isArray(schema.selectedFields)
+      && schema.selectedFields.length === wanted.length
+      && schema.selectedFields.every((name, i) => name === wanted[i].internalName);
+    if (!sameQuestions) keys.push('questions');
+    if (settings.formSuccessMessage !== want.thank_you) keys.push('thank_you');
+    if ((settings.ensureSingleResponsePerUser === true) !== want.one_response_per_person) keys.push('one_response_per_person');
+    if ('accepting_responses' in want && (settings.formDisabled === true) !== !want.accepting_responses) keys.push('accepting_responses');
+    if ('closed_message' in want && settings.formDisabledMessage !== want.closed_message) keys.push('closed_message');
+    if ('opens' in want && !listsFormSameTime(schedule.scheduleResponsesStartDate, want.opens)) keys.push('opens');
+    if ('closes' in want && !listsFormSameTime(schedule.scheduleResponsesEndDate, want.closes)) keys.push('closes');
+    return keys;
+  }

@@ -67,6 +67,8 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
         PhaseStep("views", "views", "deploy/_views.js.j2"),
         PhaseStep("forms", "form formatting", "deploy/_forms.js.j2"),
         PhaseStep("field_links", "hidden field links", "deploy/_field_links.js.j2"),
+        # After the field links, which decide the columns the list's own form hides.
+        PhaseStep("lists_forms", "Lists forms", "deploy/_lists_forms.js.j2"),
     )),
     ("PROTECTION", (
         PhaseStep("seal", "seal declared columns", "deploy/_seal.js.j2"),

@@ -45,6 +45,8 @@ BUILTIN_INTERNAL_NAMES = frozenset({
     "_DisplayName", "_ShortcutUrl", "_ShortcutSiteId", "_ShortcutWebId",
     "_ShortcutUniqueId", "_ExtendedDescription", "_ip_UnifiedCompliancePolicyUIAction",
     "_ip_UnifiedCompliancePolicyProperties", "TaxCatchAll", "TaxCatchAllLabel",
+    # Each response's Lists form id (lists-forms.api.source-column).
+    "_FormSourceId_0",
 })
 
 #: The built-in this tool owns rather than skips.

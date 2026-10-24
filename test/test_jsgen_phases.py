@@ -443,8 +443,8 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     # single field MERGE and so needed only the one call site. Batching a
     # lane's unseals into one ChangeSet removes those intermediate re-proves,
     # so the phase gained a second site after the flush: a marker lost between
-    # two parts of one envelope has no next write to abort at.
-    assert _call_count(js, "ownedListIdentity") == 18
+    # two parts of one envelope has no next write to abort at. Lists forms adds one.
+    assert _call_count(js, "ownedListIdentity") == 19
     assert _call_count(js, "ownedFieldIdentity") == 2
     # Every place a phase reads an Id back out of a survey it ran with
     # `allowAbsent` false: the seven pre-write lookups, one per such phase,

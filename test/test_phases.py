@@ -20,7 +20,7 @@ def test_todays_numbering_is_pinned() -> None:
         "lists": "2.1", "folders": "2.2", "folder_defaults": "2.3",
         "lookups": "2.4", "indexes": "2.5",
         "defaults": "2.6", "views": "3.1", "forms": "3.2", "field_links": "3.3",
-        "seal": "4.1",
+        "lists_forms": "3.4", "seal": "4.1",
         "acls": "4.2", "seeds": "5.1",
     }
     assert phase_number("seal") == "4.1"
@@ -71,3 +71,9 @@ def test_context_shape_for_templates() -> None:
         "first_in_group": True,
     }
     assert ctx[0]["steps"][1]["first_in_group"] is False
+
+
+def test_lists_forms_directly_follows_the_hidden_field_links() -> None:
+    """The forms step reads which columns the list's own form hides, so it runs after them."""
+    group, step = phase_number("field_links").split(".")
+    assert phase_number("lists_forms") == f"{group}.{int(step) + 1}"
