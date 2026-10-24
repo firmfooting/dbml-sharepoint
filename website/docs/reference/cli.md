@@ -291,12 +291,12 @@ It refuses, and writes nothing, when:
 - the file is not named `mapping.yaml`;
 - the mapping does not load;
 - a concern file or its `.d` folder already exists;
-- a moved piece would not parse on its own, such as an alias whose anchor
-  stays behind;
+- a moved piece would not parse alone (an alias whose anchor stays);
 - the pieces do not read back as the same mapping.
 
 It exits `0` after a split or when there is nothing to split, and `1`, with
-`[ERROR]` and the reason, on a refusal or a file it cannot read or write.
+`[ERROR]` and the reason, on a refusal or a file it cannot read or write. Run
+outside a project without `--mapping`, it exits `2`, as `build` does.
 
 ## Exit codes
 

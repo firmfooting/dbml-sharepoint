@@ -107,5 +107,6 @@ def test_a_refusal_exits_1_with_its_reason(tmp_path: Path) -> None:
     other = _mapping(tmp_path).rename(tmp_path / "pack" / "20-configure" / "other-mapping.yaml")
     result = CliRunner().invoke(app, ["mapping", "split", "--mapping", str(other)])
     assert result.exit_code == 1
-    assert "[ERROR]" in result.output
-    assert "only a file named mapping.yaml" in result.output
+    assert "[ERROR]" in result.stderr
+    assert "only a file named mapping.yaml" in result.stderr
+    assert "[ERROR]" not in result.stdout
