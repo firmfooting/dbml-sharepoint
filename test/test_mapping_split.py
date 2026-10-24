@@ -181,6 +181,22 @@ def test_a_symlink_named_mapping_to_another_name_is_refused(tmp_path: Path) -> N
     assert _files(mapping.parent) == before
 
 
+def test_a_split_through_a_symlink_writes_beside_the_real_mapping(tmp_path: Path) -> None:
+    mapping = _pack(tmp_path)
+    original = load_mapping(mapping).mapping
+    alias = tmp_path / "elsewhere" / "alias.yaml"
+    alias.parent.mkdir()
+    try:
+        alias.symlink_to(mapping)
+    except OSError:
+        pytest.skip("symlinks are not available here")
+    assert "views.yaml" in split_mapping(alias)
+    assert alias.is_symlink()
+    assert list(alias.parent.iterdir()) == [alias]
+    assert (mapping.parent / "views.yaml").is_file()
+    assert load_mapping(mapping).mapping == original
+
+
 @pytest.mark.parametrize(
     ("existing", "name"), [("views.yaml", "views.yaml"), ("views.d/a.yaml", "views.d/")],
 )

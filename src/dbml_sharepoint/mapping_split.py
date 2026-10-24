@@ -95,10 +95,11 @@ def _verify(source: str, texts: dict[str, str]) -> dict[str, tuple[str, ...]]:
 
 def plan_split(mapping_path: Path) -> SplitPlan:
     """What splitting `mapping_path` would write, verified. Writes nothing."""
-    # The loader tests the resolved name, so a symlink or another case must agree with it.
-    if (name := mapping_path.resolve().name) != _MAPPING:
+    # The loader reads the resolved file, so a symlink or another case must agree with it.
+    mapping_path = mapping_path.resolve()
+    if mapping_path.name != _MAPPING:
         raise SplitRefusedError(
-            f"{name}: only a file named mapping.yaml is split, "
+            f"{mapping_path.name}: only a file named mapping.yaml is split, "
             "because its concern files are read by every mapping in its folder",
         )
     try:
@@ -129,6 +130,8 @@ def plan_split(mapping_path: Path) -> SplitPlan:
 
 def split_mapping(mapping_path: Path) -> dict[str, tuple[str, ...]]:
     """Split `mapping_path` into its concern files and return the keys moved into each."""
+    # Writes go beside the file the plan read, never beside a symlink to it.
+    mapping_path = mapping_path.resolve()
     plan = plan_split(mapping_path)
     if plan.moved:
         for name in plan.moved:
