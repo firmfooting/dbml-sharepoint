@@ -3,4 +3,6 @@
 glob = [
     "website/docs/api/**",
     "website/docs/reference/findings.md",
+    "uv.lock",
+    "website/package-lock.json",
 ]
