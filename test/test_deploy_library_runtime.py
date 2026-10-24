@@ -15,7 +15,6 @@ from urllib.parse import quote
 import pytest
 from _builders import ID_PK, TITLE, table
 from _json_view import Json
-from _node import NODE, run_node
 from _packs import pack, reader_identities
 from _paths import FIXTURES
 from test_deploy_runtime import _summary_of, _view_guard_harness, _without_assessment
@@ -23,6 +22,7 @@ from test_deploy_runtime import _summary_of, _view_guard_harness, _without_asses
 from dbml_sharepoint.analysis.phases import phase_number
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.jsonvalue import as_json_object
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

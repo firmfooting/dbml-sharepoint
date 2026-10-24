@@ -19,8 +19,9 @@ from types import ModuleType
 from typing import cast
 
 import pytest
-from _node import NODE, run_node
 from _paths import MANUAL, REPO_ROOT
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 TEMPLATES = MANUAL / "templates"
 

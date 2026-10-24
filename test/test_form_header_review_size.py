@@ -11,13 +11,13 @@ from zoneinfo import ZoneInfo
 import pytest
 from _format_eval import date_field, evaluate_rows
 from _formula_grid import check_parity
-from _node import NODE
 
 from dbml_sharepoint.analysis.form_header import RenderContext, render_header
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
 from dbml_sharepoint.analysis.formula.translate import TranslationContext, translate_column
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.model.form_tree import Bubble, HeaderTree, Row
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 

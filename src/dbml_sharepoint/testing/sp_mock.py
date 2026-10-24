@@ -1,4 +1,4 @@
-# test/_sp_mock.py
+# src/dbml_sharepoint/testing/sp_mock.py
 """Make every mock GET answer only what its `$select` asked for (#574).
 
 A live site returns the properties a request selects and nothing else. A mock
@@ -43,6 +43,7 @@ observation (#574).
 
 import json
 from dataclasses import dataclass
+from typing import NotRequired, TypedDict
 
 SENTINEL = "__DBMLSP_UNSELECTED_READS__"
 
@@ -74,17 +75,27 @@ class UnselectedReadError(AssertionError):
         )
 
 
+class _Recorded(TypedDict):
+    """One entry of the record the prelude prints after `SENTINEL`."""
+
+    prop: str
+    url: str
+    line: NotRequired[int | None]
+    source: NotRequired[str]
+
+
 def unselected_reads(output: str) -> list[UnselectedRead]:
     """The reads the prelude recorded in `output`, or `[]` when it recorded none."""
     reads: list[UnselectedRead] = []
     for line in output.splitlines():
         if line.startswith(SENTINEL):
+            recorded: list[_Recorded] = json.loads(line[len(SENTINEL):])
             reads.extend(
                 UnselectedRead(
                     prop=entry["prop"], url=entry["url"],
                     line=entry.get("line"), source=entry.get("source", ""),
                 )
-                for entry in json.loads(line[len(SENTINEL):])
+                for entry in recorded
             )
     return reads
 

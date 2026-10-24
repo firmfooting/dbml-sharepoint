@@ -21,8 +21,6 @@ from typing import TypedDict
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 
 from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX, SCRATCH_KIND, marker_for_object
@@ -31,6 +29,8 @@ from dbml_sharepoint.generators.identifygen import (
     PAYLOAD_VERSION,
     generate_identify_js,
 )
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 GENERATED_AT = "2026-09-06T12:00:00+00:00"
 WEB = "/sites/test"

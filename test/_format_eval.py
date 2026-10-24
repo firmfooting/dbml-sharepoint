@@ -13,7 +13,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 
-from _node import run_node
+from dbml_sharepoint.testing.node import run_node
 
 # Each function below is on the Learn page above (Operators); a function no test uses is not here.
 _PRELUDE = """

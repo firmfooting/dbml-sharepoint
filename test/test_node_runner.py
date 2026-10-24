@@ -1,6 +1,7 @@
 """run_node returns everything a script writes, including from an exit handler."""
 import pytest
-from _node import NODE, run_node
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

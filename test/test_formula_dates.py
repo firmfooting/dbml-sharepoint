@@ -23,7 +23,6 @@ from _formula_facts import (
     HEADER_SIZE_LIMIT,
 )
 from _formula_grid import check_parity, instants
-from _node import NODE
 
 from dbml_sharepoint.analysis import timezones
 from dbml_sharepoint.analysis.findings import FindingCode
@@ -45,6 +44,7 @@ from dbml_sharepoint.analysis.formula.translate import TranslationContext, trans
 from dbml_sharepoint.analysis.formula.zone import out_of_span_instant, site_day, zone_rule
 from dbml_sharepoint.analysis.limits import FORMATTER_SAVED_SIZE_FLOOR
 from dbml_sharepoint.analysis.timezones import ZoneTable, known_zones
+from dbml_sharepoint.testing.node import NODE
 
 SITE = "Australia/Melbourne"
 KINDS: dict[str, ColumnKind] = {

@@ -11,16 +11,17 @@ suite without turning anything red.
 These tests make the refusal fire. Without one the guard is a comment.
 """
 
-import conftest
 import pytest
+
+from dbml_sharepoint.testing import plugin
 
 
 def test_a_ci_run_without_node_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """The regression. 262 skip sites across 20 modules rest on this."""
     monkeypatch.setenv("CI", "true")
-    monkeypatch.setattr("_node.NODE", None)
+    monkeypatch.setattr("dbml_sharepoint.testing.node.NODE", None)
     with pytest.raises(pytest.UsageError) as refusal:
-        conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
+        plugin.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
     message = str(refusal.value)
     # The operator has to be told what to do about it, not just that it broke.
     assert "node is not on PATH" in message
@@ -30,8 +31,8 @@ def test_a_ci_run_without_node_is_refused(monkeypatch: pytest.MonkeyPatch) -> No
 def test_a_ci_run_with_node_present_is_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
     """The guard must not fail a runner that has what it asked for."""
     monkeypatch.setenv("CI", "true")
-    monkeypatch.setattr("_node.NODE", "/usr/bin/node")
-    conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
+    monkeypatch.setattr("dbml_sharepoint.testing.node.NODE", "/usr/bin/node")
+    plugin.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
 
 
 def test_a_local_run_without_node_still_skips(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,8 +43,8 @@ def test_a_local_run_without_node_still_skips(monkeypatch: pytest.MonkeyPatch) -
     CI hole by breaking the machine of everybody who does not deploy.
     """
     monkeypatch.delenv("CI", raising=False)
-    monkeypatch.setattr("_node.NODE", None)
-    conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
+    monkeypatch.setattr("dbml_sharepoint.testing.node.NODE", None)
+    plugin.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
 
 
 def test_the_requirement_is_keyed_on_ci_alone(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,9 +54,9 @@ def test_the_requirement_is_keyed_on_ci_alone(monkeypatch: pytest.MonkeyPatch) -
     own has to be remembered by a workflow that does not exist yet.
     """
     monkeypatch.delenv("CI", raising=False)
-    assert conftest.node_is_required() is False
+    assert plugin.node_is_required() is False
     monkeypatch.setenv("CI", "true")
-    assert conftest.node_is_required() is True
+    assert plugin.node_is_required() is True
 
 
 def test_the_workflow_pins_node_for_the_job_that_runs_them() -> None:

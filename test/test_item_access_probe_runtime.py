@@ -12,10 +12,11 @@ from collections.abc import Mapping
 import pytest
 from _item_acl_mock import ITEM_ACL_MOCK
 from _json_view import Json
-from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 from _versions_mock import mock_list_id
+
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

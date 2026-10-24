@@ -21,7 +21,6 @@ from _model import as_library, column
 from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE, run_node
 from _paths import EXPECTED, FIXTURES, pin_deployer_version, write_golden
 
 from dbml_sharepoint.analysis.clock_cells import cell_for
@@ -45,6 +44,7 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
+from dbml_sharepoint.testing.node import NODE, run_node
 
 
 def _rule(field: str, op: str, value: str) -> ColumnValidation:

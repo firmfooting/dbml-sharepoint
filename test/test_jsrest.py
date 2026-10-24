@@ -6,12 +6,12 @@ import re
 import subprocess
 
 import pytest
-from _node import NODE
 from _paths import GOLDEN_DEPLOYER_VERSION
 
 from dbml_sharepoint import jsrest
 from dbml_sharepoint.jsrest import Site, prelude, strip_js_comments, wrap
 from dbml_sharepoint.templating import script_env
+from dbml_sharepoint.testing.node import NODE
 
 
 @pytest.mark.parametrize(("source", "expected"), [

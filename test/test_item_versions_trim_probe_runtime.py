@@ -11,7 +11,6 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE
 from _paths import MANUAL
 from _probe_runs import (
     catalogued_dependents,
@@ -21,6 +20,8 @@ from _probe_runs import (
     voided,
 )
 from _versions_mock import VERSIONS_MOCK
+
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

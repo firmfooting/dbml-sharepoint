@@ -203,6 +203,7 @@ max-complexity = 50
 "test/test_text_encoding.py" = ["S603", "S607"]       # runs `git ls-files` on this repo
 "test/test_boundary.py" = ["S603", "S607"]            # runs `git ls-files` on this repo
 "test/_comment_runs.py" = ["S603", "S607"]            # runs `git ls-files` on this repo
+"test/test_testing_kit.py" = ["S603", "S607"]        # runs `uv build` on this repo
 # Runs `git diff` and this project's own pytest; T20 because the printed
 # verdicts ARE the record the CI log keeps.
 "scripts/**" = ["S603", "S607", "T20"]
@@ -333,3 +334,9 @@ name = "Generators never import analysis checks"
 type = "forbidden"
 source_modules = ["dbml_sharepoint.generators"]
 forbidden_modules = ["dbml_sharepoint.analysis.checks"]
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside the test kit imports it, so pytest stays off the runtime path"
+type = "protected"
+protected_modules = ["dbml_sharepoint.testing"]
+allowed_importers = ["dbml_sharepoint.testing"]

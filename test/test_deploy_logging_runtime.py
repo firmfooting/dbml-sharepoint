@@ -30,8 +30,6 @@ from _json_view import Json
 from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE
-from _node import run_node as _run
 from _paths import FIXTURES
 
 import dbml_sharepoint
@@ -54,6 +52,8 @@ from dbml_sharepoint.analysis.sidecars import (
 )
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

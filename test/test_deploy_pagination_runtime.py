@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from _json_view import dumps as dumps_view
-from _node import NODE
 from test_deploy_runtime import (
     _ADOPTED_HARNESS,
     _READER_ACL_HARNESS,
@@ -20,6 +19,7 @@ from test_deploy_runtime import (
 )
 
 from dbml_sharepoint.analysis.phases import phase_number
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

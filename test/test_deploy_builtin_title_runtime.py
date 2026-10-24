@@ -14,8 +14,6 @@ from pathlib import Path
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 from _packs import pack
 from _paths import FIXTURES
 from test_deploy_runtime import (
@@ -33,6 +31,8 @@ from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.generators.schema_types import SchemaJson
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 _DBML = """
     Table Escalation {

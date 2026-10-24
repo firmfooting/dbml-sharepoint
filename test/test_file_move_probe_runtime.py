@@ -11,9 +11,10 @@ from typing import TypedDict
 import pytest
 from _file_move_mock import FILE_MOVE_MOCK
 from _json_view import Json, dumps
-from _node import NODE, run_node
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

@@ -23,9 +23,10 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 from _paths import JINJA_TEMPLATES, MANUAL, PACKAGE
+
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 PROBE = MANUAL / "last-binding-removal-probe.js"
 HARNESS = MANUAL / "templates" / "_probe_harness.js.j2"
@@ -91,7 +92,7 @@ _HARNESS = textwrap.dedent("""
     const spError = (status, code, value) => respond(status, {
       'odata.error': { code, message: { lang: 'en-US', value } },
     });
-    // The text _sp_mock.ABSENT cites for a list title that does not exist.
+    // The text sp_mock.ABSENT cites for a list title that does not exist.
     const absent = () => spError(404, '-1, System.ArgumentException',
       `List '${CONFIG.title}' does not exist at site with URL '${CONFIG.web}'.`);
     const denied = () => spError(403, '-2147024891, System.UnauthorizedAccessException',

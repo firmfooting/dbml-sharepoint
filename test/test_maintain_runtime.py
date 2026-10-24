@@ -17,8 +17,6 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 from _json_view import Json
-from _node import NODE
-from _node import run_node as _run
 
 from dbml_sharepoint.analysis import list_description, sidecars
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
@@ -27,6 +25,8 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_list_js,
     generate_protection_js,
 )
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 SITE = "https://example.sharepoint.com/sites/test"
 LIST_ID = "11111111-1111-1111-1111-111111111111"

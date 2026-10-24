@@ -30,8 +30,6 @@ from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, TITLE, table
 from _json_view import Json
 from _json_view import dumps as dumps_view
-from _node import NODE
-from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack, reader_identities
 from _paths import FIXTURES
 
@@ -43,6 +41,8 @@ from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import parse_values
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 
 def _deploy_js_with_assessment() -> str:

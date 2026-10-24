@@ -7,7 +7,6 @@ from urllib.parse import unquote
 
 import pytest
 from _json_view import Json
-from _node import NODE
 from test_deploy_runtime import (
     _ADOPTED_HARNESS,
     _GUARDED_VIEWS,
@@ -21,6 +20,7 @@ from test_deploy_runtime import (
 )
 
 from dbml_sharepoint.analysis.phases import phase_number
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

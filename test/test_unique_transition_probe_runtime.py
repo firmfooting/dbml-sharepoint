@@ -5,8 +5,9 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
 from _paths import MANUAL
+
+from dbml_sharepoint.testing.node import NODE, run_node
 
 _HARNESS = r"""
 const config = __CONFIG__;

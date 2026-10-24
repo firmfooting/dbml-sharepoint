@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 from _json_view import Json
-from _node import NODE, run_node
 
 from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.extract.inverse import invert_column_formatting
 from dbml_sharepoint.jsonvalue import is_object_list, is_text_keyed
+from dbml_sharepoint.testing.node import NODE, run_node
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 

@@ -4,8 +4,6 @@ import json
 from typing import TypedDict, cast
 
 import pytest
-from _node import NODE
-from _node import run_node as _run
 from test_deploy_runtime import _reader_deploy_js
 from test_transport_facts_runtime import Stub, _run_facts, contextinfo
 
@@ -13,6 +11,8 @@ from dbml_sharepoint.analysis.permissions import TENANT_WIDE_CLAIM_NEEDLES
 from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.jsrest import strip_js_comments
 from dbml_sharepoint.templating import script_env
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 

@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, TITLE, table
-from _node import NODE, run_node
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES, engine_blueprints
 from test_jsgen import _generate_simple_js, _generate_views_js, _schema_json_for
@@ -31,6 +30,7 @@ from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import ViewDef, ViewGroupBy, ViewSort
 from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.testing.node import NODE, run_node
 
 # --- Declared views ---------------------------------------------------------
 

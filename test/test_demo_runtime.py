@@ -18,8 +18,6 @@ from _model import bundle as make_bundle
 from _model import column, enum, ref
 from _model import schema as make_schema
 from _model import table as make_table
-from _node import NODE
-from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
@@ -27,6 +25,8 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DemoItem
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 # The Note row tests no unnecessary readback and no demo_ref into an unverified row.
 _MEMBERS = ["View", "Edit"]

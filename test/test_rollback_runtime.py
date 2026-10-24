@@ -18,8 +18,6 @@ from collections.abc import Mapping
 import pytest
 from _json_view import Json
 from _model import as_library
-from _node import NODE
-from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
@@ -27,6 +25,8 @@ from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.testing.node import NODE
+from dbml_sharepoint.testing.node import run_node as _run
 
 _SCHEMA = parse_dbml(FIXTURES / "simple.dbml")
 _MARKER = {

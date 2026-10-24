@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from _format_eval import date_field, evaluate_expression, evaluate_rows
 from _formula_grid import instants
-from _node import NODE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.form_header import (
@@ -21,6 +20,7 @@ from dbml_sharepoint.analysis.limits import FORM_HEADER_MAX_CHARS
 from dbml_sharepoint.analysis.styles import TOKENS
 from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.form_tree import Bubble, HeaderTree, Row, SubtitlePart, Title
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 

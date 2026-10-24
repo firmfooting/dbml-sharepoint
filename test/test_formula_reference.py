@@ -15,10 +15,10 @@ from _formula_facts import (
 )
 from _formula_grid import check_parity, error_rows, grid
 from _formula_reference import ERROR, ColumnError, evaluate
-from _node import NODE
 
 from dbml_sharepoint.analysis.formula.parse import parse_formula
 from dbml_sharepoint.analysis.formula.syntax import ColumnKind
+from dbml_sharepoint.testing.node import NODE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
