@@ -8,6 +8,7 @@ import sys
 import textwrap
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -35,9 +36,10 @@ from dbml_sharepoint.cli import (
     app,
     build,
     extract,
+    prelude_command,
 )
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.jsrest import prelude, wrap
+from dbml_sharepoint.jsrest import Site, prelude, wrap
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 from dbml_sharepoint.model.identities import IdentityValue, describe_identity
 from dbml_sharepoint.pipeline import (
@@ -258,6 +260,7 @@ def test_prelude_prints_the_read_flavour_by_default() -> None:
     result = runner.invoke(app, ["prelude"])
     assert result.exit_code == 0, result.output
     assert result.stdout == prelude(writes=False)
+    assert b"\r" not in result.stdout_bytes
 
 
 def test_prelude_by_default_carries_nothing_a_scanner_reads_as_a_write() -> None:
@@ -300,7 +303,14 @@ def test_prelude_refuses_a_site_that_is_not_https() -> None:
 
 
 def test_prelude_refuses_a_missing_wrap_file(tmp_path: Path) -> None:
-    assert runner.invoke(app, ["prelude", "--wrap", str(tmp_path / "absent.js")]).exit_code == 2
+    result = runner.invoke(app, ["prelude", "--wrap", str(tmp_path / "absent.js")])
+    assert result.exit_code == 2
+    assert "absent.js" in result.stderr
+
+
+def test_prelude_offers_exactly_the_jsrest_site_modes() -> None:
+    annotation = inspect.signature(prelude_command).parameters["site"].annotation
+    assert get_args(annotation) == get_args(Site.__value__)
 
 
 def test_prelude_refuses_a_wrap_file_that_is_not_utf8(tmp_path: Path) -> None:
@@ -309,6 +319,7 @@ def test_prelude_refuses_a_wrap_file_that_is_not_utf8(tmp_path: Path) -> None:
     result = runner.invoke(app, ["prelude", "--wrap", str(body)])
     assert result.exit_code == 2
     assert "not UTF-8" in result.stderr
+
 
 def test_help_still_renders_as_rich_panels() -> None:
     """The CLI's help screen is its user surface, and nothing else asserts it.

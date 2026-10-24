@@ -126,8 +126,7 @@ KNOWN_CONTEXT = {
     # nothing to guard; pinning it would stop one file walking a fleet.
     # Defaulted ON in `_site_guard.js.j2`, so every other caller keeps it.
     "require_site_match",
-    # "pathname" reads the site from the page URL for a downstream paste-in
-    # prelude; defaulted to "page-context" in `_site_guard.js.j2`.
+    # "pathname" reads the site from the page URL; `_site_guard.js.j2` defaults it.
     "site_resolution",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
