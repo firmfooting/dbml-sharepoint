@@ -186,6 +186,13 @@ def _default_value_problem(
         if _XML_ILLEGAL.search(text):
             return f"the value holds a control character XML cannot store ({text!r})."
     members = vc.enum_members_by_name.get(element_type(column.type))
+    joined = [t for t in texts if ";#" in t]
+    if members is not None and joined:
+        # ;# separates multi-choice members in the file, so a member holding it splits.
+        return (
+            f"{', '.join(map(repr, joined))} holds ;#, which the defaults file reads "
+            f"as a separator."
+        )
     outside = [t for t in texts if members is not None and t not in members]
     if members is not None and outside:
         return (

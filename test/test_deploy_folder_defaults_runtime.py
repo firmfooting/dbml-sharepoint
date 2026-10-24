@@ -56,7 +56,10 @@ _HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('ensureuser')) {
         if (STATE.refuseEnsure) return reply(404, '{}');
-        return reply(200, JSON.stringify({ d: { PrincipalType: STATE.principalType ?? 1 } }));
+        return reply(200, JSON.stringify({ d: {
+          PrincipalType: STATE.principalType ?? 1,
+          LoginName: STATE.loginName ?? JSON.parse(opts.body).logonName.toUpperCase(),
+        } }));
       }
       if (url.includes('RootFolder')) {
         return reply(200, JSON.stringify({ d: { ServerRelativeUrl: STATE.root } }));
@@ -314,3 +317,30 @@ def test_a_browser_saved_entry_with_unescaped_quotes_is_already_settled() -> Non
                  'North &amp; "Q" &lt;1&gt;</DefaultValue></a>')
     result = _run_phase(_state(saved), [_library({"FolderA": {"Note": 'North & "Q" <1>'}})])
     assert result["summary"]["errors"] == [] and result["writes"] == []
+
+
+def test_a_settled_file_still_resolves_its_people_before_the_receiver_returns() -> None:
+    held = _doc(_entry("FolderA", Owner=f"-1;#{_CLAIM}", Division="Corporate"))
+    result = _run_phase(
+        {**_state(held), "receiverPresent": False, "refuseEnsure": True}, [_person_library()],
+    )
+    (error,) = [e["error"] for e in result["summary"]["errors"]]
+    assert "does not resolve" in error
+    assert result["receivers"] == [] and result["file"] == held
+
+
+def test_a_settled_file_with_resolving_people_writes_nothing_more() -> None:
+    held = _doc(_entry("FolderA", Owner=f"-1;#{_CLAIM}", Division="Corporate"))
+    result = _run_phase(_state(held), [_person_library()])
+    assert result["summary"]["errors"] == []
+    # The one POST is the resolution; the file is not written again.
+    assert [json.loads(str(w.value)) for w in result["writes"]] == [{"logonName": _CLAIM}]
+
+
+def test_a_person_resolving_to_another_login_writes_nothing() -> None:
+    result = _run_phase(
+        {**_state(), "loginName": "i:0#.f|membership|other@contoso.com"}, [_person_library()],
+    )
+    (error,) = [e["error"] for e in result["summary"]["errors"]]
+    assert "different login" in error and "contoso" not in error
+    assert result["file"].value is None

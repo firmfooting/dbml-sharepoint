@@ -25,6 +25,13 @@ _B = "i:0#.f|membership|b@contoso.com"
     ("boolean", False, "0"),
     ("boolean", "TRUE", "1"),
     ("boolean", "0", "0"),
+    # library.folder-defaults.value.boolean-forms: SharePoint reads Yes as No, so it is written 1.
+    ("boolean", "Yes", "1"),
+    ("boolean", "off", "0"),
+    ("boolean", "maybe", "maybe"),
+    ("date", "[today]", "[today]"),
+    ("date", "Today", "[today]"),
+    ("number", "1,234.5", "1,234.5"),
     ("number", "1234.5", "1234.5"),
     ("date", "today", "[today]"),
     ("datetime", "2026-03-14T13:00:00Z", "2026-03-14T13:00:00Z"),

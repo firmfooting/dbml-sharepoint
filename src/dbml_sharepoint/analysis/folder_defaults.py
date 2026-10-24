@@ -5,15 +5,13 @@ SHARED because the validator judges a value by whether it has a spelling here,
 and the deploy, verify and assess payloads all carry the spelled value, so the
 file the deploy writes and the text verify compares can never disagree.
 
-Each spelling is the one SharePoint's own receiver was measured to apply
-(`library.folder-defaults.value.*` in the maintainers' probes). A value with no
-spelling here is one the receiver drops, or one that stops it applying any
-default to the file.
+Each rule follows what SharePoint's own receiver was measured to do
+(`library.folder-defaults.value.*` in the maintainers' probes). Only a value
+the receiver was seen to drop is refused; any other text is written as given.
 """
 
 import re
 from collections.abc import Sequence
-from datetime import datetime
 
 from dbml_sharepoint.analysis.typemap import (
     DATE_TYPES,
@@ -28,10 +26,19 @@ from dbml_sharepoint.model.mapping_types import FolderDefaultValue
 
 #: The claim prefix of a tenant member's login, which the receiver resolves.
 PERSON_CLAIM_PREFIX = "i:0#.f|membership|"
-_UPN = re.compile(r"^[^@\s;#|]+@[^@\s;#|]+\.[^@\s;#|]+$")
-_NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
-_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-_BOOLEAN_TEXT = {"1": "1", "0": "0", "true": "1", "false": "0"}
+_UPN = re.compile(r"[^@\s;#|]+@[^@\s;#|]+\.[^@\s;#|]+")
+# library.folder-defaults.value.number-forms: letters (bar an exponent) or a space are dropped.
+_NUMBER_DROPPED = re.compile(r"\s|[A-DF-Za-df-z]|^[^0-9]*$")
+# library.folder-defaults.value.date-forms: a bare date, a day-first date and an offset from today.
+_DATE_DROPPED = re.compile(
+    r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}|today\s*[+-]\s*\d+", re.IGNORECASE,
+)
+_TODAY = ("today", "[today]")
+# library.folder-defaults.value.boolean-forms: true, 1 and -1 read Yes; other text reads No.
+_BOOLEAN_TEXT = {
+    "true": "1", "1": "1", "-1": "1", "yes": "1", "on": "1",
+    "false": "0", "0": "0", "no": "0", "off": "0",
+}
 
 
 def _values(value: FolderDefaultValue) -> Sequence[str]:
@@ -51,7 +58,7 @@ def folder_default_problem(column_type: str, value: FolderDefaultValue) -> str |
     if isinstance(value, tuple) and not is_multi_value(column_type):
         return "a list is only a default for a multi-value column; give one value."
     if _is_person(column_type):
-        bad = [v for v in _values(value) if not _UPN.match(v)]
+        bad = [v for v in _values(value) if not _UPN.fullmatch(v)]
         if bad:
             return (
                 f"a person default is the account's user principal name, such as "
@@ -65,33 +72,22 @@ def folder_default_problem(column_type: str, value: FolderDefaultValue) -> str |
     if isinstance(value, tuple):
         # Only a multi-choice column reaches here; the validator judges its members.
         return None
-    if is_boolean(column_type) and value.lower() not in _BOOLEAN_TEXT:
-        # library.folder-defaults.value.boolean: the receiver drops `Yes`.
-        return f"a boolean default is true or false; SharePoint drops {value!r}."
-    if element_type(column_type) in NUMBER_TYPES and not _NUMBER.match(value):
-        # library.folder-defaults.value.number: the receiver drops a value that does not parse.
+    if element_type(column_type) in NUMBER_TYPES and _NUMBER_DROPPED.search(value):
         return (
-            f"a number default is digits with an optional decimal point, such as "
-            f"1234.5; got {value!r}."
+            f"SharePoint drops a number default it cannot parse, such as {value!r}; "
+            f"write digits, such as 1234.5, 1,234.5 or 1e3."
         )
-    if element_type(column_type) in DATE_TYPES and value != "today" and not _is_instant(value):
-        # library.folder-defaults.value.date-bare-dropped: the receiver drops a bare date.
+    if (
+        element_type(column_type) in DATE_TYPES
+        and value.lower() not in _TODAY
+        and _DATE_DROPPED.fullmatch(value.strip())
+    ):
         return (
-            f"a date default is today, or a UTC instant such as 2026-03-14T13:00:00Z "
-            f"(the site's midnight on 15 March in Melbourne); {value!r} is neither, and "
-            f"SharePoint drops a bare date."
+            f"SharePoint drops a date default written as {value!r}; write today, or a "
+            f"UTC instant such as 2026-03-15T00:00:00Z (midnight on 15 March for a "
+            f"site on UTC)."
         )
     return None
-
-
-def _is_instant(value: str) -> bool:
-    if not _INSTANT.match(value):
-        return False
-    try:
-        datetime.fromisoformat(value)
-    except ValueError:
-        return False
-    return True
 
 
 def encode_folder_default(column_type: str, value: FolderDefaultValue) -> str:
@@ -102,8 +98,9 @@ def encode_folder_default(column_type: str, value: FolderDefaultValue) -> str:
     if is_boolean(column_type):
         if isinstance(value, bool):
             return "1" if value else "0"
-        return _BOOLEAN_TEXT[str(value).lower()]
-    if element_type(column_type) in DATE_TYPES and value == "today":
+        text = str(value)
+        return _BOOLEAN_TEXT.get(text.strip().lower(), text)
+    if element_type(column_type) in DATE_TYPES and str(value).lower() in _TODAY:
         return "[today]"
     # library.folder-defaults.value.multi-choice: members joined by ;#.
     return ";#".join(_values(value))
