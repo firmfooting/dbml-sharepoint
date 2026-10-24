@@ -17,7 +17,9 @@ typed bundle from what the families produce.
 
 Relative config paths (enum_sources values, retention_policies_source, the
 section pointers) resolve relative to the mapping YAML's own directory, so
-the deployer can be invoked from any working directory. Project-specific
+the deployer can be invoked from any working directory. Sections may also
+live in the fixed-name concern files beside a `mapping.yaml` (`views.yaml`,
+`permissions.yaml` and the rest in `CONCERN_FILES`). Project-specific
 config lives under `extensions: {<name>: {...}}` and is passed through
 untyped as `MappingBundle.extension_configs`. This module knows nothing
 about what any particular extension's block means, and selection by name is

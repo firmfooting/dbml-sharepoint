@@ -9,7 +9,9 @@ typed bundle from what the families produce.
 
 Relative config paths (enum_sources values, retention_policies_source, the
 section pointers) resolve relative to the mapping YAML's own directory, so
-the deployer can be invoked from any working directory. Project-specific
+the deployer can be invoked from any working directory. Sections may also
+live in the fixed-name concern files beside a `mapping.yaml` (`views.yaml`,
+`permissions.yaml` and the rest in `CONCERN_FILES`). Project-specific
 config lives under `extensions: {<name>: {...}}` and is passed through
 untyped as `MappingBundle.extension_configs`. This module knows nothing
 about what any particular extension's block means, and selection by name is
@@ -26,6 +28,7 @@ from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
 from dbml_sharepoint.model.reading import load_yaml, recording_blank_defaults
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
+from dbml_sharepoint.model.sections._concern_files import read_concern_files
 from dbml_sharepoint.model.sections._form_file import read_form_file
 from dbml_sharepoint.model.sections.context import LoadedFields
 
@@ -51,7 +54,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         if removed in raw:
             raise UnknownMappingKeyError(f"{removed!r} has been replaced by {replacement}")
 
-    # Before the families, so they read the form as if the mapping declared it.
+    # Before the families, so they read concern files and the form as if the mapping declared them.
+    raw = read_concern_files(mapping_path, raw)
     form = read_form_file(base_dir, raw)
     raw.update(form.sections())
 

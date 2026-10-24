@@ -53,6 +53,37 @@ A value the parser cannot construct, such as the date `2026-02-30`, is a
 load error naming its line too. The same rules apply to every YAML file the
 mapping names and to `release.yaml`.
 
+## Concern files
+
+A `mapping.yaml` may keep some of its sections in files beside it, one file
+per concern, under these fixed names:
+
+| File | Sections it may hold |
+| --- | --- |
+| `views.yaml` | `field_sets`, `views` |
+| `permissions.yaml` | `groups`, `permission_levels`, `list_permissions`, `identities` |
+| `formatting.yaml` | `style_theme`, `column_formatting` |
+| `validation.yaml` | `column_validation`, `list_validation` |
+| `governance.yaml` | `governance` |
+| `reporting.yaml` | `reporting`, `derived_columns` |
+| `demo.yaml` | `demo_items` |
+
+A section read from its concern file loads exactly as if it were written in
+the mapping, so the build is the same either way. A file that is empty or
+holds only comments is the same as no file. Concern files are read only
+beside a mapping named `mapping.yaml`.
+
+A section lives in one place. Declared in both the mapping and its concern
+file, it is refused with the line of each, for example
+`views is declared in mapping.yaml:12 and views.yaml:1: a section lives in
+one place. Keep one.` A concern file holding a section of another concern is
+refused too, naming the file the section belongs in.
+
+`reporting_source` and `demo_source` may name their concern file, as in
+`demo_source: demo.yaml`, which is then read once through the pointer. A
+pointer naming any other file while the concern file exists is refused.
+[`form.yaml`](#formyaml) keeps its own shape, keyed by entity.
+
 ## Identity
 
 ```yaml
@@ -1938,7 +1969,8 @@ points at one may not also declare either inline. Both are refused at load
 rather than merged: two declarations of one section is a question with no
 right answer, and whichever won, the other would be edited by somebody who
 could not see it being ignored. The path resolves relative to the mapping,
-the same rule as `enum_sources` and the formatter files.
+the same rule as `enum_sources` and the formatter files. The pointer may
+name the [concern file](#concern-files) `reporting.yaml` itself.
 
 ## `demo_source`
 
@@ -1956,7 +1988,8 @@ the deploy, rollback, assess and verify scripts never see them. The file may
 hold `demo_items` and nothing else, and a mapping that points at one may not
 also declare the section inline. Both are refused at load rather than
 merged, for the reason given under `reporting_source`. The path resolves
-relative to the mapping.
+relative to the mapping. The pointer may name the
+[concern file](#concern-files) `demo.yaml` itself.
 
 ## `derived_columns`
 
