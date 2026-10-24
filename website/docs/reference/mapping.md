@@ -84,6 +84,25 @@ refused too, naming the file the section belongs in.
 pointer naming any other file while the concern file exists is refused.
 [`form.yaml`](#formyaml) keeps its own shape, keyed by entity.
 
+### Folders
+
+A concern that grows long may live in a folder named after its stem instead,
+such as `views.d/` for `views.yaml`. The folder holds only `.yaml` files, each
+with the concern file's shape, so any other entry, including a hidden or editor
+file such as `.DS_Store`, is refused. A concern may not have both a file and a
+folder, and an existing folder counts as the concern's home for the pointer
+rule too: while it exists, a pointer naming another file, or naming the concern
+file itself, is refused. A section may appear in several files when each holds
+a mapping, such as a few lists' `views` per file; a list declared in two
+files, or any other section declared twice, is refused with the line of each.
+
+Files are read in file-name order (code-point order), and that order sets the
+order of their entries, which reaches the build: checks iterate `views`,
+`demo_items` and `column_validation` in order. Number the files, as in
+`10-Location.yaml` and `20-Asset.yaml`, to keep an order. Relative paths inside
+a folder file, such as `formatting/x.json`, resolve from the mapping's folder,
+not the `.d` folder.
+
 ## Identity
 
 ```yaml
