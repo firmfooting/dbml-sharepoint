@@ -16,6 +16,12 @@ ones.
 The paths below are the canonical ones. `test/test_public_api.py` imports each
 of them, so a name that moves fails there rather than in a reader's editor.
 
+Dependents import from `dbml_sharepoint.api` and `dbml_sharepoint.testing`
+only. `api` is the one module that re-exports, so a dependent can hold itself
+to a single import surface with the contract in its docstring. The canonical
+paths listed below remain the homes inside this package and for extension
+authors.
+
 The extension protocol, in `dbml_sharepoint.extension`:
 
 - `dbml_sharepoint.extension.DeploymentExtension` is the protocol: hook names,

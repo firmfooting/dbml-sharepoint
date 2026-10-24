@@ -340,3 +340,21 @@ name = "Nothing outside the test kit imports it, so pytest stays off the runtime
 type = "protected"
 protected_modules = ["dbml_sharepoint.testing"]
 allowed_importers = ["dbml_sharepoint.testing"]
+
+[[tool.importlinter.contracts]]
+name = "Nothing inside core imports the dependents' api"
+type = "protected"
+protected_modules = ["dbml_sharepoint.api"]
+allowed_importers = ["dbml_sharepoint.api"]
+
+[[tool.importlinter.contracts]]
+name = "The shared helpers stay leaves"
+type = "forbidden"
+source_modules = ["dbml_sharepoint.jsonvalue", "dbml_sharepoint.naming", "dbml_sharepoint.model.yamlio"]
+forbidden_modules = ["dbml_sharepoint.analysis", "dbml_sharepoint.generators", "dbml_sharepoint.pipeline", "dbml_sharepoint.cli"]
+
+[[tool.importlinter.contracts]]
+name = "The REST prelude never imports generators, checks or the pipeline"
+type = "forbidden"
+source_modules = ["dbml_sharepoint.jsrest"]
+forbidden_modules = ["dbml_sharepoint.generators", "dbml_sharepoint.analysis.checks", "dbml_sharepoint.pipeline"]
