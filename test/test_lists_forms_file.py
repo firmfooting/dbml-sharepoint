@@ -2,12 +2,17 @@
 from pathlib import Path
 
 import pytest
+from _findings import only
+from _model import schema as make_schema
+from _model import table as make_table
 from _packs import blocks, entities, write_mapping
 
+from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 from dbml_sharepoint.model.lists_forms import LISTS_FORMS_FILE_NAME, read_lists_forms_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import ListsFormQuestion
+from dbml_sharepoint.model.mapping_types import BlankDefault, ListsFormQuestion
 
 _EXAMPLE = """\
 Request:
@@ -86,18 +91,24 @@ def test_unquoted_time_is_refused(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "where"),
     [
-        _one_form('      one_response_per_person: "yes"\n'),
-        "Request:\n  forms:\n    - title: Facilities request\n      questions: []\n",
-        "Request:\n  forms: []\n",
-        _one_form("      previous_titles: Old\n"),
-        "Request:\n  forms: {}\n",
+        (
+            _one_form('      one_response_per_person: "yes"\n'),
+            r"forms\[0\]\.one_response_per_person",
+        ),
+        (
+            "Request:\n  forms:\n    - title: Facilities request\n      questions: []\n",
+            r"forms\[0\]\.questions",
+        ),
+        ("Request:\n  forms: []\n", r"forms:"),
+        (_one_form("      previous_titles: Old\n"), r"forms\[0\]\.previous_titles"),
+        ("Request:\n  forms: {}\n", r"forms:"),
     ],
     ids=["bool-as-text", "no-questions", "no-forms", "previous-titles-text", "forms-mapping"],
 )
-def test_wrong_types_are_refused(tmp_path: Path, text: str) -> None:
-    with pytest.raises(MappingShapeError, match=r"lists-forms\.yaml\.Request"):
+def test_wrong_types_are_refused(tmp_path: Path, text: str, where: str) -> None:
+    with pytest.raises(MappingShapeError, match=rf"^lists-forms\.yaml\.Request\.{where}"):
         read_lists_forms_file(_write(tmp_path, text))
 
 
@@ -120,3 +131,15 @@ def test_load_mapping_carries_the_file(tmp_path: Path) -> None:
     write_mapping(_write(tmp_path, _EXAMPLE), _MAPPING, name="mapping.yaml")
     got = load_mapping(tmp_path / "mapping.yaml").lists_forms
     assert got["Request"].forms[0].title == "Facilities request"
+
+
+def test_a_blank_boolean_is_reported(tmp_path: Path) -> None:
+    write_mapping(
+        _write(tmp_path, _one_form("      one_response_per_person:\n")), _MAPPING,
+        name="mapping.yaml",
+    )
+    got = load_mapping(tmp_path / "mapping.yaml")
+    path = "lists-forms.yaml.Request.forms[0].one_response_per_person"
+    assert got.mapping.blank_defaults == [BlankDefault(path=path, default=False)]
+    findings = validate_against_mapping(make_schema(make_table("Request", "Title")), got)
+    assert only(findings, FindingCode.BLANK_KEY_TOOK_DEFAULT).message.startswith(path)

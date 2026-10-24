@@ -60,6 +60,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     with recording_blank_defaults() as blank_defaults:
         for family in SECTION_FAMILIES:
             loaded.update(family.read(section_context(family, raw, base_dir, loaded)))
+        # Inside the collector, so a blank key in lists-forms.yaml is reported too.
+        lists_forms = read_lists_forms_file(base_dir)
 
     form.add_tree_only_entities(loaded["form_formatting"])
 
@@ -124,5 +126,5 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         extension_configs=loaded["extension_configs"],
         governance=loaded["governance"],
         form_trees=form.trees,
-        lists_forms=read_lists_forms_file(base_dir),
+        lists_forms=lists_forms,
     )
