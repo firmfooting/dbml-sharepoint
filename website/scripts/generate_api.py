@@ -105,6 +105,12 @@ MODULES: list[tuple[str, str]] = [
     ("wizard", "Packaging: the interactive template wizard"),
     ("jsonvalue", "the shape of decoded JSON and the guards that type it"),
     ("jsrest", "the shared SharePoint REST prelude a paste-in script runs behind"),
+    ("naming", "slugs, kebab case and file stems, one rule each"),
+    ("api", "the names dependents import, each re-exported from its home"),
+    ("testing", "the test kit dependents run emitted scripts with under node"),
+    ("testing.node", "run an emitted script under node behind the SharePoint mock"),
+    ("testing.sp_mock", "the SharePoint mock prelude a script runs against"),
+    ("testing.plugin", "the pytest plugin: node optional locally, required in CI"),
 ]
 
 # Sub-package sidebar categories, in layout order.
@@ -119,6 +125,7 @@ LAYERS: dict[str, str] = {
 # looks for the part that grew its own package.
 SUBPACKAGES: dict[str, str] = {
     "analysis.reporting": "reporting: the plan and its rows, as data",
+    "testing": "testing: the node test kit for dependents",
 }
 
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
@@ -156,11 +163,37 @@ def docstring_block(obj: object) -> str:
     return md_escape(doc) + "\n\n" if doc else ""
 
 
+# Calls that read the build machine, so their value differs between a laptop and CI.
+MACHINE_READERS = frozenset({"shutil.which", "os.getenv", "os.environ.get"})
+
+
+def module_tree(module_name: str) -> ast.Module:
+    """The parsed source of one module, or of a package's `__init__`."""
+    source_path = PACKAGE_DIR / (module_name.replace(".", "/") + ".py")
+    if not source_path.exists():  # a package documents its __init__
+        source_path = PACKAGE_DIR / module_name.replace(".", "/") / "__init__.py"
+    return ast.parse(source_path.read_text(encoding="utf-8"))
+
+
+def machine_dependent_sources(module_name: str) -> dict[str, str]:
+    """Source text of each top-level constant assigned from a `MACHINE_READERS` call."""
+    sources: dict[str, str] = {}
+    for node in module_tree(module_name).body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+            continue
+        value = node.value
+        if not (isinstance(value, ast.Call) and ast.unparse(value.func) in MACHINE_READERS):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        sources.update(
+            (target.id, ast.unparse(value)) for target in targets if isinstance(target, ast.Name)
+        )
+    return sources
+
+
 def public_definitions(module_name: str) -> list[tuple[str, str]]:
     """Ordered (kind, name) of top-level public defs actually in the module."""
-    source_path = PACKAGE_DIR / (module_name.replace(".", "/") + ".py")
-    source = source_path.read_text(encoding="utf-8")
-    tree = ast.parse(source)
+    tree = module_tree(module_name)
     defs: list[tuple[str, str]] = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -422,12 +455,15 @@ def generate_python_pages() -> None:
         module_doc = inspect.getdoc(module)
         if module_doc:
             page += md_escape(module_doc) + "\n\n"
+        machine_dependent = machine_dependent_sources(module_name)
         for kind, name in public_definitions(module_name):
             obj = getattr(module, name)
             if kind == "function":
                 page += render_function(name, obj)
             elif kind == "class":
                 page += render_class(name, obj)
+            elif name in machine_dependent:
+                page += f"### `{name}`\n\n```python\n{name} = {machine_dependent[name]}\n```\n\n"
             else:
                 page += render_constant(name, obj)
         page_path = out_dir / (module_name.replace(".", "/") + ".md")

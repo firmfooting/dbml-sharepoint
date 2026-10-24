@@ -112,6 +112,9 @@ DOCUMENTED_PATH = re.compile(
 #: Never lowered to make a change pass.
 DOCUMENTED_MINIMUM = 14
 
+#: The one module the one-home gate skips: dependents import every name from it (decision A).
+REEXPORT_HOME = "api.py"
+
 
 class UnreadableAllError(RuntimeError):
     """An `__all__` this gate cannot evaluate, so it refuses rather than skips.
@@ -314,6 +317,18 @@ def re_export_offenders(source: str, relative: str) -> list[str]:
     return offenders
 
 
+def re_export_offenders_in(root: Path) -> list[str]:
+    """Every second home under `root`, skipping only `REEXPORT_HOME` at its top."""
+    return [
+        offender
+        for path in _python_modules(root)
+        if path.relative_to(root).as_posix() != REEXPORT_HOME
+        for offender in re_export_offenders(
+            path.read_text(encoding="utf-8"), path.relative_to(root).as_posix(),
+        )
+    ]
+
+
 def deferred_counts(root: Path) -> dict[str, int]:
     """Deferral markers per module, keyed by path relative to `root`.
 
@@ -395,13 +410,7 @@ def test_no_module_re_exports_another_module_s_name() -> None:
     # stops matching goes unnoticed.
     assert len(modules) > 50, f"only {len(modules)} modules walked, so this pins nothing"
 
-    offenders = [
-        offender
-        for path in modules
-        for offender in re_export_offenders(
-            path.read_text(encoding="utf-8"), path.relative_to(PACKAGE).as_posix(),
-        )
-    ]
+    offenders = re_export_offenders_in(PACKAGE)
 
     assert not offenders, (
         "A module re-exports a name it does not define. Import the name from "
@@ -430,6 +439,19 @@ def test_the_scan_reports_an_all_naming_an_imported_name(tmp_path: Path) -> None
 
     assert re_export_offenders(seeded.read_text(encoding="utf-8"), "aggregator.py") == [
         "aggregator.py: `__all__` names 'Finding', which this module does not define",
+    ]
+
+
+def test_only_api_re_exports(tmp_path: Path) -> None:
+    """The exemption is one file at the package top, not a name any module can take."""
+    re_export = 'from dbml_sharepoint.analysis.findings import Finding\n\n__all__ = ("Finding",)\n'
+    (tmp_path / "model").mkdir()
+    for relative in (REEXPORT_HOME, "aggregator.py", "model/api.py"):
+        (tmp_path / relative).write_text(re_export, encoding="utf-8", newline="\n")
+
+    assert re_export_offenders_in(tmp_path) == [
+        "aggregator.py: `__all__` names 'Finding', which this module does not define",
+        "model/api.py: `__all__` names 'Finding', which this module does not define",
     ]
 
 

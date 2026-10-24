@@ -16,15 +16,21 @@ from _paths import REPO_ROOT
 def test_contract_fails_when_a_generator_imports_checks(tmp_path: Path) -> None:
     pkg = tmp_path / "dbml_sharepoint"
     checks = pkg / "analysis" / "checks"
-    for d in (pkg, pkg / "generators", pkg / "analysis", checks, pkg / "testing"):
+    for d in (pkg, pkg / "generators", pkg / "analysis", checks, pkg / "testing", pkg / "model"):
         d.mkdir(parents=True, exist_ok=True)
         (d / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "generators" / "bad.py").write_text(
-        "from dbml_sharepoint.analysis.checks import x\nfrom dbml_sharepoint.testing import kit\n",
+        "from dbml_sharepoint.analysis.checks import x\nfrom dbml_sharepoint.testing import kit\n"
+        "from dbml_sharepoint import api\n",
         encoding="utf-8",
     )
     (pkg / "analysis" / "checks" / "x.py").write_text("", encoding="utf-8")
     (pkg / "testing" / "kit.py").write_text("", encoding="utf-8")
+    yamlio_source = "from dbml_sharepoint.analysis import x\n"
+    (pkg / "model" / "yamlio.py").write_text(yamlio_source, encoding="utf-8")
+    (pkg / "jsrest.py").write_text("from dbml_sharepoint.generators import bad\n", encoding="utf-8")
+    for leaf in ("api", "jsonvalue", "naming", "pipeline", "cli"):
+        (pkg / f"{leaf}.py").write_text("", encoding="utf-8")
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # Only the importlinter tables: a table added after them must not leak into the config.
     tables = re.findall(r"^\[+tool\.importlinter[^\n]*\n(?:(?!\[).*\n)*", pyproject, re.MULTILINE)
@@ -46,4 +52,9 @@ def test_contract_fails_when_a_generator_imports_checks(tmp_path: Path) -> None:
     assert result.returncode != 0, result.stdout + result.stderr
     assert "Generators never import analysis checks" in result.stdout
     assert "Nothing outside the test kit imports it" in result.stdout
-    assert result.stdout.count("BROKEN") == 2, result.stdout
+    assert "Nothing inside core imports the dependents' api BROKEN" in result.stdout
+    assert "The shared helpers stay leaves BROKEN" in result.stdout
+    assert "The REST prelude never imports generators, checks or the pipeline BROKEN" in (
+        result.stdout
+    )
+    assert result.stdout.count("BROKEN") == 5, result.stdout

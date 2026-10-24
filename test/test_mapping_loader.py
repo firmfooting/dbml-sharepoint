@@ -3670,9 +3670,10 @@ def test_a_plain_value_error_catch_still_sees_the_loader_refusal(tmp_path: Path)
 #: by design: `parser.py` reads the DBML schema, `release.py` reads
 #: release.yaml, and `analysis/typemap.py` refuses a schema column's type.
 #: None of those documents is a mapping, so a `MappingError` would name the
-#: wrong file. Named here so the gate reports everything else.
+#: wrong file. `jsonvalue.py` narrows JSON for dependents; the loader calls only
+#: `as_json_object`, which raises nothing. Named so the gate reports everything else.
 _NOT_MAPPING_READERS = frozenset({
-    "model/parser.py", "model/release.py", "analysis/typemap.py",
+    "model/parser.py", "model/release.py", "analysis/typemap.py", "jsonvalue.py",
 })
 
 
