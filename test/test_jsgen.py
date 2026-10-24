@@ -17,6 +17,7 @@ abort that runs before anything else does.
 from pathlib import Path
 from typing import override
 
+import pytest
 from _builders import ID_PK, TITLE, table
 from _model import DeployArgs
 from _packs import blocks, entities, pack
@@ -471,6 +472,64 @@ def test_folder_defaults_are_emitted_for_declared_folders_only() -> None:
     assert entry["folder_defaults"] == [
         {"folder": "B", "values": [{"field": "Note", "value": "x"}]},
     ]
+
+
+@pytest.mark.parametrize(("value", "emitted"), [("a@contoso.com", True), ("North", False)])
+def test_person_resolution_is_emitted_only_for_a_person_folder_default(
+    value: str, emitted: bool,
+) -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    column_name = "Owner" if emitted else "Region"
+    schema = make_schema(make_table(
+        "Docs", column("Title", required=True),
+        column(column_name, "person" if emitted else "nvarchar"),
+    ))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = replace(
+        base.mapping.entities["Docs"], folder_source=("A",),
+        folder_defaults={"A": {column_name: value}},
+    )
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+    js = generate_deploy_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        **_FIXED_ARGS, resolved=resolve(schema, bundle.mapping),
+    )
+    assert ("web/ensureuser" in js) is emitted
+
+
+def test_folder_defaults_are_emitted_as_the_file_spells_them() -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    schema = make_schema(make_table(
+        "Docs", column("Title", required=True), column("Owner", "person"),
+        column("Flag", "boolean"), column("Due", "date"),
+    ))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = replace(
+        base.mapping.entities["Docs"], folder_source=("A",),
+        folder_defaults={"A": {"Owner": "a@contoso.com", "Flag": True, "Due": "today"}},
+    )
+    bundle = replace(base, mapping=replace(base.mapping, entities={"Docs": entity}))
+    (entry,) = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["lists"]
+    claim = "i:0#.f|membership|a@contoso.com"
+    assert entry["folder_defaults"] == [{"folder": "A", "values": [
+        {"field": "Owner", "value": f"-1;#{claim}", "logins": [claim]},
+        {"field": "Flag", "value": "1"},
+        {"field": "Due", "value": "[today]"},
+    ]}]
 
 
 def test_content_approval_is_emitted_only_for_a_library_that_declares_it() -> None:

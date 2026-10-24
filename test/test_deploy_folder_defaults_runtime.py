@@ -54,6 +54,10 @@ _HARNESS = textwrap.dedent(r"""
         if (STATE.malformedReceivers) return reply(200, JSON.stringify({ d: {} }));
         return reply(200, JSON.stringify({ d: { results: receivers } }));
       }
+      if (url.includes('ensureuser')) {
+        if (STATE.refuseEnsure) return reply(404, '{}');
+        return reply(200, JSON.stringify({ d: { PrincipalType: STATE.principalType ?? 1 } }));
+      }
       if (url.includes('RootFolder')) {
         return reply(200, JSON.stringify({ d: { ServerRelativeUrl: STATE.root } }));
       }
@@ -78,7 +82,7 @@ def _render_phase() -> str:
         "number": number, "name": "folder default values",
         "group_number": number.split(".")[0], "group_name": "STRUCTURE",
         "first_in_group": False,
-    })
+    }, folder_default_logins=True)
 
 
 def _run_phase(state: Mapping[str, object], lists: Sequence[Mapping[str, object]]) -> Json:
@@ -266,3 +270,47 @@ def test_unmanaged_entries_without_a_receiver_are_refused_not_activated() -> Non
     (error,) = [e["error"] for e in result["summary"]["errors"]]
     assert "HandMade" in error and "nothing was written" in error
     assert result["receivers"] == [] and result["writes"] == [] and result["file"] == held
+
+
+_CLAIM = "i:0#.f|membership|a@contoso.com"
+
+
+def _person_library() -> dict[str, object]:
+    return {
+        "title": "APP_Doc", "is_library": True, "folders": ["FolderA"],
+        "folder_defaults": [{"folder": "FolderA", "values": [
+            {"field": "Owner", "value": f"-1;#{_CLAIM}", "logins": [_CLAIM]},
+            {"field": "Division", "value": "Corporate"},
+        ]}],
+    }
+
+
+def test_a_person_default_is_resolved_before_the_file_is_written() -> None:
+    result = _run_phase(_state(), [_person_library()])
+    assert result["summary"]["errors"] == []
+    resolve, write = result["writes"]
+    assert json.loads(str(resolve.value)) == {"logonName": _CLAIM}
+    assert write == _doc(_entry("FolderA", Owner=f"-1;#{_CLAIM}", Division="Corporate"))
+
+
+@pytest.mark.parametrize("state", [{"refuseEnsure": True}, {"principalType": 4}])
+def test_an_unresolvable_person_default_writes_nothing(state: dict[str, object]) -> None:
+    result = _run_phase({**_state(), **state}, [_person_library()])
+    (error,) = [e["error"] for e in result["summary"]["errors"]]
+    assert "Owner default for FolderA" in error and "nothing was written" in error
+    assert "contoso" not in error
+    assert result["file"].value is None
+
+
+def test_a_root_entry_saved_in_the_browser_is_kept_verbatim() -> None:
+    root = f'<a href="{_ROOT}"><DefaultValue FieldName="Division">Corporate</DefaultValue></a>'
+    result = _run_phase(_state(_doc(root)), [_library({"FolderA": {"Division": "Corporate"}})])
+    assert result["summary"]["errors"] == []
+    assert root in result["file"]
+
+
+def test_a_browser_saved_entry_with_unescaped_quotes_is_already_settled() -> None:
+    saved = _doc(f'<a href="{_ROOT}/FolderA"><DefaultValue FieldName="Note">'
+                 'North &amp; "Q" &lt;1&gt;</DefaultValue></a>')
+    result = _run_phase(_state(saved), [_library({"FolderA": {"Note": 'North & "Q" <1>'}})])
+    assert result["summary"]["errors"] == [] and result["writes"] == []

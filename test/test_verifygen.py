@@ -35,6 +35,7 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
+    FolderDefaultValue,
     LibrarySettings,
     ListValidation,
     MappingBundle,
@@ -893,7 +894,8 @@ def _checkout_verify_js(declared: bool) -> str:
 
 
 def _switches_verify_js(
-    settings: LibrarySettings, folder_defaults: dict[str, dict[str, str]] | None = None,
+    settings: LibrarySettings,
+    folder_defaults: dict[str, dict[str, FolderDefaultValue]] | None = None,
 ) -> str:
     schema = make_schema(make_table("Docs", column("Title", required=True)))
     base = as_library(make_bundle(entities=["Docs"]), "Docs")

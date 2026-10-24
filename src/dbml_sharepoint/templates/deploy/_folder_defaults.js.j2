@@ -114,6 +114,24 @@
         await reconcileDefaultsReceiver(list);
         continue;
       }
+{% if folder_default_logins %}
+      // library.folder-defaults.value.person-unresolvable-aborts: one unresolvable person loses every default.
+      for (const declared of list.folder_defaults) {
+        for (const v of declared.values) {
+          for (const login of v.logins || []) {
+            const who = await fetchWithRetry(apiUrl('web/ensureuser?$select=PrincipalType'), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
+              body: JSON.stringify({ logonName: login }),
+            });
+            const principal = who.ok ? (((await who.json()) || {}).d || {}) : null;
+            if (!principal || principal.PrincipalType !== 1) {
+              throw new Error(`the ${v.field} default for ${declared.folder} names an account that does not resolve to a single user (${principal ? `PrincipalType ${principal.PrincipalType}` : `HTTP ${who.status}`}); nothing was written, because SharePoint applies no default at all to a file whose person default it cannot resolve`);
+            }
+          }
+        }
+      }
+{% endif %}
       const kept = existing.filter((e) => !declaredPaths.has(e.path)).map((e) => e.raw);
       const written = [...wanted.entries()].filter(([, values]) => values.length).map(([path, values]) =>
         `<a href="${xmlEscape(path)}">${values.map((v) =>

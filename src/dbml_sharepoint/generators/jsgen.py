@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
 from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.field_links import hidden_field_links
+from dbml_sharepoint.analysis.folder_defaults import encode_folder_default, person_logins
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -78,6 +79,7 @@ from dbml_sharepoint.generators.schema_types import (
     FieldDefault,
     FieldLinkRow,
     FieldSpec,
+    FolderDefaults,
     FormFormattingRow,
     GroupRow,
     IndexedColumn,
@@ -107,7 +109,7 @@ from dbml_sharepoint.model.mapping_types import (
     ViewScope,
     view_url_slug,
 )
-from dbml_sharepoint.model.parser import Column, ColumnDefault, EnumDef, Schema
+from dbml_sharepoint.model.parser import Column, ColumnDefault, EnumDef, Schema, Table
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
@@ -189,6 +191,11 @@ def generate_deploy_js(
         # Whether any enterprise_reader value is enrolled; the logging phase mirrors its grant.
         reader_enrolled=bool(identities.get("enterprise_reader")),
         identity_enrolment=as_json(plan),
+        # The folder defaults phase resolves person values only when one is declared.
+        folder_default_logins=any(
+            "logins" in v for row in schema_json["lists"]
+            for d in row["folder_defaults"] for v in d["values"]
+        ),
         # Names and hashes only: this is the one list of identities a persisted stamp may carry.
         persisted_identities=list(dict.fromkeys(
             r.described for g in plan for r in g.rows if r.values)),
@@ -915,18 +922,9 @@ def build_schema_json(
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
             "folders": list(resolved.require_folders(table_name)),
-            # Declared folders only, in folder order; the validator refuses the rest.
-            "folder_defaults": [
-                {
-                    "folder": folder,
-                    "values": [
-                        {"field": column, "value": value}
-                        for column, value in entity.folder_defaults[folder].items()
-                    ],
-                }
-                for folder in resolved.require_folders(table_name)
-                if entity.is_library and folder in entity.folder_defaults
-            ],
+            "folder_defaults": _folder_default_rows(
+                entity, resolved.require_folders(table_name), table,
+            ),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
@@ -1499,6 +1497,31 @@ def _field_body(
             assert_never(sp.kind)
 
     return {"title": sp.name, "body": body}
+
+
+def _folder_default_rows(
+    entity: EntityMapping, folders: Sequence[str], table: Table,
+) -> list[FolderDefaults]:
+    """Declared folders with defaults, in folder order, each value as the file holds it.
+
+    A person value also carries the user principal names, which the deploy
+    resolves before writing, because one the receiver cannot resolve stops it
+    applying every default to the file.
+    """
+    if not entity.is_library:
+        return []
+    types = {column.name: column.type for column in table.columns}
+    return [
+        {"folder": folder, "values": [
+            {
+                "field": column, "value": encode_folder_default(types.get(column, ""), value),
+                **({"logins": logins}
+                   if (logins := person_logins(types.get(column, ""), value)) else {}),
+            }
+            for column, value in entity.folder_defaults[folder].items()
+        ]}
+        for folder in folders if folder in entity.folder_defaults
+    ]
 
 
 def _bool_default_to_sp(value: ColumnDefault) -> str:

@@ -737,7 +737,9 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FOLDER_DEFAULTS_ON_A_LIST: (
         "`folder_defaults` is declared on an entity that is not a "
-        "`DocumentLibrary`. Only a library holds folders. Remove the key, or "
+        "`DocumentLibrary`. A list has no `Forms` folder to hold the defaults "
+        "file, and SharePoint offers no column default value settings for one "
+        "(`library.folder-defaults.generic-list-unsupported`). Remove the key, or "
         "declare `kind: DocumentLibrary` with `base_template: 101`."
     ),
     FindingCode.FOLDER_DEFAULT_FOLDER_UNDECLARED: (
@@ -752,9 +754,19 @@ FINDING_HELP: dict[FindingCode, str] = {
         "name would be written and never apply."
     ),
     FindingCode.FOLDER_DEFAULT_VALUE_INVALID: (
-        "A `folder_defaults` value cannot be written for its column: a choice "
-        "column's default must be one of its enum members, and lookup, person "
-        "and multi-value columns do not take a folder default in this release."
+        "A `folder_defaults` value has no spelling SharePoint applies for its "
+        "column, so it would be stored and never reach a file. A choice value "
+        "must be a member of its enum, and a multi-choice value a member or a "
+        "list of members. A person value is the account's user principal name "
+        "(a list for a multi-person column). A boolean is `true` or `false`, a "
+        "number is digits with an optional decimal point, and a date is `today` "
+        "or a UTC instant such as `2026-03-14T13:00:00Z`; SharePoint drops a bare "
+        "date, `Yes` and a number that does not parse "
+        "(`library.folder-defaults.value.*`). A lookup column takes no folder "
+        "default, because SharePoint never applies one "
+        "(`library.folder-defaults.value.lookup-never-applies`). A `[unique]` "
+        "column, a list on a single-value column and text XML cannot store are "
+        "refused too."
     ),
     FindingCode.DRAFT_VISIBILITY_WITHOUT_MINOR_VERSIONS: (
         "A library declares `settings.draft_version_visibility` as `author` or "

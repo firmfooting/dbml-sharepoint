@@ -55,6 +55,8 @@ KNOWN_CONTEXT = {
     # enrolment itself reads `identity_enrolment`, the rows from analysis.enrolment.
     "group_enrols", "identity_descriptions", "identity_enrolment", "identity_value_lines",
     "reader_enrolled", "reader_group_list",
+    # Whether any folder default names a person, so the deploy resolves it before writing.
+    "folder_default_logins",
     "enterprise_reader_advisory_bits",
     "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",

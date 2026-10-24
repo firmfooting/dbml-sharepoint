@@ -105,6 +105,8 @@ class ItemSecurity(TypedDict):
 class FolderDefaultValue(TypedDict):
     field: str
     value: str
+    # A person default's user principal names, which the deploy resolves first.
+    logins: NotRequired[list[str]]
 
 
 class FolderDefaults(TypedDict):

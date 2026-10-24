@@ -392,7 +392,7 @@ def _not_after_now(row: _Row) -> bool:
 
 
 def _library_settings(
-    mapping: Mapping, table_names: list[str], resolved: ResolvedMapping,
+    schema: Schema, mapping: Mapping, table_names: list[str], resolved: ResolvedMapping,
 ) -> list[_LibrarySetting]:
     """Each library's declared settings, by deployed title; an unmanaged one is left out."""
     declared: list[_LibrarySetting] = []
@@ -400,7 +400,8 @@ def _library_settings(
         entity = mapping.entities[name]
         settings = entity.settings
         entry: _LibrarySetting = {"title": mapping.list_title(name)}
-        payload = folder_defaults_payload(entity, resolved.require_folders(name))
+        types = {c.name: c.type for t in schema.tables if t.name == name for c in t.columns}
+        payload = folder_defaults_payload(entity, resolved.require_folders(name), types)
         if payload:
             entry["folder_defaults"] = payload
         if settings is None:
@@ -476,7 +477,7 @@ def verify_targets(
         ],
         "checks": targets.checks,
         "rule": rule,
-        "library_settings": _library_settings(mapping, table_names, resolved),
+        "library_settings": _library_settings(schema, mapping, table_names, resolved),
         # Values travel here for the standalone script only; the script logs names, never values.
         "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
     }
