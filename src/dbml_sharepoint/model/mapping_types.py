@@ -174,6 +174,10 @@ class LibrarySettings:
     content_approval: bool | None = None
 
 
+#: One `folder_defaults` value as authored: text (numbers as text), a boolean, or a list.
+FolderDefaultValue = str | bool | tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class EntityMapping:
     """SP physical mapping for one entity (kind, base template, site role)."""
@@ -214,7 +218,7 @@ class EntityMapping:
     internal_name: str | None = None
     settings: LibrarySettings | None = None
     # {folder: {column: value}}, library only; the folder defaults phase applies it.
-    folder_defaults: dict[str, dict[str, str]] = field(default_factory=dict)
+    folder_defaults: dict[str, dict[str, FolderDefaultValue]] = field(default_factory=dict)
 
     @property
     def is_library(self) -> bool:

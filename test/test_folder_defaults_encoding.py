@@ -1,0 +1,57 @@
+# test/test_folder_defaults_encoding.py
+"""The spelling of each folder default value in the location-based defaults file.
+
+Each expected text is the form the receiver was measured to apply
+(`library.folder-defaults.value.*`).
+"""
+
+import pytest
+
+from dbml_sharepoint.analysis.folder_defaults import (
+    encode_folder_default,
+    folder_default_problem,
+    person_logins,
+)
+from dbml_sharepoint.model.mapping_types import FolderDefaultValue
+
+_A = "i:0#.f|membership|a@contoso.com"
+_B = "i:0#.f|membership|b@contoso.com"
+
+
+@pytest.mark.parametrize(("column_type", "value", "text"), [
+    ("nvarchar", 'North & "Q"', 'North & "Q"'),
+    ("division", "Corporate", "Corporate"),
+    ("division[]", ("Red", "Blue"), "Red;#Blue"),
+    ("division[]", "Blue", "Blue"),
+    ("person", "a@contoso.com", f"-1;#{_A}"),
+    ("person[]", ("a@contoso.com", "b@contoso.com"), f"-1;#{_A};#-1;#{_B}"),
+    ("boolean", True, "1"),
+    ("boolean", False, "0"),
+    ("boolean", "TRUE", "1"),
+    ("boolean", "0", "0"),
+    # library.folder-defaults.value.boolean-forms: SharePoint reads Yes as No, so it is written 1.
+    ("boolean", "Yes", "1"),
+    ("boolean", "off", "0"),
+    ("date", "[today]", "[today]"),
+    ("date", "Today", "[today]"),
+    ("number", "1,234.5", "1,234.5"),
+    ("number", "1234.5", "1234.5"),
+    ("date", "today", "[today]"),
+    ("datetime", "2026-03-14T13:00:00Z", "2026-03-14T13:00:00Z"),
+    ("hyperlink", "https://example.com, Example", "https://example.com, Example"),
+])
+def test_each_value_is_spelled_as_the_receiver_applies_it(
+    column_type: str, value: FolderDefaultValue, text: str,
+) -> None:
+    assert encode_folder_default(column_type, value) == text
+
+
+def test_only_person_values_carry_logins_to_resolve() -> None:
+    assert person_logins("person[]", ("a@contoso.com", "b@contoso.com")) == [_A, _B]
+    assert person_logins("nvarchar", "a@contoso.com") == []
+
+
+def test_boolean_text_sharepoint_reads_as_no_is_refused() -> None:
+    # library.folder-defaults.value.boolean-forms: any other text is applied as No.
+    assert "as No" in (folder_default_problem("boolean", "maybe") or "")
+    assert folder_default_problem("boolean", "Off") is None

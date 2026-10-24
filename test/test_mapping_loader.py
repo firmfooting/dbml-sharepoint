@@ -6071,8 +6071,21 @@ def test_folder_defaults_absent_is_empty(tmp_path: Path) -> None:
     assert entity.folder_defaults == {}
 
 
-@pytest.mark.parametrize("value", ["[a, b]", "true", "{x: 1}"])
-def test_folder_default_values_must_be_text_or_numbers(tmp_path: Path, value: str) -> None:
+@pytest.mark.parametrize(("value", "read"), [
+    ("[a, 3]", ("a", "3")), ("true", True), ("false", False), ("no", "no"), ("2.5", "2.5"),
+])
+def test_folder_default_values_keep_lists_and_booleans(
+    tmp_path: Path, value: str, read: object,
+) -> None:
+    path = _folder_defaults(tmp_path, f"              FolderA:\n                Division: {value}")
+    entity = load_mapping(path).mapping.entities["Document"]
+    assert entity.folder_defaults == {"FolderA": {"Division": read}}
+
+
+@pytest.mark.parametrize("value", ["{x: 1}", "[]", "[true]", "[[a]]", "null"])
+def test_folder_default_values_must_be_text_numbers_booleans_or_text_lists(
+    tmp_path: Path, value: str,
+) -> None:
     path = _folder_defaults(tmp_path, f"              FolderA:\n                Division: {value}")
     _refuses(path, MappingShapeError, "Division")
 

@@ -1725,15 +1725,72 @@ def test_folder_default_choice_outside_its_enum_is_refused(tmp_path: Path) -> No
     assert "Finance" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
 
 
-@pytest.mark.parametrize("column", ["Owner person", "Related int [ref: > Docs.Id]"])
-def test_folder_default_on_a_person_or_lookup_column_is_refused(
-    tmp_path: Path, column: str,
-) -> None:
+@pytest.mark.parametrize("column", ["Related int [ref: > Docs.Id]", "Many int[] [ref: > Docs.Id]"])
+def test_folder_default_on_a_lookup_column_is_refused(tmp_path: Path, column: str) -> None:
     name = column.split(maxsplit=1)[0]
     findings = _defaults_findings(
         tmp_path, _one("FolderA", name, "1"), extra_columns=column,
     )
-    only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID)
+    assert "never applies" in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
+
+
+@pytest.mark.parametrize(("column", "value"), [
+    ("Owner person", "someone@contoso.com"),
+    ("Owners person[]", "[a@contoso.com, b@contoso.com]"),
+    ("Areas division[]", '["Field operations", Corporate]'),
+    ("Areas division[]", "Corporate"),
+    ("Flag boolean", "true"),
+    ("Flag boolean", '"0"'),
+    ("Count int", "1234"),
+    ("Amount number", '"1234.5"'),
+    ("Due date", "today"),
+    ("Due date", '"[today]"'),
+    ("Due date", '"2026-03-14T13:00:00Z"'),
+    ("Due date", '"2026-03-15T13:00:00.000Z"'),
+    ("Due date", '"2026-03-15T13:00:00+11:00"'),
+    ("Due date", '"2026-03-15 13:00:00"'),
+    ("When datetime", "today"),
+    ("Count int", '"1,234.5"'),
+    ("Count int", '".5"'),
+    ("Count int", '"+5"'),
+    ("Count int", '"5."'),
+    ("Count int", '"1e3"'),
+    ("Count int", "-3"),
+    ("Flag boolean", "Yes"),
+])
+def test_folder_defaults_the_receiver_applies_are_accepted(
+    tmp_path: Path, column: str, value: str,
+) -> None:
+    findings = _defaults_findings(
+        tmp_path, _one("FolderA", column.split(maxsplit=1)[0], value), extra_columns=column,
+    )
+    none_of(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID)
+
+
+@pytest.mark.parametrize(("column", "value", "said"), [
+    ("Owner person", "7", "user principal name"),
+    ("Owner person", '"7;#Some One"', "user principal name"),
+    ("Owners person[]", "[a@contoso.com, nobody]", "'nobody'"),
+    ("Areas division[]", "[Corporate, Finance]", "'Finance' is not a member"),
+    ("Owner person", '"a@contoso.com\\n"', "user principal name"),
+    ("Flag boolean", "maybe", "as No"),
+    ("Note2 nvarchar", "true", "only a default for a boolean column"),
+    ("Count int", "abc", "cannot parse"),
+    ("Count int", '"1 234"', "cannot parse"),
+    ("Count int", '"0x10"', "cannot parse"),
+    ("Due date", '"2026-03-15"', "drops a date"),
+    ("Due date", '"15/03/2026"', "drops a date"),
+    ("Due date", "today+3", "drops a date"),
+    ("Division division", '"Corporate;#x"', "holds ;#"),
+    ("Note2 nvarchar", "[a, b]", "multi-value column"),
+])
+def test_folder_defaults_the_receiver_drops_are_refused(
+    tmp_path: Path, column: str, value: str, said: str,
+) -> None:
+    findings = _defaults_findings(
+        tmp_path, _one("FolderA", column.split(maxsplit=1)[0], value), extra_columns=column,
+    )
+    assert said in only(findings, FindingCode.FOLDER_DEFAULT_VALUE_INVALID).message
 
 
 def test_folder_defaults_on_a_list_are_refused(tmp_path: Path) -> None:

@@ -22,6 +22,7 @@ from dbml_sharepoint.model.mapping_types import (
     DraftVisibility,
     EntityKind,
     EntityMapping,
+    FolderDefaultValue,
     FoldersFromEnum,
     FolderSource,
     LibrarySettings,
@@ -173,28 +174,44 @@ def _draft_visibility(block: Mapping[str, object], where: str) -> DraftVisibilit
     return value
 
 
-def _folder_defaults(spec: Mapping[str, object], context: str) -> dict[str, dict[str, str]]:
-    """`folder_defaults`: folder -> column -> value, every value held as text."""
+def _folder_defaults(
+    spec: Mapping[str, object], context: str,
+) -> dict[str, dict[str, FolderDefaultValue]]:
+    """`folder_defaults`: folder -> column -> value; the validator judges each value."""
     if "folder_defaults" not in spec:
         return {}
     where = f"{context}.folder_defaults"
     raw = _require_mapping(spec["folder_defaults"], where)
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, dict[str, FolderDefaultValue]] = {}
     for folder, columns in raw.items():
         if not isinstance(folder, str):
             raise MappingShapeError(f"{where} keys must be folder names, got {folder!r}")
-        values: dict[str, str] = {}
+        values: dict[str, FolderDefaultValue] = {}
         for column, value in _require_mapping(columns, f"{where}.{folder}").items():
-            # bool is an int subclass; a YAML `yes` must not become "True".
-            if not isinstance(column, str) or isinstance(value, bool) or not isinstance(
-                value, str | int | float,
-            ):
+            if not isinstance(column, str):
                 raise MappingShapeError(
-                    f"{where}.{folder}.{column} must be a text or number value, got {value!r}",
+                    f"{where}.{folder} keys must be column names, got {column!r}",
                 )
-            values[column] = str(value)
+            values[column] = _folder_default_value(value, f"{where}.{folder}.{column}")
         out[folder] = values
     return out
+
+
+def _folder_default_value(value: object, where: str) -> FolderDefaultValue:
+    """Text or a number as text, a boolean kept as one, or a non-empty list of text or numbers."""
+    # bool before the scalars: bool is an int subclass, and a YAML `yes` must stay a boolean.
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str | int | float):
+        return str(value)
+    if isinstance(value, list) and value:
+        items: list[object] = list(value)
+        if all(isinstance(v, str | int | float) and not isinstance(v, bool) for v in items):
+            return tuple(str(v) for v in items)
+    raise MappingShapeError(
+        f"{where} must be a text, number or boolean value, or a non-empty list of text "
+        f"values, got {value!r}",
+    )
 
 
 def _folder_source(spec: Mapping[str, object], context: str) -> FolderSource:

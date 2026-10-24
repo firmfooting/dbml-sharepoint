@@ -13,11 +13,13 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.folder_defaults import folder_default_problem
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.analysis.typemap import element_type, is_multi_value, is_person
+from dbml_sharepoint.analysis.typemap import element_type
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
     EntityMapping,
+    FolderDefaultValue,
     FoldersFromEnum,
     ViewDef,
 )
@@ -162,27 +164,41 @@ def _folder_defaults(
 _XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def _default_value_problem(vc: ValidationContext, column: Column, value: str) -> str | None:
-    """Why `value` cannot be a folder default for `column`, or None.
-
-    Lookup and person columns are refused in this release: a default for one
-    is a user or item id the folder file cannot name portably.
-    """
-    if column.ref is not None or is_person(column.type) or is_multi_value(column.type):
+def _default_value_problem(
+    vc: ValidationContext, column: Column, value: FolderDefaultValue,
+) -> str | None:
+    """Why `value` cannot be a folder default for `column`, or None."""
+    if column.ref is not None:
         return (
-            f"{column.name} is a lookup, person or multi-value column, which a folder "
-            f"default does not support yet."
+            f"{column.name} is a lookup column, and SharePoint never applies a lookup "
+            f"folder default (library.folder-defaults.value.lookup-never-applies)."
         )
     if column.unique:
         return (
             f"{column.name} is declared [unique], so every file filed in the folder would "
             f"receive the same value and the second upload could not keep it."
         )
-    if _XML_ILLEGAL.search(value):
-        return f"the value holds a control character XML cannot store ({value!r})."
-    members = vc.enum_members_by_name.get(column.type)
-    if members is not None and value not in members:
-        return f"{value!r} is not a member of {column.type} ({', '.join(members)})."
+    shape = folder_default_problem(column.type, value)
+    if shape is not None:
+        return shape
+    texts = value if isinstance(value, tuple) else (str(value),)
+    for text in texts:
+        if _XML_ILLEGAL.search(text):
+            return f"the value holds a control character XML cannot store ({text!r})."
+    members = vc.enum_members_by_name.get(element_type(column.type))
+    joined = [t for t in texts if ";#" in t]
+    if members is not None and joined:
+        # ;# separates multi-choice members in the file, so a member holding it splits.
+        return (
+            f"{', '.join(map(repr, joined))} holds ;#, which the defaults file reads "
+            f"as a separator."
+        )
+    outside = [t for t in texts if members is not None and t not in members]
+    if members is not None and outside:
+        return (
+            f"{', '.join(map(repr, outside))} {'is' if len(outside) == 1 else 'are'} not "
+            f"a member of {element_type(column.type)} ({', '.join(members)})."
+        )
     return None
 
 

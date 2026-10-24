@@ -151,11 +151,16 @@ def _named_pairs(rows: list[tuple[str, list[tuple[str, str]]]]) -> list[JsonValu
 
 
 def _declared_folder_defaults(
-    title: str, entity: EntityMapping, folders: Sequence[str],
+    title: str, entity: EntityMapping, folders: Sequence[str], column_types: AbcMapping[str, str],
 ) -> list[tuple[str, list[JsonValue]]]:
     """The library's folder defaults as the assess payload carries them, or nothing."""
-    payload = folder_defaults_payload(entity, folders)
+    payload = folder_defaults_payload(entity, folders, column_types)
     return [(title, cast("list[JsonValue]", payload))] if payload else []
+
+
+def _column_types(schema: Schema, table_name: str) -> dict[str, str]:
+    """Each column's declared type, by name, for spelling its folder default."""
+    return {c.name: c.type for t in schema.tables if t.name == table_name for c in t.columns}
 
 
 def _declared_switches(
@@ -304,6 +309,7 @@ def _collect(
             ))
         library_folder_defaults += _declared_folder_defaults(
             bundle.mapping.list_title(table_name), entity, entity_folders,
+            _column_types(schema, table_name),
         )
         library_switches += _declared_switches(
             bundle.mapping.list_title(table_name), entity.settings,

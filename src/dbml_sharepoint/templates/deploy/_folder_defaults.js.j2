@@ -103,6 +103,28 @@
       if (unmanaged.length && !hasDefaultsReceiver(await readReceivers(list.title))) {
         throw new Error(`the defaults file holds entries for folders this mapping does not declare (${unmanaged.join(', ')}); registering the receiver would start applying them, so nothing was written. Declare those folders or remove their entries`);
       }
+{% if folder_default_logins %}
+      // Every run, before the settled branch re-registers the receiver (library.folder-defaults.value.person-unresolvable-aborts).
+      for (const declared of list.folder_defaults) {
+        for (const v of declared.values) {
+          for (const login of v.logins || []) {
+            const who = await fetchWithRetry(apiUrl('web/ensureuser?$select=PrincipalType,LoginName'), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
+              body: JSON.stringify({ logonName: login }),
+            });
+            const principal = who.ok ? (((await who.json()) || {}).d || {}) : null;
+            if (!principal || principal.PrincipalType !== 1) {
+              throw new Error(`the ${v.field} default for ${declared.folder} names an account that does not resolve to a single user (${principal ? `PrincipalType ${principal.PrincipalType}` : `HTTP ${who.status}`}); nothing was written and the receiver was left as it was, because SharePoint applies no default at all to a file whose person default it cannot resolve`);
+            }
+            // The file holds the built claim, so an alias that resolves to another login would be dropped.
+            if (String(principal.LoginName || '').toLowerCase() !== login.toLowerCase()) {
+              throw new Error(`the ${v.field} default for ${declared.folder} resolves to a different login than the one written to the defaults file; nothing was written and the receiver was left as it was. Name the account by its user principal name`);
+            }
+          }
+        }
+      }
+{% endif %}
       const wanted = new Map(list.folder_defaults.map((d) => [`${rootUrl}/${d.folder}`, d.values]));
       const settled = [...declaredPaths].every((path) => {
         const have = existing.find((e) => e.path === path);
