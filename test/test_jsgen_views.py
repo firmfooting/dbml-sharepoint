@@ -788,6 +788,9 @@ console.log(JSON.stringify([
   normalizeXml(written) === normalizeXml(other),
   normalizeXml(literal) === normalizeXml(cw(`<FieldRef Name="A&amp;#39;s" width="1"/>`)),
   normalizeXml(literal) === normalizeXml(cw(`<FieldRef Name="A&apos;s" width="1"/>`)),
+  // Escaped text never compares equal to markup.
+  normalizeXml(`<X>&#60;Y/&gt;</X>`) === normalizeXml(`<X>&lt;Y/></X>`),
+  normalizeXml(`<X>&lt;Y/&gt;</X>`) === normalizeXml(`<X><Y/></X>`),
 ]));
 """
-    assert json.loads(run_node(script)) == [True, False, True, False]
+    assert json.loads(run_node(script)) == [True, False, True, False, True, False]
