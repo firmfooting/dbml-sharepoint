@@ -1,7 +1,7 @@
 """DBML -> SharePoint Online list provisioning via browser-console deploy.js.
 
 Every name an extension author needs is imported from the module that defines
-it, and no module here declares another module's name as its own. An
+it, and no module but `api` declares another module's name as its own. An
 aggregator would need an export list, or a redundant `import X as X`, to
 survive pyrefly's `implicit-reexport` rule, and either gives a name a second
 home to be kept in step with the first.
