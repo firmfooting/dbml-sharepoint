@@ -13,6 +13,23 @@
   // '/_api/web/...' targets the tenant root web, NOT the sub-site or site
   // collection you're viewing. Every API call is prefixed with the current
   // web's server-relative URL so calls hit the web the operator is on.
+{% if site_resolution | default('page-context') == 'pathname' %}
+{# site_resolution='pathname' reads the site from the page URL, which a settings page has without _spPageContextInfo, and throws rather than returning {aborted}. #}
+  // The site prefix of the page: '/sites/T' from '/sites/T/SitePages/Home.aspx', '' on the root site.
+  const siteHome = location.pathname.match(/^(.*)\/(?:SitePages\/|_layouts\/15\/settings\.aspx(?:$|\?))/i);
+  if (!siteHome) {
+    throw new Error('Run this from a modern page under .../SitePages/ or from .../_layouts/15/settings.aspx');
+  }
+  const WEB = siteHome[1];
+{% if require_site_match | default(true) %}
+  // Decoded and without a trailing slash, so '/sites/My%20Site/' and '/sites/My Site' are one site.
+  const sitePath = (path) => decodeURIComponent(path).replace(/\/+$/, '');
+  const expectedSite = new URL(SITE_URL);
+  if (location.origin !== expectedSite.origin || sitePath(WEB) !== sitePath(expectedSite.pathname)) {
+    throw new Error(`Site mismatch. Expected ${expectedSite.origin}${sitePath(expectedSite.pathname)}, found ${location.origin}${sitePath(WEB)}.`);
+  }
+{% endif %}
+{% else %}
 {% if require_site_match | default(true) %}
   const expectedOrigin = new URL(SITE_URL).origin;
   const expectedPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
@@ -30,9 +47,12 @@
   }
 {% endif %}
   const WEB = actualPath;  // '' for the tenant root, '/sites/foo' for a site collection, etc.
+{% endif %}
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // OData string-literal encoder: SharePoint getbytitle/getbyname take a
   // single-quoted OData literal, where an embedded apostrophe must be
   // DOUBLED (`''`); encodeURIComponent alone does not escape `'`.
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+{% if site_resolution | default('page-context') != 'pathname' %}
   log('INFO', `Running as ${(_spPageContextInfo.userLoginName) || '(unknown)'} on web '${WEB || '(root)'}'.`);
+{% endif %}

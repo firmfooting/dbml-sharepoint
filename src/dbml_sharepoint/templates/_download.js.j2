@@ -1,0 +1,19 @@
+{# A JSON file download for a pasteable script's output. Expects
+   `log`. Extract and identify still carry their own copies of this shape. #}
+  // Offers `data` as an indented JSON file; false, with a warning, when a site policy stops the download.
+  const download = (name, data) => {
+    try {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      return true;
+    } catch (err) {
+      log('WARN', `The download could not start (${err.message}).`);
+      return false;
+    }
+  };

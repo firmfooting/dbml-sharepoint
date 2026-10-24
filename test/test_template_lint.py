@@ -124,6 +124,9 @@ KNOWN_CONTEXT = {
     # nothing to guard; pinning it would stop one file walking a fleet.
     # Defaulted ON in `_site_guard.js.j2`, so every other caller keeps it.
     "require_site_match",
+    # "pathname" reads the site from the page URL for a downstream paste-in
+    # prelude; defaulted to "page-context" in `_site_guard.js.j2`.
+    "site_resolution",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }
@@ -233,6 +236,8 @@ def test_no_orphan_templates(env: Environment) -> None:
     referenced.update(
         phase_step.template for _g, steps in DEPLOY_GROUPS for phase_step in steps
     )
+    # The jsrest prelude's partials, landed before the prelude that includes them.
+    referenced.update({"_download.js.j2", "_ensure_user.js.j2"})
     orphans = sorted(set(ALL_TEMPLATES) - referenced)
     assert not orphans, f"templates nothing references: {orphans}"
 

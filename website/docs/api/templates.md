@@ -143,6 +143,14 @@ Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `lis
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined, and brings the contextinfo parse with it. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
+### `_download.js.j2`
+
+A JSON file download for a pasteable script's output. Expects `log`. Extract and identify still carry their own copies of this shape.
+
+### `_ensure_user.js.j2`
+
+Resolves a logon name to a site principal. Expects apiUrl, fetchWithRetry, spHeaders, getDigest and spError. No error it throws carries the logon name.
+
 ### `_folder_defaults_read.js.j2`
 
 Included by: `assess.js.j2`, `deploy.js.j2`, `verify.js.j2`

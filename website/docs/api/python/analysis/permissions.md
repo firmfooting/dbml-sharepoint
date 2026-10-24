@@ -59,6 +59,12 @@ ASSIGNABLE_BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit
 ENTERPRISE_READER_REQUIRED_PERMISSIONS = ('ViewListItems', 'ViewFormPages', 'Open')
 ```
 
+### `TENANT_WIDE_CLAIM_NEEDLES`
+
+```python
+TENANT_WIDE_CLAIM_NEEDLES = ('spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager')
+```
+
 ### `ENTERPRISE_READER_ADVISORY_PERMISSIONS`
 
 ```python

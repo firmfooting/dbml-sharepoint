@@ -62,7 +62,7 @@ def no_comment_remains(stripped: str) -> None:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("partial", ["_http.js.j2", "_digest_cached.js.j2", "_odata_read.js.j2",
                                      "_http_batch.js.j2", "_site_guard.js.j2",
-                                     "_http_write.js.j2"])
+                                     "_http_write.js.j2", "_download.js.j2", "_ensure_user.js.j2"])
 def test_every_prelude_partial_strips_to_code_node_accepts(partial: str) -> None:
     assert NODE is not None
     stripped = strip_js_comments(script_env().get_template(partial).render())
