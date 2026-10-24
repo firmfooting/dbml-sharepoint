@@ -23,7 +23,7 @@ without turning anything red.
 ### `NODE`
 
 ```python
-NODE = '/home/shaunes/.local/bin/node'
+NODE = shutil.which('node')
 ```
 
 ### `run_node`

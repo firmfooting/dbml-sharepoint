@@ -280,6 +280,15 @@ def test_generated_api_docs_are_current(tmp_path: Path, monkeypatch: pytest.Monk
     )
 
 
+def test_a_machine_dependent_constant_renders_from_its_source() -> None:
+    """`NODE` resolves to a different path on every machine, so its page shows the call."""
+    generate_api = _load_generate_api()
+    assert generate_api.machine_dependent_sources("testing.node") == {
+        "NODE": "shutil.which('node')",
+    }
+    assert generate_api.machine_dependent_sources("jsonvalue") == {}
+
+
 # === The security model's endpoint inventory ================================
 
 SECURITY_MODEL = REPO_ROOT / "website" / "docs" / "concepts" / "security-model.md"
