@@ -490,7 +490,14 @@
           .map(([name, px]) => `<FieldRef Name="${xmlAttr(name)}" width="${px}"/>`).join('')
           + '</ColumnWidth>';
         const stripColumnWidth = (xml) => xml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, '');
-        const normalizeXml = (xml) => xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+        // SharePoint re-serialises attribute entities (' comes back as &#39;), so
+        // decode character references before comparing; &amp; last.
+        const decodeXmlRefs = (xml) => xml
+          .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+          .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+          .replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
+        const normalizeXml = (xml) => decodeXmlRefs(xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim());
         const currentXml = await readListViewXml();
         if (!currentXml.includes('</View>')) {
           throw new Error('view ListViewXml readback has no </View>; refusing widths write');

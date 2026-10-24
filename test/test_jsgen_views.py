@@ -6,10 +6,12 @@ levels, widths and totals. The filter guard is here too: a view emitted in
 the editable shape is one an operator can silently widen.
 """
 
+import json
 from pathlib import Path
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _node import NODE, run_node
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES, engine_blueprints
 from test_jsgen import _generate_simple_js, _generate_views_js, _schema_json_for
@@ -765,3 +767,23 @@ def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
     as_list = views_of("List", 100, tmp_path / "list")
     assert {v["title"] for v in as_list} == {"All Items", "By division"}
     assert not any(v["adopts_builtin_view"] for v in as_list)
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed")
+def test_width_readback_compares_equivalent_entity_forms(tmp_path: Path) -> None:
+    """SharePoint returns an apostrophe in a FieldRef Name as &#39; while the
+    deploy writes it raw; the readback must treat both as the same XML."""
+    js = _generate_views_js(tmp_path)
+    start = js.index("const decodeXmlRefs")
+    end = js.index("const currentXml")
+    script = js[start:end] + r"""
+const cw = (inner) => `<ColumnWidth>${inner}</ColumnWidth>`;
+const written = cw(`<FieldRef Name="Reviewer's &amp; co &quot;x&quot;" width="120"/>`);
+const returned = cw(`\n <FieldRef Name="Reviewer&#39;s &#x26; co &#34;x&#34;" width="120" />\n`);
+const other = cw(`<FieldRef Name="Reviewer&#39;s" width="120"/>`);
+console.log(JSON.stringify([
+  normalizeXml(written) === normalizeXml(returned),
+  normalizeXml(written) === normalizeXml(other),
+]));
+"""
+    assert json.loads(run_node(script)) == [True, False]
