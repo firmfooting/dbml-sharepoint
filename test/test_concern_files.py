@@ -5,14 +5,17 @@ from pathlib import Path
 import pytest
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
+import dbml_sharepoint
 from dbml_sharepoint.model import yamlio
-from dbml_sharepoint.model.errors import MappingShapeError
+from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES
 from dbml_sharepoint.model.sections._concern_files import CONCERN_FILES
+from dbml_sharepoint.pipeline import execute_build
 
 _VISITOR_LOG = SOLUTION_TEMPLATES / "visitor-log" / "20-configure"
 _REPORTING_SAMPLE = FIXTURES / "blueprints" / "reporting-sample" / "20-configure"
+_ASSET_REGISTER = Path(dbml_sharepoint.__file__).parent / "solutions" / "asset-register"
 
 
 def _pack(tmp_path: Path) -> Path:
@@ -162,3 +165,204 @@ def test_the_pointer_families_match_their_concern_files() -> None:
         CONCERN_FILES["reporting.yaml"]: "reporting_source",
         CONCERN_FILES["demo.yaml"]: "demo_source",
     }
+
+
+def test_a_form_section_in_a_concern_file_belongs_in_form_yaml(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    (pack / "form.yaml").write_text("{}\n", encoding="utf-8")
+    _move(pack, "views.yaml", "views", "form_formatting")
+    belongs = r"views\.yaml:\d+: .* not form_formatting; form_formatting belongs in form\.yaml$"
+    with pytest.raises(MappingShapeError, match=belongs):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_pointer_naming_its_absent_concern_file_is_refused_as_today(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    data = _read(pack / "mapping.yaml")
+    del data["demo_items"]
+    _write(pack / "mapping.yaml", {**data, "demo_source": "demo.yaml"})
+    with pytest.raises(MappingReferenceError, match=r"demo_source: cannot read 'demo\.yaml'"):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_pointer_elsewhere_with_no_concern_file_loads_as_today(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    original = load_mapping(pack / "mapping.yaml").mapping
+    _move(pack, "rows.yaml", "demo_items")
+    _write(pack / "mapping.yaml", {**_read(pack / "mapping.yaml"), "demo_source": "rows.yaml"})
+    assert load_mapping(pack / "mapping.yaml").mapping.demo_items == original.demo_items
+
+
+def test_a_pointer_elsewhere_beside_a_concern_folder_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _move(pack, "rows.yaml", "demo_items")
+    (pack / "demo.d").mkdir()
+    shutil.copy(pack / "rows.yaml", pack / "demo.d" / "a.yaml")
+    _write(pack / "mapping.yaml", {**_read(pack / "mapping.yaml"), "demo_source": "rows.yaml"})
+    with pytest.raises(
+        MappingShapeError, match=r"demo_source points at 'rows\.yaml' and demo\.d/ exists",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_pointer_naming_its_concern_file_beside_its_folder_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _move(pack, "demo.yaml", "demo_items")
+    (pack / "demo.d").mkdir()
+    (pack / "demo.yaml").rename(pack / "demo.d" / "a.yaml")
+    _write(pack / "mapping.yaml", {**_read(pack / "mapping.yaml"), "demo_source": "demo.yaml"})
+    with pytest.raises(
+        MappingShapeError, match=r"demo_source points at 'demo\.yaml' and demo\.d/ exists",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def _split_views(pack: Path) -> None:
+    """Move the views and field sets into views.d/, one numbered file per list in view order."""
+    data = _read(pack / "mapping.yaml")
+    views, field_sets = data.pop("views"), data.pop("field_sets", {})
+    assert isinstance(views, dict) and isinstance(field_sets, dict)
+    lists = [*views, *(name for name in field_sets if name not in views)]
+    (pack / "views.d").mkdir()
+    for number, name in enumerate(lists, 1):
+        block: dict[str, object] = {}
+        if name in field_sets:
+            block["field_sets"] = {name: field_sets[name]}
+        if name in views:
+            block["views"] = {name: views[name]}
+        _write(pack / "views.d" / f"{number * 10}-{name}.yaml", block)
+    _write(pack / "mapping.yaml", data)
+
+
+def test_views_split_across_a_folder_load_like_one_file(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    shutil.copytree(_ASSET_REGISTER / "20-configure", pack)
+    original = load_mapping(pack / "mapping.yaml").mapping
+    _split_views(pack)
+    assert len(list((pack / "views.d").iterdir())) > 1
+    got = load_mapping(pack / "mapping.yaml").mapping
+    assert list(got.views) == list(original.views)
+    assert got.views == original.views
+    assert got == original
+
+
+def _folder(pack: Path, files: dict[str, dict[str, object]]) -> None:
+    (pack / "views.d").mkdir()
+    for name, block in files.items():
+        _write(pack / "views.d" / name, block)
+
+
+def _views_without(pack: Path) -> dict[str, object]:
+    data = _read(pack / "mapping.yaml")
+    views = data.pop("views")
+    assert isinstance(views, dict)
+    _write(pack / "mapping.yaml", data)
+    return views
+
+
+def test_a_list_declared_in_two_folder_files_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    views = _views_without(pack)
+    _folder(pack, {"a.yaml": {"views": views}, "b.yaml": {"field_sets": {}, "views": views}})
+    with pytest.raises(
+        MappingShapeError,
+        match=r"views\[\w+\] is declared in views\.d/a\.yaml:2 and views\.d/b\.yaml:3",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_scalar_section_in_two_folder_files_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    (pack / "formatting.d").mkdir()
+    _write(pack / "formatting.d" / "a.yaml", {"style_theme": "a"})
+    _write(pack / "formatting.d" / "b.yaml", {"style_theme": {"x": 1}})
+    with pytest.raises(
+        MappingShapeError,
+        match=r"^style_theme is declared in formatting\.d/a\.yaml:1 and formatting\.d/b\.yaml:1$",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_file_and_a_folder_for_one_concern_are_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _move(pack, "views.yaml", "views")
+    (pack / "views.d").mkdir()
+    with pytest.raises(
+        MappingShapeError,
+        match=r"^views\.yaml and views\.d/ both exist: a concern lives in one file or one folder\.",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_non_yaml_entry_in_a_folder_is_refused(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _folder(pack, {"a.yaml": {"views": _views_without(pack)}, "extra.yml": {"views": {}}})
+    with pytest.raises(
+        MappingShapeError, match=r"views\.d/extra\.yml: a concern folder holds \.yaml files only",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_folder_file_holding_a_foreign_key_names_itself(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _folder(pack, {"a.yaml": {"field_sets": {}, "groups": {}}})
+    with pytest.raises(
+        MappingShapeError,
+        match=r"^views\.d/a\.yaml:2: .* not groups; groups belongs in permissions\.yaml$",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_folder_section_also_inline_is_refused_with_both_lines(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    _folder(pack, {"a.yaml": {"field_sets": {}}, "b.yaml": {"views": {}}})
+    with pytest.raises(
+        MappingShapeError, match=r"views is declared in mapping\.yaml:\d+ and views\.d/b\.yaml:1",
+    ):
+        load_mapping(pack / "mapping.yaml")
+
+
+def test_a_path_in_a_folder_file_resolves_from_the_mapping_folder(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    original = load_mapping(pack / "mapping.yaml").mapping
+    data = _read(pack / "mapping.yaml")
+    assert "formatting/signed-out-at.json" in str(data["column_formatting"])
+    (pack / "formatting.d").mkdir()
+    _move(pack, "formatting.d/a.yaml", "column_formatting")
+    assert load_mapping(pack / "mapping.yaml").mapping == original
+
+def test_folder_entries_take_file_name_order(tmp_path: Path) -> None:
+    pack = _pack(tmp_path)
+    views = _views_without(pack)
+    first = next(iter(views))
+    _folder(pack, {
+        "b.yaml": {"views": {"X": views[first]}},
+        "a.yaml": {"views": {"Y": views[first]}},
+    })
+    assert list(load_mapping(pack / "mapping.yaml").mapping.views) == ["Y", "X"]
+
+
+def _build(root: Path, out: Path) -> dict[str, bytes]:
+    execute_build(
+        schema=root / "10-design" / "schema.dbml",
+        mapping=root / "20-configure" / "mapping.yaml",
+        release=root / "20-configure" / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        time_zone="UTC",
+        site_role="default",
+        out=out,
+        seed=True,
+        source_date_epoch=1759276800,
+    )
+    built = {str(p.relative_to(out)): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
+    shutil.rmtree(out)
+    return built
+
+
+def test_a_folder_split_in_original_order_builds_byte_identical(tmp_path: Path) -> None:
+    root = tmp_path / "asset-register"
+    shutil.copytree(_ASSET_REGISTER, root)
+    out = tmp_path / "out"
+    before = _build(root, out)
+    _split_views(root / "20-configure")
+    assert _build(root, out) == before
