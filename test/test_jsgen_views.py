@@ -774,16 +774,20 @@ def test_width_readback_compares_equivalent_entity_forms(tmp_path: Path) -> None
     """SharePoint returns an apostrophe in a FieldRef Name as &#39; while the
     deploy writes it raw; the readback must treat both as the same XML."""
     js = _generate_views_js(tmp_path)
-    start = js.index("const decodeXmlRefs")
+    start = js.index("const XML_NAMED")
     end = js.index("const currentXml")
     script = js[start:end] + r"""
 const cw = (inner) => `<ColumnWidth>${inner}</ColumnWidth>`;
 const written = cw(`<FieldRef Name="Reviewer's &amp; co &quot;x&quot;" width="120"/>`);
 const returned = cw(`\n <FieldRef Name="Reviewer&#39;s &#x26; co &#34;x&#34;" width="120" />\n`);
 const other = cw(`<FieldRef Name="Reviewer&#39;s" width="120"/>`);
+// The literal text A&#39;s, spelt two ways, is not the name A's.
+const literal = cw(`<FieldRef Name="A&#x26;#39;s" width="1"/>`);
 console.log(JSON.stringify([
   normalizeXml(written) === normalizeXml(returned),
   normalizeXml(written) === normalizeXml(other),
+  normalizeXml(literal) === normalizeXml(cw(`<FieldRef Name="A&amp;#39;s" width="1"/>`)),
+  normalizeXml(literal) === normalizeXml(cw(`<FieldRef Name="A&apos;s" width="1"/>`)),
 ]));
 """
-    assert json.loads(run_node(script)) == [True, False]
+    assert json.loads(run_node(script)) == [True, False, True, False]

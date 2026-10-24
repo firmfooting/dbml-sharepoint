@@ -490,13 +490,10 @@
           .map(([name, px]) => `<FieldRef Name="${xmlAttr(name)}" width="${px}"/>`).join('')
           + '</ColumnWidth>';
         const stripColumnWidth = (xml) => xml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, '');
-        // SharePoint re-serialises attribute entities (' comes back as &#39;), so
-        // decode character references before comparing; &amp; last.
-        const decodeXmlRefs = (xml) => xml
-          .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-          .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
-          .replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&');
+        // SharePoint returns ' as &#39;; decode in one pass so a decoded & is never decoded again.
+        const XML_NAMED = {apos: "'", quot: '"', lt: '<', gt: '>', amp: '&'};
+        const decodeXmlRefs = (xml) => xml.replace(/&(?:#x([0-9a-fA-F]+)|#(\d+)|(apos|quot|lt|gt|amp));/g,
+          (_, h, d, n) => (h ? String.fromCodePoint(parseInt(h, 16)) : d ? String.fromCodePoint(Number(d)) : XML_NAMED[n]));
         const normalizeXml = (xml) => decodeXmlRefs(xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim());
         const currentXml = await readListViewXml();
         if (!currentXml.includes('</View>')) {
