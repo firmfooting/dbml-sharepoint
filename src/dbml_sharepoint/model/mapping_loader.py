@@ -23,6 +23,7 @@ from pathlib import Path
 from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model._retirement import _apply_retirement
 from dbml_sharepoint.model.errors import UnknownMappingKeyError
+from dbml_sharepoint.model.lists_forms import read_lists_forms_file
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
 from dbml_sharepoint.model.reading import load_yaml, recording_blank_defaults
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
@@ -123,4 +124,5 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         extension_configs=loaded["extension_configs"],
         governance=loaded["governance"],
         form_trees=form.trees,
+        lists_forms=read_lists_forms_file(base_dir),
     )
