@@ -110,6 +110,9 @@ const respond = (stub, url) => {
   });
   return make();
 };
+// One POST to the lists endpoint carrying digest `d`, resolving to its status.
+const write = async (d) => (await fetchWithRetry(
+  apiUrl('web/lists'), { method: 'POST', headers: spHeaders(d), body: '{}' })).status;
 globalThis.fetch = async (url, init) => {
   const headers = (init && init.headers) || {};
   calls.push({
@@ -243,3 +246,103 @@ class TestDigest:
             body, contextinfo("abc"), partials=("_sp_error.js.j2", "_contextinfo.js.j2"),
         )
         assert result["digest"] == "abc"
+
+
+SECURITY: JsonValue = {
+    "error": {"message": {"value": "The security validation for this page is invalid."}},
+}
+DENIED: JsonValue = {"error": {"message": {"value": "Access denied."}}}
+LIFETIME: dict[str, JsonValue] = {"FormDigestTimeoutSeconds": 1800}
+
+
+def WRITE_WITH(digest: str) -> str:  # noqa: N802 - reads as the constant it extends
+    """One write carrying the digest expression `digest`, its status reported."""
+    return f"report.status = await write({digest});\n"
+
+
+#: One write carrying this web's cached digest.
+WRITE = WRITE_WITH("await getDigest()")
+
+
+def contextinfo_calls(result: FactsRun) -> int:
+    """How many contextinfo requests the run made."""
+    return sum(c["url"].endswith("/contextinfo") for c in result["calls"] if c["url"])
+
+
+def write_digests(result: FactsRun) -> list[str | None]:
+    """The digest each write carried, in the order sent."""
+    return [c["digest"] for c in result["calls"] if not (c["url"] or "").endswith("/contextinfo")]
+
+
+class TestDigestCache:
+    def test_writes_within_the_lifetime_share_one_digest(self) -> None:
+        result = _run_facts(WRITE * 3, contextinfo("d1", **LIFETIME), OK, OK, OK)
+        assert contextinfo_calls(result) == 1
+
+    @pytest.mark.parametrize(("elapsed", "fetches"), [(1739, 1), (1740, 2), (1800, 2)])
+    def test_the_digest_is_refetched_a_minute_before_it_expires(
+        self, elapsed: int, fetches: int,
+    ) -> None:
+        body = f"await getDigest();\nclock += {elapsed * 1000};\nawait getDigest();"
+        result = _run_facts(body, contextinfo("d1", **LIFETIME), contextinfo("d2", **LIFETIME))
+        assert contextinfo_calls(result) == fetches
+
+    def test_a_security_validation_403_retries_once_with_a_fresh_digest(self) -> None:
+        result = _run_facts(
+            WRITE, contextinfo("d1", **LIFETIME), Stub(403, SECURITY),
+            contextinfo("d2", **LIFETIME), OK,
+        )
+        assert result["status"] == 200
+        assert write_digests(result) == ["d1", "d2"]
+        assert messages(result) == [
+            "HTTP 403 security validation on a write; retrying once with a fresh request digest.",
+        ]
+
+    def test_a_second_403_is_the_callers_to_report(self) -> None:
+        result = _run_facts(
+            WRITE, contextinfo("d1", **LIFETIME), Stub(403, SECURITY),
+            contextinfo("d2", **LIFETIME), Stub(403, SECURITY),
+        )
+        assert result["status"] == 403
+        assert contextinfo_calls(result) == 2
+
+    def test_a_403_that_is_not_a_digest_refusal_is_handed_back(self) -> None:
+        result = _run_facts(WRITE, contextinfo("d1", **LIFETIME), Stub(403, DENIED))
+        assert result["status"] == 403
+        assert contextinfo_calls(result) == 1
+
+    def test_a_403_on_a_write_carrying_another_webs_digest_is_not_retried(self) -> None:
+        result = _run_facts(
+            "await getDigest();" + WRITE_WITH("'central-digest'"),
+            contextinfo("d1", **LIFETIME), Stub(403, SECURITY),
+        )
+        assert result["status"] == 403
+        assert len(result["calls"]) == 2
+
+    def test_a_403_on_a_read_is_not_retried(self) -> None:
+        result = _run_facts(
+            "await getDigest();" + FETCH_ONCE, contextinfo("d1", **LIFETIME), Stub(403, SECURITY),
+        )
+        assert result["status"] == 403
+        assert len(result["calls"]) == 2
+
+    def test_four_lanes_refused_together_share_one_refresh(self) -> None:
+        body = """
+  const d = await getDigest();
+  const lanes = [0, 1, 2, 3].map(() => write(d));
+  await heldCount(4);
+  release();
+  report.statuses = await Promise.all(lanes);
+"""
+        result = _run_facts(
+            body, contextinfo("d1", **LIFETIME), *[Stub(403, SECURITY, hold=True)] * 4,
+            contextinfo("d2", **LIFETIME), OK, OK, OK, OK,
+        )
+        assert result["statuses"] == [200, 200, 200, 200]
+        assert contextinfo_calls(result) == 2
+        assert write_digests(result) == ["d1"] * 4 + ["d2"] * 4
+
+    def test_a_script_without_the_digest_partial_hands_a_403_back(self) -> None:
+        result = _run_facts(FETCH_ONCE, Stub(403, SECURITY), partials=("_http.js.j2",))
+        assert result["status"] == 403
+        assert len(result["calls"]) == 1

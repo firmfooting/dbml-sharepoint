@@ -7,6 +7,8 @@
   const MAX_WAIT_SECONDS = 300;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
   let requestCount = 0;
+  // Set by _digest_cached.js.j2; null in a script without it, so a 403 is handed back as is.
+  let onDigestRefused = null;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
   // SharePoint's REST error body carries the human-readable reason at
@@ -107,7 +109,8 @@
   // neither reads an entry nor leaves one.
   async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
-    const init = { ...(opts || {}), cache: 'no-store' };
+    let init = { ...(opts || {}), cache: 'no-store' };
+    let refreshed = false;
     for (let i = 0; ; i++) {
       await passThrottleGate();
       const r = await fetch(url, init);
@@ -125,6 +128,14 @@
         log('INFO', `Throttled, ${how}; every lane waits ${ra}s, retry ${i + 1}/${attempts}.`);
         await holdEveryLane(ra);
         continue;
+      }
+      if (r.status === 403 && onDigestRefused && !refreshed) {
+        const next = await onDigestRefused(init, r);
+        if (next) {
+          init = next;
+          refreshed = true;
+          continue;
+        }
       }
       dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}...` : url} -> ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
       return r;

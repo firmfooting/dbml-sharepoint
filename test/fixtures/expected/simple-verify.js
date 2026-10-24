@@ -134,6 +134,8 @@
   const MAX_WAIT_SECONDS = 300;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
   let requestCount = 0;
+  // Set by _digest_cached.js.j2; null in a script without it, so a 403 is handed back as is.
+  let onDigestRefused = null;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
   // SharePoint's REST error body carries the human-readable reason at
@@ -234,7 +236,8 @@
   // neither reads an entry nor leaves one.
   async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
-    const init = { ...(opts || {}), cache: 'no-store' };
+    let init = { ...(opts || {}), cache: 'no-store' };
+    let refreshed = false;
     for (let i = 0; ; i++) {
       await passThrottleGate();
       const r = await fetch(url, init);
@@ -252,6 +255,14 @@
         log('INFO', `Throttled, ${how}; every lane waits ${ra}s, retry ${i + 1}/${attempts}.`);
         await holdEveryLane(ra);
         continue;
+      }
+      if (r.status === 403 && onDigestRefused && !refreshed) {
+        const next = await onDigestRefused(init, r);
+        if (next) {
+          init = next;
+          refreshed = true;
+          continue;
+        }
       }
       dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}...` : url} -> ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
       return r;
@@ -296,6 +307,10 @@
   }
   let cachedDigest = null;
   let digestExpiresAt = 0;
+  // Every digest getDigest() handed out, so a cross-web or caller-built digest is never refreshed.
+  const issuedDigests = new Set();
+  // The one pending refresh that every lane refused together waits on.
+  let digestRefresh = null;
   // `url` defaults to this web's; a cross-web write passes the other web's, since a digest only validates on its issuing web.
   async function getContextWebInformation(url = apiUrl('contextinfo')) {
     let r;
@@ -321,10 +336,24 @@
       throw failure;
     }
     cachedDigest = info.FormDigestValue;
+    issuedDigests.add(cachedDigest);
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
     return cachedDigest;
   }
+  // A 403 "security validation" is the measured answer to a refused digest (cross-web digest finding); any other 403 goes back as is.
+  onDigestRefused = async (init, r) => {
+    const refused = init.headers?.['X-RequestDigest'];
+    if (!issuedDigests.has(refused)) return null;
+    if (!/security validation/i.test(await r.clone().text())) return null;
+    if (refused === cachedDigest) {
+      cachedDigest = null;
+      digestRefresh = getDigest().finally(() => { digestRefresh = null; });
+    }
+    const fresh = await (digestRefresh || getDigest());
+    log('INFO', 'HTTP 403 security validation on a write; retrying once with a fresh request digest.');
+    return { ...init, headers: { ...init.headers, 'X-RequestDigest': fresh } };
+  };
   // SharePoint stores a calculated field's Formula in the field schema XML
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
