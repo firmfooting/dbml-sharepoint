@@ -3,6 +3,8 @@
   // script (no rebuild needed). deploy.js.txt additionally prints a per-phase
   // seconds table before DONE when this is on.
   const DEBUG = false;
+  // The longest one Retry-After wait; an operator may raise it in the pasted script.
+  const MAX_WAIT_SECONDS = 300;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
   let requestCount = 0;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -66,7 +68,14 @@
     return throttleGate;
   }
 
-  // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
+  // Seconds the server asked for, NaN when the header is absent or unreadable.
+  function retryAfterSeconds(r) {
+    const h = String(r.headers.get('Retry-After') ?? '').trim();
+    if (/^\d+$/.test(h)) return Number(h);
+    return h ? Math.ceil((Date.parse(h) - Date.now()) / 1000) : NaN;
+  }
+
+  // Retry-After-aware fetch. Honour Retry-After, seconds or an HTTP date (RFC 9110 section 10.2.3), never sent early,
   // else back off exponentially (capped), up to `attempts` before
   // returning the final response to the caller's own error handling.
   //
@@ -104,7 +113,12 @@
       const r = await fetch(url, init);
       requestCount += 1;
       if (isThrottled(r) && i < attempts) {
-        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);
+        const asked = retryAfterSeconds(r);
+        if (asked > MAX_WAIT_SECONDS) {
+          log('WARN', `Retry-After asks ${asked}s, over the ${MAX_WAIT_SECONDS}s ceiling; stopping.`);
+          return r;
+        }
+        const ra = asked > 0 ? asked : Math.min(2 ** i, 60);
         const how = THROTTLE_PAGE.test(r.url || '')
           ? `redirected to the throttling page (HTTP ${r.status})`
           : `HTTP ${r.status}`;

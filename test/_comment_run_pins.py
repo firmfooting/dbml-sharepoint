@@ -349,7 +349,7 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/_http.js.j2": [
         "c29b17a21a0b",
         "c48810d561b1",
-        "d8aee0ff1ca6",
+        "d4022cad8fac",
         "dd38de5f33f2",
     ],
     "src/dbml_sharepoint/templates/_http_batch.js.j2": [
