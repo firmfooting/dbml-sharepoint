@@ -1830,13 +1830,13 @@ def test_the_families_produce_every_field_exactly_once(tmp_path: Path) -> None:
     # `retirement_strips` is filled by the retirement fold after the
     # families run, and `blank_defaults` by the runner's collector around
     # them; `source_paths` is assembled by the runner from two of the fields
-    # below. `form_trees` comes from form.yaml, read before the families.
+    # below. `form_trees` and `lists_forms` come from their own files.
     expected = (
         {f.name for f in fields(mapping_types.Mapping)}
         - {"retirement_strips", "blank_defaults"}
     ) | (
         {f.name for f in fields(mapping_types.MappingBundle)}
-        - {"mapping", "source_paths", "form_trees"}
+        - {"mapping", "source_paths", "form_trees", "lists_forms"}
     )
     assert set(produced) == expected
     assert [name for name, count in produced.items() if count > 1] == []
