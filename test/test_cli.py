@@ -144,7 +144,7 @@ def test_a_bare_invocation_prints_help_when_not_a_terminal() -> None:
 DOCUMENTED_COMMANDS = (
     "build", "validate", "report", "extract", "extract-script",
     "protection-script", "columns-script", "list-script", "identify-script",
-    "version",
+    "version", "mapping",
 )
 
 
