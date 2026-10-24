@@ -11,11 +11,11 @@ so the write helpers are not in the emitted file at all, and a read-only
 guarantee test pins that.
 """
 
-import re
 from urllib.parse import urlparse
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.extract.sources import LIVE_FORMAT
+from dbml_sharepoint.naming import file_stem
 from dbml_sharepoint.templating import script_env
 
 #: What the CLI writes the script as. `.js.txt` for the reason every other
@@ -26,9 +26,6 @@ EXTRACT_SCRIPT = "extract.js.txt"
 #: What the browser saves when a run covers more than one list, or when the
 #: one title has nothing usable left in it.
 DEFAULT_DOWNLOAD_NAME = "sharepoint-extract.json"
-
-_UNSAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
-
 
 class NoListsError(ValueError):
     """Asked for a script that would read nothing."""
@@ -48,7 +45,7 @@ def list_slug(title: str) -> str:
     themselves: a title of only non-ASCII characters is a perfectly good
     SharePoint list title and folds away to nothing here.
     """
-    return _UNSAFE_IN_FILENAME.sub("-", title).strip("-.")
+    return file_stem(title)
 
 
 def slug_from_path(list_path: str) -> str:
