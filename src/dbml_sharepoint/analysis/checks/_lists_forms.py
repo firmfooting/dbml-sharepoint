@@ -11,9 +11,11 @@ import re
 from datetime import datetime
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
-from dbml_sharepoint.analysis.typemap import SPField, map_column
+from dbml_sharepoint.analysis.save_rules import effective_list_validation
+from dbml_sharepoint.analysis.typemap import DEFAULT_VALUE_KINDS, SPField, map_column
 from dbml_sharepoint.model.mapping_types import EntityListsForms, ListsForm, ListsFormQuestion
 from dbml_sharepoint.model.parser import Table
 
@@ -52,10 +54,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=at,
             ))
             continue
-        if entity in mapping.list_validation:
+        types = effective_column_types(
+            {c.name: c.type for c in table.columns}, vc.cross_site_columns(entity),
+        )
+        # Column rules that compare a date with the clock are deployed on the list rule too.
+        if effective_list_validation(mapping, entity, types) is not None:
             findings.append(Finding(
                 FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT,
-                f"lists_forms[{entity}]: {entity} declares list_validation, and a "
+                f"lists_forms[{entity}]: {entity} has a list validation rule, and a "
                 f"Lists form hides its message when the rule fails.",
                 location=at,
             ))
@@ -225,9 +231,11 @@ def _form(
         findings += _question(vc, table, fields, at, question)
     retired = vc.bundle.mapping.retired_columns.get(entity, {})
     formulas = vc.bundle.mapping.default_formulas.get(entity, {})
+    # A declared default counts only where the deploy writes it to the column.
     required = [
         name for name, sp in fields.items()
-        if sp.required and sp.default is None and name not in formulas and name not in retired
+        if sp.required and (sp.default is None or sp.kind not in DEFAULT_VALUE_KINDS)
+        and name not in formulas and name not in retired
     ]
     at = Location(Section.LISTS_FORMS, entity=entity, sub=f"forms[{i}]")
     findings += [

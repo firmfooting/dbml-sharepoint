@@ -57,6 +57,7 @@ from dbml_sharepoint.analysis.sidecars import (
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
+    DEFAULT_VALUE_KINDS,
     ENTITY_TYPE_BY_KIND,
     TOTAL_FUNCTIONS,
     FieldKind,
@@ -1329,8 +1330,6 @@ def _field_body(
     match sp.kind:
         case "Text":
             body["MaxLength"] = sp.max_length
-            if sp.default is not None:
-                body["DefaultValue"] = sp.default
         case "Note":
             body["RichText"] = sp.rich_text
             body["NumberOfLines"] = sp.number_of_lines
@@ -1344,8 +1343,6 @@ def _field_body(
             members = enums_by_name[sp.choices_enum].members
             body["Choices"] = {"results": list(members)}
             body["FillInChoice"] = False
-            if sp.default is not None:
-                body["DefaultValue"] = sp.default
         case "MultiChoice":
             # The SAME create call as a single-value Choice, differing only in
             # FieldTypeKind and __metadata type. Measured on 2026-08-10: a
@@ -1373,14 +1370,9 @@ def _field_body(
             body["FillInChoice"] = False
         case "DateTime":
             body["DisplayFormat"] = 0 if sp.date_only else 1
-            # SP dynamic defaults ("[today]") and literal dates both ride
-            # DefaultValue, so this branch must carry whatever the typemap
-            # resolved rather than handling only literals.
-            if sp.default is not None:
-                body["DefaultValue"] = str(sp.default)
-        case "Boolean":
-            if sp.default is not None:
-                body["DefaultValue"] = _bool_default_to_sp(sp.default)
+        case "Boolean" | "Number":
+            # No type properties; the default is written below the match.
+            pass
         case "URL":
             body["DisplayFormat"] = sp.display_format
         case "User":
@@ -1479,12 +1471,6 @@ def _field_body(
                     "LookupFieldName": lookup_field,
                 }
             return out
-        case "Number":
-            if sp.default is not None:
-                # SP.Field.DefaultValue is a string even for Number fields.
-                # Keeping the schema value numeric makes both the create body
-                # and Phase 2.4 MERGE payload invalid for SharePoint REST.
-                body["DefaultValue"] = str(sp.default)
         case "Calculated":
             # Formula comes from the mapping (calculated_formulas), joined in
             # here; the validator guarantees a formula exists for every
@@ -1496,6 +1482,8 @@ def _field_body(
             # time, before it can reach a deploy script with no type body.
             assert_never(sp.kind)
 
+    if sp.default is not None and sp.kind in DEFAULT_VALUE_KINDS:
+        body["DefaultValue"] = _default_value(sp.kind, sp.default)
     return {"title": sp.name, "body": body}
 
 
@@ -1522,6 +1510,17 @@ def _folder_default_rows(
         ]}
         for folder in folders if folder in entity.folder_defaults
     ]
+
+
+def _default_value(kind: FieldKind, value: ColumnDefault) -> ColumnDefault:
+    """SharePoint's DefaultValue for a kind in DEFAULT_VALUE_KINDS."""
+    if kind == "Boolean":
+        return _bool_default_to_sp(value)
+    # A date carries a dynamic default ("[today]") or a literal, and a Number's
+    # DefaultValue must be a string, or the create body and MERGE are refused.
+    if kind in {"DateTime", "Number"}:
+        return str(value)
+    return value
 
 
 def _bool_default_to_sp(value: ColumnDefault) -> str:

@@ -38,6 +38,12 @@ SINGLE_ARITY_KIND = {'LookupMulti': 'Lookup', 'UserMulti': 'User'}
 FIELD_KIND_BY_TYPE_KIND = {2: 'Text', 3: 'Note', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean', 9: 'Number', 11: 'URL', 15: 'MultiChoice', 17: 'Calculated', 20: 'User'}
 ```
 
+### `DEFAULT_VALUE_KINDS`
+
+```python
+DEFAULT_VALUE_KINDS = frozenset({'Boolean', 'Choice', 'DateTime', 'Number', 'Text'})
+```
+
 ### `TYPE_AS_STRING_PAIRS`
 
 ```python

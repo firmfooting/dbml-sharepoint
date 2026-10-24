@@ -8,6 +8,7 @@ a respondent could not complete.
 from pathlib import Path
 from typing import Unpack
 
+import pytest
 from _findings import none_of, only
 from _model import MappingSections, column, enum, person
 from _model import bundle as make_bundle
@@ -21,6 +22,7 @@ from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.lists_forms import LISTS_FORMS_FILE_NAME, read_lists_forms_file
 from dbml_sharepoint.model.mapping_types import (
+    ColumnValidation,
     EntityListsForms,
     EntityMapping,
     EntitySection,
@@ -278,6 +280,51 @@ def test_lists_form_list_validation_is_silent_fires_when_the_entity_declares_one
     # Once per entity, not once per form.
     finding = only(findings, FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT)
     assert finding.severity == "warning"
+
+
+def test_lists_form_list_validation_is_silent_fires_when_a_column_rule_is_hoisted() -> None:
+    # A column rule comparing a date with the clock is deployed on the list rule.
+    findings = _check(
+        _q("Title"),
+        column_validation={"Request": EntitySection(columns={
+            "Due": ColumnValidation(when=Leaf("Due", "geq", "today"), message="Not in the past."),
+        })},
+    )
+    only(findings, FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT)
+
+
+def test_a_column_rule_that_stays_on_the_column_is_not_silent() -> None:
+    findings = _check(
+        _q("Title"),
+        column_validation={"Request": EntitySection(columns={
+            "Details": ColumnValidation(when=Leaf("Details", "ne", "x"), message="Not x."),
+        })},
+    )
+    none_of(findings, FindingCode.LISTS_FORM_LIST_VALIDATION_IS_SILENT)
+
+
+@pytest.mark.parametrize(("type_", "default"), [
+    ("nvarchar", "n/a"), ("int", 1), ("number", 1), ("boolean", True),
+    ("date", "2026-01-01"), ("datetime", "2026-01-01T09:00:00Z"),
+])
+def test_a_deployed_default_exempts_a_required_column(type_: str, default: str | int) -> None:
+    schema = _schema(column("Extra", type_, required=True, default=default))
+    none_of(_check(_q("Title"), schema=schema), FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING)
+
+
+@pytest.mark.parametrize(("type_", "default"), [
+    ("longtext", "n/a"), ("richtext", "n/a"), ("hyperlink", "https://example.com"),
+    ("person", "someone@example.com"),
+])
+def test_lists_form_required_column_missing_fires_when_the_default_is_not_deployed(
+    type_: str, default: str,
+) -> None:
+    # The deploy writes no DefaultValue for these kinds, so the column stays required.
+    schema = _schema(column("Extra", type_, required=True, default=default))
+    finding = only(
+        _check(_q("Title"), schema=schema), FindingCode.LISTS_FORM_REQUIRED_COLUMN_MISSING,
+    )
+    assert "'Extra'" in finding.message
 
 
 def test_spec_refused_example_column_rules() -> None:
