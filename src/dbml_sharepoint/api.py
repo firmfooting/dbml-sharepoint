@@ -17,6 +17,10 @@ protected_modules = [<DEPENDENT_PROTECTED_MODULES>]
 allowed_importers = ["dbml_sharepoint"]
 ```
 
+A dependent that copies `DEPENDENT_PROTECTED_MODULES` into its toml keeps a
+one-line test comparing that list with `api.DEPENDENT_PROTECTED_MODULES`, so a
+module core adds later does not go unprotected.
+
 Removing a name from `__all__` is a breaking change for dependents.
 """
 

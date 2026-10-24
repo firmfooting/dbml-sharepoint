@@ -107,6 +107,10 @@ MODULES: list[tuple[str, str]] = [
     ("jsrest", "the shared SharePoint REST prelude a paste-in script runs behind"),
     ("naming", "slugs, kebab case and file stems, one rule each"),
     ("api", "the names dependents import, each re-exported from its home"),
+    ("testing", "the test kit dependents run emitted scripts with under node"),
+    ("testing.node", "run an emitted script under node behind the SharePoint mock"),
+    ("testing.sp_mock", "the SharePoint mock prelude a script runs against"),
+    ("testing.plugin", "the pytest plugin: node optional locally, required in CI"),
 ]
 
 # Sub-package sidebar categories, in layout order.
@@ -121,6 +125,7 @@ LAYERS: dict[str, str] = {
 # looks for the part that grew its own package.
 SUBPACKAGES: dict[str, str] = {
     "analysis.reporting": "reporting: the plan and its rows, as data",
+    "testing": "testing: the node test kit for dependents",
 }
 
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
@@ -161,6 +166,8 @@ def docstring_block(obj: object) -> str:
 def public_definitions(module_name: str) -> list[tuple[str, str]]:
     """Ordered (kind, name) of top-level public defs actually in the module."""
     source_path = PACKAGE_DIR / (module_name.replace(".", "/") + ".py")
+    if not source_path.exists():  # a package documents its __init__
+        source_path = PACKAGE_DIR / module_name.replace(".", "/") / "__init__.py"
     source = source_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     defs: list[tuple[str, str]] = []
