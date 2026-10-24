@@ -98,6 +98,7 @@ MODULES: list[tuple[str, str]] = [
     ("templating", "Packaging: the shared Jinja environment"),
     ("extension", "Packaging: the extension protocol"),
     ("project", "Packaging: a project's inputs, found and loaded"),
+    ("mapping_split", "Packaging: split a mapping.yaml into its concern files, as text"),
     ("pipeline", "Packaging: the library entry points behind the commands"),
     ("cli", "Packaging: the command-line interface"),
     ("catalogue", "Packaging: the shipped solution templates, as data"),
