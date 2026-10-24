@@ -104,8 +104,7 @@
         throw new Error(`the defaults file holds entries for folders this mapping does not declare (${unmanaged.join(', ')}); registering the receiver would start applying them, so nothing was written. Declare those folders or remove their entries`);
       }
 {% if folder_default_logins %}
-      // Every run, before the settled branch can re-register the receiver: one person the receiver
-      // cannot resolve loses every default on the file (library.folder-defaults.value.person-unresolvable-aborts).
+      // Every run, before the settled branch re-registers the receiver (library.folder-defaults.value.person-unresolvable-aborts).
       for (const declared of list.folder_defaults) {
         for (const v of declared.values) {
           for (const login of v.logins || []) {

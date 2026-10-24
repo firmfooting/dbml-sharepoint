@@ -174,8 +174,7 @@ class LibrarySettings:
     content_approval: bool | None = None
 
 
-#: One `folder_defaults` value as authored: text (numbers are read as text), a
-#: YAML boolean for a Yes/No column, or a list for a multi-value column.
+#: One `folder_defaults` value as authored: text (numbers as text), a boolean, or a list.
 FolderDefaultValue = str | bool | tuple[str, ...]
 
 
