@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.38.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.37.1...v0.38.0) (2026-10-24)
+
+
+### Features
+
+* **api:** declare dbml_sharepoint.api, the import surface for dependents ([#973](https://github.com/firmfooting/dbml-sharepoint/issues/973)) ([b121ab4](https://github.com/firmfooting/dbml-sharepoint/commit/b121ab48cbf0385d44f378ff5f7c55a8333b7cff))
+* **cli:** add mapping split, which splits a mapping by concern ([#965](https://github.com/firmfooting/dbml-sharepoint/issues/965)) ([02ab789](https://github.com/firmfooting/dbml-sharepoint/commit/02ab7898618f41cecc2b85718880c3fe9d277707))
+* **folder-defaults:** write every value type SharePoint's receiver applies ([#959](https://github.com/firmfooting/dbml-sharepoint/issues/959)) ([4b22286](https://github.com/firmfooting/dbml-sharepoint/commit/4b222861f7ace61953bd36a25c5ed79ae0a53550))
+* **jsrest:** publish one SharePoint REST prelude for dependents ([#970](https://github.com/firmfooting/dbml-sharepoint/issues/970)) ([f77c0f1](https://github.com/firmfooting/dbml-sharepoint/commit/f77c0f1d9c06d4e65fdd0d57f71e0d74307e90ee))
+* **lists-forms:** read lists-forms.yaml beside the mapping ([#963](https://github.com/firmfooting/dbml-sharepoint/issues/963)) ([5123492](https://github.com/firmfooting/dbml-sharepoint/commit/5123492c4493064d0d5e5d8ac3b31e93b84010af))
+* **lists-forms:** refuse Lists form declarations SharePoint cannot honour ([#968](https://github.com/firmfooting/dbml-sharepoint/issues/968)) ([a698551](https://github.com/firmfooting/dbml-sharepoint/commit/a6985517235f4e67c70d585f401a483c446047e5))
+* **mapping:** read a concern from a .d folder ([#962](https://github.com/firmfooting/dbml-sharepoint/issues/962)) ([67d1fcd](https://github.com/firmfooting/dbml-sharepoint/commit/67d1fcd3144cddf2d769c277941eb1183c383095))
+* **mapping:** read concern files beside the mapping ([#961](https://github.com/firmfooting/dbml-sharepoint/issues/961)) ([614d550](https://github.com/firmfooting/dbml-sharepoint/commit/614d55065c18fb840bb73b5bb588213a22b95a88))
+* **testing:** ship the node runner, the SharePoint mock and a CI node gate ([#971](https://github.com/firmfooting/dbml-sharepoint/issues/971)) ([5ded658](https://github.com/firmfooting/dbml-sharepoint/commit/5ded658d49e7e3cd57ed34ff012d8aeb6a1527d8))
+
+
+### Bug Fixes
+
+* **mapping:** refuse a concern file spelled .yml ([#966](https://github.com/firmfooting/dbml-sharepoint/issues/966)) ([f91e84b](https://github.com/firmfooting/dbml-sharepoint/commit/f91e84b3680eb4e3adb44fe2f38604b1c6f3d095))
+* **probes:** read contextinfo through the shared guarded parse in both probe harnesses ([#972](https://github.com/firmfooting/dbml-sharepoint/issues/972)) ([9a14c44](https://github.com/firmfooting/dbml-sharepoint/commit/9a14c44df6037a0282c4a3572b56ae4bbb82b855))
+* **transport:** honour an HTTP-date Retry-After, stop rather than retry early past 300 s, and refresh a refused digest once ([#964](https://github.com/firmfooting/dbml-sharepoint/issues/964)) ([7474ca5](https://github.com/firmfooting/dbml-sharepoint/commit/7474ca5ee8b04265feb77155d82659e57d52babe))
+
 ## [0.37.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.37.0...v0.37.1) (2026-10-24)
 
 
